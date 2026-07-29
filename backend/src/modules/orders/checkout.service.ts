@@ -1,0 +1,527 @@
+import { inArray } from "drizzle-orm";
+import { getDb, type DatabaseExecutor } from "../../db/client.js";
+import { products, type ProductRow } from "../../db/schema/products.js";
+import { productVariants, type ProductVariantRow } from "../../db/schema/product-variants.js";
+import { productImages } from "../../db/schema/product-images.js";
+import { BadRequestError, ConflictError, ValidationError } from "../../core/errors.js";
+import { ErrorCode } from "../../core/http-status.js";
+import { createLogger } from "../../core/logger.js";
+import { orderEvents as orderEventBus } from "../../lib/events/order-events.js";
+import { suggestDeliveryZone } from "../../lib/geo/delivery-zone.js";
+import { calculateTotals, getSettings } from "../settings/settings.service.js";
+import {
+  findOrderByIdempotencyKey,
+  findRecentOrdersByPhone,
+  insertOrder,
+  insertOrderItems,
+  listOrderItems,
+  nextOrderNumber,
+} from "./order.repository.js";
+import { recordEvent, CUSTOMER_ACTOR } from "./order-event.repository.js";
+import { reserveStock, syncSimpleProductStatus, type StockLine } from "./stock.service.js";
+import { toOrderConfirmationDto, type OrderConfirmationDto } from "./order.types.js";
+import type { PlaceOrderInput, QuoteInput } from "./order.validation.js";
+import type { DeliveryZone } from "../../db/schema/order-enums.js";
+
+/**
+ * Checkout — the public, unauthenticated write path.
+ *
+ * Two rules govern everything here:
+ *
+ * 1. **Nothing about money comes from the client.** Prices are read from the
+ *    catalogue inside the transaction, totals are computed from those prices
+ *    and the settings row. The request body has no price field at all, and
+ *    `.strict()` rejects one if it appears.
+ *
+ * 2. **Placement is one transaction.** Order, items and stock decrements
+ *    commit together or not at all. A stock decrement that survives a failed
+ *    order insert is inventory that has silently vanished.
+ */
+
+const log = createLogger("checkout");
+
+/** Window in which an identical repeat submission is treated as a double-tap. */
+const DUPLICATE_WINDOW_SECONDS = 120;
+
+interface ResolvedLine {
+  product: ProductRow;
+  variant: ProductVariantRow | null;
+  quantity: number;
+  unitPrice: number;
+  variantLabel: string | null;
+  imageKey: string | null;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Cart resolution                                                            */
+/* -------------------------------------------------------------------------- */
+
+function variantLabelOf(variant: ProductVariantRow): string {
+  const values = Object.values(variant.options).filter(Boolean);
+  return values.length > 0 ? values.join(" · ") : variant.sku;
+}
+
+/**
+ * Resolves cart lines against the live catalogue.
+ *
+ * Runs inside the caller's transaction so the prices used for the totals are
+ * the prices the order is written with — reading them on a separate connection
+ * leaves a window where a repricing lands between quote and insert.
+ *
+ * Every failure names the offending product, because "invalid cart" is
+ * useless to a customer trying to fix it.
+ */
+async function resolveLines(
+  items: { productId: string; variantId?: string | null; quantity: number }[],
+  executor: DatabaseExecutor,
+  options: { maxQuantityPerItem: number },
+): Promise<ResolvedLine[]> {
+  /* Reject duplicates up front: two lines for the same variant would each
+     reserve stock independently and produce a confusing invoice. */
+  const seen = new Set<string>();
+  for (const [index, item] of items.entries()) {
+    const key = `${item.productId}:${item.variantId ?? ""}`;
+    if (seen.has(key)) {
+      throw new ValidationError([
+        {
+          field: `body.items[${index}]`,
+          message: "This item appears twice. Combine them into a single line.",
+        },
+      ]);
+    }
+    seen.add(key);
+  }
+
+  const productIds = [...new Set(items.map((item) => item.productId))];
+  const variantIds = items
+    .map((item) => item.variantId)
+    .filter((id): id is string => typeof id === "string");
+
+  /* Two batched reads rather than one per line — a 20-item cart must not be
+     40 round trips. */
+  const [productRows, variantRows, imageRows] = await Promise.all([
+    executor.select().from(products).where(inArray(products.id, productIds)),
+    variantIds.length > 0
+      ? executor.select().from(productVariants).where(inArray(productVariants.id, variantIds))
+      : Promise.resolve([] as ProductVariantRow[]),
+    executor
+      .select()
+      .from(productImages)
+      .where(inArray(productImages.productId, productIds)),
+  ]);
+
+  const productsById = new Map(productRows.map((row) => [row.id, row]));
+  const variantsById = new Map(variantRows.map((row) => [row.id, row]));
+
+  /* Featured image, falling back to the first — matches what the storefront
+     showed the customer. */
+  const imageByProduct = new Map<string, string>();
+  for (const image of [...imageRows].sort(
+    (a, b) => Number(b.isFeatured) - Number(a.isFeatured) || a.sortOrder - b.sortOrder,
+  )) {
+    if (!imageByProduct.has(image.productId)) {
+      imageByProduct.set(image.productId, image.storageKey);
+    }
+  }
+
+  return items.map((item, index) => {
+    const field = `body.items[${index}]`;
+    const product = productsById.get(item.productId);
+
+    if (!product) {
+      throw new ValidationError([
+        { field: `${field}.productId`, message: "This product no longer exists." },
+      ]);
+    }
+
+    /* A draft or hidden product must not be purchasable by guessing its id. */
+    if (product.status !== "active" || !product.isVisible) {
+      throw new ValidationError([
+        { field: `${field}.productId`, message: `"${product.name}" is not available for sale.` },
+      ]);
+    }
+
+    if (item.quantity > options.maxQuantityPerItem) {
+      throw new ValidationError([
+        {
+          field: `${field}.quantity`,
+          message: `At most ${options.maxQuantityPerItem} of "${product.name}" per order.`,
+        },
+      ]);
+    }
+
+    const hasVariants = product.variantOptions.length > 0;
+    let variant: ProductVariantRow | null = null;
+
+    if (hasVariants) {
+      if (!item.variantId) {
+        throw new ValidationError([
+          {
+            field: `${field}.variantId`,
+            message: `Choose an option for "${product.name}".`,
+          },
+        ]);
+      }
+
+      variant = variantsById.get(item.variantId) ?? null;
+
+      if (!variant || variant.productId !== product.id) {
+        throw new ValidationError([
+          {
+            field: `${field}.variantId`,
+            message: `That option is not available for "${product.name}".`,
+          },
+        ]);
+      }
+
+      if (!variant.isActive) {
+        throw new ValidationError([
+          {
+            field: `${field}.variantId`,
+            message: `That option of "${product.name}" is no longer sold.`,
+          },
+        ]);
+      }
+    } else if (item.variantId) {
+      throw new ValidationError([
+        {
+          field: `${field}.variantId`,
+          message: `"${product.name}" has no options to choose.`,
+        },
+      ]);
+    }
+
+    /* Availability is checked here for a clear message, but the real guarantee
+       is the conditional decrement in `reserveStock` — this read cannot hold
+       against a concurrent checkout. */
+    const available = variant ? variant.stockQuantity : product.stockQuantity;
+    if (product.stockStatus === "discontinued") {
+      throw new ConflictError(`"${product.name}" has been discontinued.`, ErrorCode.CONFLICT);
+    }
+    if (available < item.quantity) {
+      throw new ConflictError(
+        available === 0
+          ? `"${product.name}" is out of stock.`
+          : `Only ${available} of "${product.name}" ${available === 1 ? "is" : "are"} left.`,
+        ErrorCode.CONFLICT,
+      );
+    }
+
+    return {
+      product,
+      variant,
+      quantity: item.quantity,
+      unitPrice: variant?.price ?? product.price,
+      variantLabel: variant ? variantLabelOf(variant) : null,
+      imageKey: imageByProduct.get(product.id) ?? null,
+    };
+  });
+}
+
+function toStockLines(lines: ResolvedLine[]): StockLine[] {
+  return lines.map((line) => ({
+    productId: line.product.id,
+    variantId: line.variant?.id ?? null,
+    quantity: line.quantity,
+    label: line.variant
+      ? `${line.product.name} (${line.variantLabel ?? line.variant.sku})`
+      : line.product.name,
+  }));
+}
+
+/**
+ * Determines the delivery zone.
+ *
+ * An explicit zone from the caller always wins; inference is only a
+ * convenience. When neither is available the request fails rather than
+ * defaulting — silently guessing "inside Dhaka" for an unrecognised area
+ * undercharges every rural order.
+ */
+function resolveZone(
+  explicit: DeliveryZone | undefined,
+  areaText: string | undefined,
+): { zone: DeliveryZone; inferred: boolean; matched: string | null } {
+  if (explicit) return { zone: explicit, inferred: false, matched: null };
+
+  const suggestion = areaText ? suggestDeliveryZone(areaText) : null;
+  if (suggestion) {
+    return { zone: suggestion.zone, inferred: true, matched: suggestion.matched };
+  }
+
+  throw new ValidationError([
+    {
+      field: "body.deliveryZone",
+      message:
+        "We could not determine your delivery area. Choose Inside Dhaka or Outside Dhaka.",
+    },
+  ]);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Quote                                                                      */
+/* -------------------------------------------------------------------------- */
+
+export interface QuoteResult {
+  items: {
+    productId: string;
+    variantId: string | null;
+    productName: string;
+    variantLabel: string | null;
+    unitPrice: number;
+    quantity: number;
+    lineTotal: number;
+  }[];
+  subtotal: number;
+  deliveryCharge: number;
+  grandTotal: number;
+  deliveryZone: DeliveryZone | null;
+  /** True when the zone was inferred from `areaText` rather than supplied. */
+  zoneInferred: boolean;
+  /** The area token matched, so a UI can show what was recognised. */
+  zoneMatchedOn: string | null;
+  freeDeliveryThreshold: number;
+  /** How much more to spend to qualify for free delivery. 0 when it applies. */
+  amountToFreeDelivery: number;
+}
+
+/**
+ * Prices a cart without committing anything.
+ *
+ * Read-only, so it deliberately does not reserve stock — a quote is not a
+ * claim on inventory. Availability is re-checked at placement.
+ */
+export async function quote(input: QuoteInput): Promise<QuoteResult> {
+  const db = getDb();
+  const settings = await getSettings(db);
+
+  const lines = await resolveLines(input.items, db, {
+    maxQuantityPerItem: settings.maxQuantityPerItem,
+  });
+
+  const subtotal = lines.reduce((sum, line) => sum + line.unitPrice * line.quantity, 0);
+
+  /* A quote may legitimately have no zone yet — the customer is still typing. */
+  let zone: DeliveryZone | null = null;
+  let inferred = false;
+  let matched: string | null = null;
+
+  if (input.deliveryZone) {
+    zone = input.deliveryZone;
+  } else if (input.areaText) {
+    const suggestion = suggestDeliveryZone(input.areaText);
+    if (suggestion) {
+      zone = suggestion.zone;
+      inferred = true;
+      matched = suggestion.matched;
+    }
+  }
+
+  const totals = zone
+    ? calculateTotals(settings, zone, subtotal)
+    : { subtotal, deliveryCharge: 0, grandTotal: subtotal };
+
+  return {
+    items: lines.map((line) => ({
+      productId: line.product.id,
+      variantId: line.variant?.id ?? null,
+      productName: line.product.name,
+      variantLabel: line.variantLabel,
+      unitPrice: line.unitPrice,
+      quantity: line.quantity,
+      lineTotal: line.unitPrice * line.quantity,
+    })),
+    subtotal: totals.subtotal,
+    deliveryCharge: totals.deliveryCharge,
+    grandTotal: totals.grandTotal,
+    deliveryZone: zone,
+    zoneInferred: inferred,
+    zoneMatchedOn: matched,
+    freeDeliveryThreshold: settings.freeDeliveryThreshold,
+    amountToFreeDelivery:
+      settings.freeDeliveryThreshold > 0 && subtotal < settings.freeDeliveryThreshold
+        ? settings.freeDeliveryThreshold - subtotal
+        : 0,
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Place order                                                                */
+/* -------------------------------------------------------------------------- */
+
+export interface PlaceOrderContext {
+  idempotencyKey?: string | undefined;
+  ipAddress?: string | undefined;
+  userAgent?: string | undefined;
+}
+
+export interface PlaceOrderResult {
+  order: OrderConfirmationDto;
+  /** True when an existing order was returned instead of creating a new one. */
+  replayed: boolean;
+}
+
+/**
+ * Creates an order.
+ *
+ * Everything — order header, line snapshots, stock decrements and the opening
+ * timeline entry — happens in one transaction.
+ */
+export async function placeOrder(
+  input: PlaceOrderInput,
+  context: PlaceOrderContext = {},
+): Promise<PlaceOrderResult> {
+  /* Idempotent replay. A flaky mobile connection retrying the POST must not
+     produce a second order; return the first one unchanged. */
+  if (context.idempotencyKey) {
+    const existing = await findOrderByIdempotencyKey(context.idempotencyKey);
+    if (existing) {
+      const items = await listOrderItems(existing.id);
+      log.info(
+        { orderNumber: existing.orderNumber },
+        "Idempotent replay — returning the existing order",
+      );
+      return { order: toOrderConfirmationDto(existing, items), replayed: true };
+    }
+  }
+
+  const { zone } = resolveZone(input.deliveryZone, input.areaText);
+
+  const created = await getDb().transaction(async (tx) => {
+    const settings = await getSettings(tx);
+
+    const lines = await resolveLines(input.items, tx, {
+      maxQuantityPerItem: settings.maxQuantityPerItem,
+    });
+
+    const subtotal = lines.reduce((sum, line) => sum + line.unitPrice * line.quantity, 0);
+
+    if (settings.minimumOrderValue > 0 && subtotal < settings.minimumOrderValue) {
+      throw new BadRequestError(
+        `The minimum order value is ${settings.minimumOrderValue} taka.`,
+      );
+    }
+
+    const totals = calculateTotals(settings, zone, subtotal);
+
+    /* Decrement first. If anything is short, the whole transaction unwinds
+       before an order number is consumed on a doomed order. */
+    const stockLines = toStockLines(lines);
+    await reserveStock(stockLines, tx);
+    await syncSimpleProductStatus(
+      lines.filter((line) => !line.variant).map((line) => line.product.id),
+      tx,
+    );
+
+    const order = await insertOrder(
+      {
+        orderNumber: await nextOrderNumber(tx),
+        customerName: input.customerName,
+        phone: input.phone,
+        address: input.address,
+        areaText: input.areaText,
+        deliveryZone: zone,
+        subtotal: totals.subtotal,
+        deliveryCharge: totals.deliveryCharge,
+        grandTotal: totals.grandTotal,
+        itemCount: lines.length,
+        totalQuantity: lines.reduce((sum, line) => sum + line.quantity, 0),
+        paymentMethod: "cod",
+        status: "pending",
+        /* The customer's own note is kept in the internal notes field,
+           clearly attributed. There is no separate customer-notes column
+           because staff read one place during the confirmation call. */
+        internalNotes: input.customerNote
+          ? `Customer note: ${input.customerNote}`
+          : null,
+        idempotencyKey: context.idempotencyKey ?? null,
+        customerIp: context.ipAddress ?? null,
+        userAgent: context.userAgent?.slice(0, 512) ?? null,
+      },
+      tx,
+    );
+
+    const items = await insertOrderItems(
+      lines.map((line) => ({
+        orderId: order.id,
+        productId: line.product.id,
+        variantId: line.variant?.id ?? null,
+        /* The snapshot. Renaming or repricing the product later must never
+           change what this order says it was. */
+        productName: line.product.name,
+        productSlug: line.product.slug,
+        sku: line.variant?.sku ?? line.product.sku,
+        variantLabel: line.variantLabel,
+        imageKey: line.imageKey,
+        unitPrice: line.unitPrice,
+        quantity: line.quantity,
+        lineTotal: line.unitPrice * line.quantity,
+      })),
+      tx,
+    );
+
+    await recordEvent(
+      {
+        orderId: order.id,
+        type: "order_created",
+        newValue: {
+          orderNumber: order.orderNumber,
+          grandTotal: order.grandTotal,
+          itemCount: order.itemCount,
+          deliveryZone: order.deliveryZone,
+        },
+        actor: CUSTOMER_ACTOR,
+        note: input.customerNote ?? undefined,
+      },
+      tx,
+    );
+
+    return { order, items };
+  });
+
+  log.info(
+    {
+      orderNumber: created.order.orderNumber,
+      grandTotal: created.order.grandTotal,
+      zone,
+    },
+    "Order placed",
+  );
+
+  /* Emitted after commit: a notification must never go out for an order that
+     is about to roll back. */
+  orderEventBus.emit("order.created", {
+    orderId: created.order.id,
+    orderNumber: created.order.orderNumber,
+    customerName: created.order.customerName,
+    phone: created.order.phone,
+    grandTotal: created.order.grandTotal,
+    itemCount: created.order.itemCount,
+    placedAt: created.order.createdAt,
+  });
+
+  return {
+    order: toOrderConfirmationDto(created.order, created.items),
+    replayed: false,
+  };
+}
+
+/**
+ * Detects a likely double submission.
+ *
+ * The idempotency key is the real defence; this is the fallback for clients
+ * that did not send one. It compares the phone number and the exact totals of
+ * recent orders — a customer legitimately ordering twice in two minutes will
+ * almost never match on both.
+ */
+export async function findLikelyDuplicate(
+  phone: string,
+  grandTotal: number,
+): Promise<{ orderNumber: string } | null> {
+  const recent = await findRecentOrdersByPhone(phone, DUPLICATE_WINDOW_SECONDS);
+  const match = recent.find((order) => order.grandTotal === grandTotal);
+  return match ? { orderNumber: match.orderNumber } : null;
+}
+
+/** Shared with the admin edit path, which re-prices a swapped variant the
+ *  same way checkout priced the original. */
+export { variantLabelOf };

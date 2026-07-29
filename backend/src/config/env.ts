@@ -1,0 +1,157 @@
+import { z } from "zod";
+
+/**
+ * Environment schema.
+ *
+ * Parsed once, at import time, before anything else boots. A container with a
+ * missing secret or a malformed URL dies on startup with a readable message
+ * instead of throwing at 2am on the first request that happens to need it.
+ *
+ * Everything downstream consumes the frozen, typed `config` object exported
+ * from `./index.ts` — `process.env` is never read anywhere else in the app.
+ */
+
+/** `"true"`/`"1"`/`"yes"` → true. Env vars are always strings. */
+const booleanish = (defaultValue: boolean) =>
+  z
+    .string()
+    .optional()
+    .transform((value) => {
+      if (value === undefined || value.trim() === "") return defaultValue;
+      return ["true", "1", "yes", "on"].includes(value.trim().toLowerCase());
+    });
+
+const integer = (defaultValue: number, min = 0, max = Number.MAX_SAFE_INTEGER) =>
+  z
+    .string()
+    .optional()
+    .transform((value) =>
+      value === undefined || value.trim() === "" ? defaultValue : Number(value),
+    )
+    .pipe(z.number().int().min(min).max(max));
+
+const csv = (defaultValue: string[]) =>
+  z
+    .string()
+    .optional()
+    .transform((value) =>
+      value === undefined || value.trim() === ""
+        ? defaultValue
+        : value
+            .split(",")
+            .map((entry) => entry.trim())
+            .filter(Boolean),
+    );
+
+export const envSchema = z
+  .object({
+    // --- Runtime ---------------------------------------------------------
+    NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+    PORT: integer(4000, 1, 65535),
+    API_URL: z.url().default("http://localhost:4000"),
+    CORS_ORIGINS: csv(["http://localhost:3000"]),
+    TRUST_PROXY_HOPS: integer(0, 0, 10),
+
+    // --- Logging ---------------------------------------------------------
+    LOG_LEVEL: z
+      .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
+      .default("info"),
+    LOG_PRETTY: booleanish(false),
+
+    // --- Database --------------------------------------------------------
+    DATABASE_DRIVER: z.enum(["postgres", "pglite"]).default("postgres"),
+    DATABASE_URL: z.string().optional(),
+    DATABASE_SSL: booleanish(false),
+    DATABASE_POOL_MAX: integer(10, 1, 100),
+    DATABASE_POOL_IDLE_TIMEOUT_MS: integer(30_000, 1_000),
+    DATABASE_CONNECTION_TIMEOUT_MS: integer(10_000, 1_000),
+    PGLITE_DATA_DIR: z.string().default("./.pglite"),
+
+    // --- Authentication --------------------------------------------------
+    JWT_ACCESS_SECRET: z
+      .string()
+      .min(32, "JWT_ACCESS_SECRET must be at least 32 characters"),
+    JWT_ISSUER: z.string().min(1).default("gng-api"),
+    JWT_AUDIENCE: z.string().min(1).default("gng-admin"),
+    ACCESS_TOKEN_TTL_MINUTES: integer(15, 1, 1_440),
+    REFRESH_TOKEN_TTL_DAYS: integer(14, 1, 365),
+    COOKIE_DOMAIN: z.string().optional(),
+    COOKIE_SECURE: booleanish(false),
+
+    // --- Rate limiting ---------------------------------------------------
+    RATE_LIMIT_WINDOW_MINUTES: integer(15, 1),
+    RATE_LIMIT_MAX: integer(300, 1),
+    AUTH_RATE_LIMIT_WINDOW_MINUTES: integer(15, 1),
+    AUTH_RATE_LIMIT_MAX: integer(10, 1),
+    /* Checkout is the only unauthenticated write in the API, so it gets its
+       own budget: tighter than general traffic, looser than login. */
+    CHECKOUT_RATE_LIMIT_WINDOW_MINUTES: integer(15, 1),
+    CHECKOUT_RATE_LIMIT_MAX: integer(20, 1),
+    QUOTE_RATE_LIMIT_MAX: integer(120, 1),
+    LOGIN_MAX_FAILED_ATTEMPTS: integer(5, 1, 100),
+    LOGIN_LOCKOUT_MINUTES: integer(15, 1),
+
+    // --- Uploads ---------------------------------------------------------
+    STORAGE_DRIVER: z.enum(["local"]).default("local"),
+    UPLOAD_DIR: z.string().default("./uploads"),
+    UPLOAD_MAX_FILE_SIZE_MB: integer(5, 1, 100),
+    UPLOAD_MAX_FILES: integer(10, 1, 50),
+
+    // --- Seeding ---------------------------------------------------------
+    SEED_ADMIN_EMAIL: z.email().optional(),
+    SEED_ADMIN_PASSWORD: z.string().optional(),
+    SEED_ADMIN_NAME: z.string().optional(),
+  })
+  /* Postgres is required unless the embedded driver is explicitly selected. */
+  .refine(
+    (env) => env.DATABASE_DRIVER !== "postgres" || Boolean(env.DATABASE_URL),
+    {
+      message: "DATABASE_URL is required when DATABASE_DRIVER=postgres",
+      path: ["DATABASE_URL"],
+    },
+  )
+  /* Guard rails that only bite in production, where mistakes are expensive. */
+  .refine((env) => env.NODE_ENV !== "production" || env.DATABASE_DRIVER === "postgres", {
+    message: "DATABASE_DRIVER=pglite is a development-only driver",
+    path: ["DATABASE_DRIVER"],
+  })
+  .refine((env) => env.NODE_ENV !== "production" || env.COOKIE_SECURE, {
+    message: "COOKIE_SECURE must be true in production",
+    path: ["COOKIE_SECURE"],
+  })
+  .refine((env) => env.NODE_ENV !== "production" || env.TRUST_PROXY_HOPS > 0, {
+    message:
+      "TRUST_PROXY_HOPS must be > 0 in production, otherwise every client " +
+      "appears to share the proxy's IP and rate limiting collapses",
+    path: ["TRUST_PROXY_HOPS"],
+  })
+  .refine((env) => env.NODE_ENV !== "production" || !env.LOG_PRETTY, {
+    message: "LOG_PRETTY must be false in production",
+    path: ["LOG_PRETTY"],
+  });
+
+export type Env = z.infer<typeof envSchema>;
+
+/**
+ * Parses `process.env`. Exits the process on failure — there is no sensible
+ * degraded mode for an app that does not know its own database URL.
+ */
+export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
+  const result = envSchema.safeParse(source);
+
+  if (!result.success) {
+    const issues = result.error.issues
+      .map((issue) => `  • ${issue.path.join(".") || "(root)"}: ${issue.message}`)
+      .join("\n");
+
+    // Logger depends on config, so this one message predates it and must use
+    // stderr directly.
+    process.stderr.write(
+      `\nInvalid environment configuration:\n${issues}\n\n` +
+        `See .env.example for the full list of supported variables.\n\n`,
+    );
+    process.exit(1);
+  }
+
+  return result.data;
+}

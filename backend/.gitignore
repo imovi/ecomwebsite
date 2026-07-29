@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+
+# Embedded Postgres data directory (local dev only)
+.pglite/
+
+# Uploaded files — object storage in production, never committed
+uploads/
+
+# Image fixtures written by the integration suite
+.test-uploads/
+
+*.log
+.DS_Store

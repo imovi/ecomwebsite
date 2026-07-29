@@ -1,26 +1,183 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/*
+  gng design system
+  --------------------------------------------------------------------------
+  Deliberately small: 1 neutral ramp, 1 accent (sale red), 1 positive (green).
+  Every value here is a token. Components never hardcode a hex or a px radius.
+*/
+
+@theme {
+  /* --- Colour ----------------------------------------------------------- */
+  --color-ink: #0b0b0c; /* primary text, primary buttons */
+  --color-ink-soft: #3a3a3c; /* secondary text */
+  --color-muted: #6e6e73; /* tertiary text, captions */
+  --color-line: #e8e8ed; /* hairline borders */
+  --color-surface: #f5f5f7; /* Apple grey, image + section backdrops */
+  --color-canvas: #ffffff;
+
+  --color-sale: #e11d2e; /* discount badges, current price when discounted */
+  --color-sale-soft: #fdecee;
+  --color-positive: #06894a; /* in stock, order success */
+  --color-positive-soft: #e8f5ee;
+  --color-warn: #b25000; /* low stock */
+  --color-warn-soft: #fff2e6;
+
+  /* --- Radius ----------------------------------------------------------- */
+  --radius-xs: 8px;
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+
+  /* --- Elevation -------------------------------------------------------- */
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.04), 0 4px 16px rgb(0 0 0 / 0.06);
+  --shadow-bar: 0 -1px 0 rgb(0 0 0 / 0.06), 0 -8px 24px rgb(0 0 0 / 0.06);
+  --shadow-sheet: 0 -2px 40px rgb(0 0 0 / 0.16);
+
+  /* --- Type ------------------------------------------------------------- */
+  /* English UI. Bangla stack is a *fallback* so user-typed addresses and any
+     future translation render correctly without shipping a second webfont. */
+  --font-sans:
+    var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, "Noto Sans Bengali", "Hind Siliguri", "SolaimanLipi", sans-serif;
+
+  --text-display: 1.75rem;
+  --text-display--line-height: 1.15;
+  --text-display--letter-spacing: -0.022em;
+  --text-display--font-weight: 650;
+
+  --text-title: 1.25rem;
+  --text-title--line-height: 1.25;
+  --text-title--letter-spacing: -0.018em;
+  --text-title--font-weight: 600;
+
+  --text-body: 0.9375rem;
+  --text-body--line-height: 1.5;
+  --text-body--letter-spacing: -0.006em;
+
+  --text-caption: 0.8125rem;
+  --text-caption--line-height: 1.4;
+
+  --text-micro: 0.6875rem;
+  --text-micro--line-height: 1.3;
+  --text-micro--letter-spacing: 0.01em;
+
+  /* --- Motion ----------------------------------------------------------- */
+  /* Two curves only. `out` for things entering, `spring` for sheets. */
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-spring: cubic-bezier(0.32, 0.72, 0, 1);
+
+  /* --- Layout ----------------------------------------------------------- */
+  --spacing-gutter: 1rem; /* page side padding on mobile */
+  --container-page: 1120px;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    /* Storefront is light-only by design: a white canvas is the product. */
+    color-scheme: light;
+  }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  body {
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    /* Prevents the sticky buy bar from jumping when the URL bar collapses. */
+    overscroll-behavior-y: none;
+  }
+
+  /* Visible, consistent focus ring for keyboard users only. */
+  :focus-visible {
+    outline: 2px solid var(--color-ink);
+    outline-offset: 2px;
+    border-radius: var(--radius-xs);
+  }
+
+  /* Numeric fields should not render browser spinners. */
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    appearance: none;
+    margin: 0;
+  }
+  input[type="number"] {
+    appearance: textfield;
+  }
+
+  /* Prices and order IDs read better with tabular figures. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer utilities {
+  /* Horizontal scroller used by the banner slider, category rail and
+     product rails. Native scroll-snap = zero JS, perfect momentum on iOS. */
+  .snap-rail {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+  }
+  .snap-rail::-webkit-scrollbar {
+    display: none;
+  }
+  .snap-item {
+    scroll-snap-align: start;
+    scroll-snap-stop: always;
+    flex: none;
+  }
+
+  /* Product titles are capped at 2 lines everywhere by contract. */
+  .clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* Safe-area aware bottom padding for the sticky action bar. */
+  .pb-safe {
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Respect the OS setting. Every transition in the app degrades to instant. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

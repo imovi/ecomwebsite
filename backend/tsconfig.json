@@ -1,0 +1,41 @@
+{
+  "compilerOptions": {
+    /* Node 20+ LTS target. ESM throughout — relative imports carry the `.js`
+       extension so the emitted output is valid Node ESM without a bundler. */
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"],
+
+    /* Strictness. `noUncheckedIndexedAccess` in particular is what stops
+       `rows[0]` being silently typed as non-null when the query returned
+       nothing — a very common source of production 500s. */
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "exactOptionalPropertyTypes": false,
+    "useUnknownInCatchVariables": true,
+    "forceConsistentCasingInFileNames": true,
+
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": true,
+
+    /* This config is for editors, type-checking and linting only — it covers
+       tests and root-level config files as well as `src`. Emitting is done by
+       tsconfig.build.json, which narrows the input to `src`.
+
+       No `paths` aliases on purpose: tsc does not rewrite them in emitted
+       ESM, so `node dist/server.js` would fail at runtime. Relative imports
+       with explicit `.js` extensions behave identically under tsx and node. */
+    "noEmit": true
+  },
+  "include": ["src/**/*.ts", "tests/**/*.ts", "drizzle.config.ts"],
+  "exclude": ["node_modules", "dist"]
+}

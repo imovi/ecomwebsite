@@ -28,6 +28,13 @@ export interface OrderItemDto {
   unitPrice: number;
   quantity: number;
   lineTotal: number;
+  /**
+   * What this unit cost the shop, frozen at order time. Admin responses only.
+   *
+   * Null means no cost was recorded for the product when the order was placed —
+   * which the profit reports show as unknown rather than as free.
+   */
+  unitCost?: number | null;
 }
 
 export interface OrderEventDto {
@@ -103,7 +110,14 @@ export interface OrderConfirmationDto {
 /* Mappers                                                                    */
 /* -------------------------------------------------------------------------- */
 
-export function toOrderItemDto(row: OrderItemRow): OrderItemDto {
+/**
+ * `includeCost` is opt-in, and deliberately so.
+ *
+ * This mapper also builds the customer's order-confirmation payload. A cost
+ * field added unconditionally would ship the shop's buying price to the browser
+ * of every person who checks out.
+ */
+export function toOrderItemDto(row: OrderItemRow, includeCost = false): OrderItemDto {
   return {
     id: row.id,
     productId: row.productId,
@@ -116,6 +130,7 @@ export function toOrderItemDto(row: OrderItemRow): OrderItemDto {
     unitPrice: row.unitPrice,
     quantity: row.quantity,
     lineTotal: row.lineTotal,
+    ...(includeCost ? { unitCost: row.unitCost } : {}),
   };
 }
 
@@ -167,7 +182,9 @@ export function toOrderDto(
     internalNotes: row.internalNotes,
     cancellationReason: row.cancellationReason,
     version: row.version,
-    items: items.map(toOrderItemDto),
+    /* Admin detail: the margin on this order is exactly the question the
+       person looking at it is asking. */
+    items: items.map((item) => toOrderItemDto(item, true)),
     /* Oldest first — a timeline reads as a story, not a feed. Sorted by the
        monotonic sequence: events from one edit can share a timestamp. */
     timeline: [...events].sort((a, b) => a.seq - b.seq).map(toOrderEventDto),

@@ -4,6 +4,9 @@ import { config } from "./config/index.js";
 import { closeDatabase, initDatabase } from "./db/client.js";
 import { logger } from "./core/logger.js";
 import { initStorage } from "./lib/storage/index.js";
+import { registerMetaTracking } from "./modules/marketing/meta.subscriber.js";
+import { registerOrderIntegrations } from "./modules/integrations/integrations.subscriber.js";
+import { startCourierSync, stopCourierSync } from "./modules/courier/courier.sync.js";
 
 /**
  * Process bootstrap and lifecycle.
@@ -21,6 +24,15 @@ async function start(): Promise<void> {
      slow database start into a burst of 500s. */
   await initDatabase();
   await initStorage();
+
+  /* Domain event subscribers, before the port opens — a transport registered
+     after traffic starts would silently miss the first orders. */
+  registerMetaTracking();
+  registerOrderIntegrations();
+
+  /* Polls the courier for parcel statuses. Timer is unref'd, so it never holds
+     a deploy open. */
+  startCourierSync();
 
   const app = createApp();
 
@@ -56,6 +68,10 @@ async function shutdown(signal: string): Promise<void> {
   shuttingDown = true;
 
   logger.info({ signal }, "Shutting down");
+
+  /* Stop polling before the database closes, so a sync in flight cannot query
+     a connection that is being torn down. */
+  stopCourierSync();
 
   const forceExit = setTimeout(() => {
     logger.error("Graceful shutdown timed out — forcing exit");

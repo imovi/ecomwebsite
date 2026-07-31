@@ -77,6 +77,19 @@ export function uploadImage(field: string): RequestHandler {
   return buildMulter(1).single(field);
 }
 
+/**
+ * Accepts one image per named field, e.g. a banner's desktop and phone crops.
+ *
+ * `multer.fields` rather than two `single` calls: a multipart body can only be
+ * parsed once, so the second parser would find the stream already consumed and
+ * silently report no file.
+ */
+export function uploadImageFields(fields: string[]): RequestHandler {
+  return buildMulter(fields.length).fields(
+    fields.map((name) => ({ name, maxCount: 1 })),
+  );
+}
+
 /** Accepts up to `maxFiles` images under `field`. */
 export function uploadImages(
   field: string,

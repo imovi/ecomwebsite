@@ -269,6 +269,7 @@ export async function create(input: CreateProductInput): Promise<ProductDto> {
         variantOptions: input.variantOptions,
         price: input.price,
         oldPrice: input.oldPrice ?? null,
+        costPrice: input.costPrice ?? null,
         stockQuantity,
         stockStatus: deriveStockStatus(stockQuantity, input.stockStatus),
         lowStockThreshold: input.lowStockThreshold,
@@ -287,6 +288,7 @@ export async function create(input: CreateProductInput): Promise<ProductDto> {
           options: variant.options,
           price: variant.price,
           oldPrice: variant.oldPrice ?? null,
+          costPrice: variant.costPrice ?? null,
           stockQuantity: variant.stockQuantity,
           isActive: variant.isActive,
           sortOrder: variant.sortOrder || index,
@@ -342,6 +344,7 @@ export async function update(id: string, input: UpdateProductInput): Promise<Pro
     ...(input.variantOptions !== undefined ? { variantOptions: input.variantOptions } : {}),
     ...(input.price !== undefined ? { price: input.price } : {}),
     ...(input.oldPrice !== undefined ? { oldPrice: input.oldPrice ?? null } : {}),
+    ...(input.costPrice !== undefined ? { costPrice: input.costPrice ?? null } : {}),
     ...(input.stockQuantity !== undefined ? { stockQuantity: input.stockQuantity } : {}),
     ...(input.lowStockThreshold !== undefined
       ? { lowStockThreshold: input.lowStockThreshold }

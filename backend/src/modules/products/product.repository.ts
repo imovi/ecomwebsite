@@ -6,6 +6,7 @@ import {
   eq,
   gte,
   inArray,
+  isNotNull,
   lte,
   ne,
   or,
@@ -427,11 +428,15 @@ export async function getCatalogFacets(
   const [brandRows, rangeRows] = await Promise.all([
     executor
       .select({
-        name: products.brand,
+        name: sql<string>`${products.brand}`,
         productCount: sql<number>`count(*)`.mapWith(Number),
       })
       .from(products)
-      .where(visible)
+      /* Brand is optional, and "no brand" is not a brand — a nameless facet
+         entry is not something a shopper can usefully filter by, and it would
+         render as a blank checkbox. Products without one simply do not appear in
+         this list; they are still returned by an unfiltered listing. */
+      .where(and(visible, isNotNull(products.brand)))
       .groupBy(products.brand)
       .orderBy(asc(products.brand)),
     executor

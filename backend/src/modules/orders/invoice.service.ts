@@ -94,7 +94,10 @@ export async function buildInvoice(orderIdOrNumber: string): Promise<InvoiceDto>
       area: order.areaText,
       deliveryZone: order.deliveryZone,
     },
-    items: items.map(toOrderItemDto),
+    /* Explicit arrow, not a bare reference: `map` would pass the index into
+       the cost flag. The invoice travels with the parcel — it must never carry
+       what the shop paid. */
+    items: items.map((item) => toOrderItemDto(item)),
     totals: {
       subtotal: order.subtotal,
       deliveryCharge: order.deliveryCharge,

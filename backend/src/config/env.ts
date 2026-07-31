@@ -52,6 +52,16 @@ export const envSchema = z
     CORS_ORIGINS: csv(["http://localhost:3000"]),
     TRUST_PROXY_HOPS: integer(0, 0, 10),
 
+    /**
+     * Public origin of the storefront.
+     *
+     * Used as the `event_source_url` on conversion events — Meta compares it
+     * against the verified domain, and a mismatch degrades attribution. Defaults
+     * to the first CORS origin, which is the storefront in every deployment
+     * shape this app supports, so it rarely needs setting explicitly.
+     */
+    STOREFRONT_URL: z.url().optional(),
+
     // --- Logging ---------------------------------------------------------
     LOG_LEVEL: z
       .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
@@ -88,6 +98,11 @@ export const envSchema = z
     CHECKOUT_RATE_LIMIT_WINDOW_MINUTES: integer(15, 1),
     CHECKOUT_RATE_LIMIT_MAX: integer(20, 1),
     QUOTE_RATE_LIMIT_MAX: integer(120, 1),
+    /* The integration "test connection" buttons. Each one makes an outbound
+       call, so an unbounded button is a way to burn the shop's Google quota or
+       have Telegram throttle the bot for everyone. Ten a minute is generous for
+       a human setting things up. */
+    INTEGRATION_TEST_RATE_LIMIT_MAX: integer(10, 1),
     LOGIN_MAX_FAILED_ATTEMPTS: integer(5, 1, 100),
     LOGIN_LOCKOUT_MINUTES: integer(15, 1),
 
@@ -99,7 +114,24 @@ export const envSchema = z
 
     // --- Seeding ---------------------------------------------------------
     SEED_ADMIN_EMAIL: z.email().optional(),
-    SEED_ADMIN_PASSWORD: z.string().optional(),
+
+    /**
+     * Blank is normalised to `undefined`, meaning "generate one".
+     *
+     * `SEED_ADMIN_PASSWORD=` with no value — which is what both env templates
+     * ship — otherwise arrives as `""`, and `""` is not nullish. A `??` fallback
+     * would keep it, and the seeder would create a super admin whose password is
+     * the empty string while reporting that it generated a strong one.
+     *
+     * The value itself is never trimmed: leading or trailing spaces in a real
+     * password are the operator's business, and silently stripping them would
+     * mean the printed credential is not the one that was stored.
+     */
+    SEED_ADMIN_PASSWORD: z
+      .string()
+      .optional()
+      .transform((value) => (value !== undefined && value.trim() !== "" ? value : undefined)),
+
     SEED_ADMIN_NAME: z.string().optional(),
   })
   /* Postgres is required unless the embedded driver is explicitly selected. */

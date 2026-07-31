@@ -40,6 +40,15 @@ function build(env: Env) {
       credentials: true,
     },
 
+    marketing: {
+      /* Falls back to the first allowed origin — the storefront — so a correct
+         `event_source_url` does not depend on remembering one more variable. */
+      storefrontUrl: (env.STOREFRONT_URL ?? env.CORS_ORIGINS[0] ?? "http://localhost:3000").replace(
+        /\/+$/,
+        "",
+      ),
+    },
+
     logging: {
       level: env.LOG_LEVEL,
       pretty: env.LOG_PRETTY,
@@ -97,6 +106,11 @@ function build(env: Env) {
         windowMs: env.CHECKOUT_RATE_LIMIT_WINDOW_MINUTES * MINUTE * 1000,
         max: env.CHECKOUT_RATE_LIMIT_MAX,
         quoteMax: env.QUOTE_RATE_LIMIT_MAX,
+      },
+      /** Admin-triggered diagnostics that call an outside service. */
+      integrationTest: {
+        windowMs: MINUTE * 1000,
+        max: env.INTEGRATION_TEST_RATE_LIMIT_MAX,
       },
     },
 

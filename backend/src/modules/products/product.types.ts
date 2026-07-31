@@ -40,6 +40,14 @@ export interface ProductVariantDto {
   imageUrl: string | null;
   isActive: boolean;
   sortOrder: number;
+  /**
+   * Admin listings only, and it must stay that way.
+   *
+   * What the shop pays is commercially sensitive — a competitor reading it off
+   * a public JSON response learns the supplier's price and the exact margin.
+   * Gated behind `includeAdminFields` like status and visibility.
+   */
+  costPrice?: number | null;
 }
 
 export interface CategorySummaryDto {
@@ -53,7 +61,8 @@ export interface ProductListItemDto {
   name: string;
   slug: string;
   sku: string;
-  brand: string;
+  /** Null when the product has no meaningful brand. */
+  brand: string | null;
   category: CategorySummaryDto | null;
   price: number;
   oldPrice: number | null;
@@ -67,6 +76,8 @@ export interface ProductListItemDto {
   /** Admin listings only. */
   status?: ProductStatus;
   isVisible?: boolean;
+  /** Admin listings only — see the note on the variant DTO. */
+  costPrice?: number | null;
   createdAt: string;
 }
 
@@ -114,6 +125,7 @@ export function toImageDto(row: ProductImageRow): ProductImageDto {
 export function toVariantDto(
   row: ProductVariantRow,
   imagesById: Map<string, ProductImageRow>,
+  includeAdminFields = false,
 ): ProductVariantDto {
   const image = row.imageId ? imagesById.get(row.imageId) : undefined;
   const discountPercent =
@@ -133,6 +145,7 @@ export function toVariantDto(
     imageUrl: image ? getStorage().url(image.storageKey) : null,
     isActive: row.isActive,
     sortOrder: row.sortOrder,
+    ...(includeAdminFields ? { costPrice: row.costPrice } : {}),
   };
 }
 
@@ -182,6 +195,7 @@ export function toListItemDto(
   if (options.includeAdminFields) {
     dto.status = product.status;
     dto.isVisible = product.isVisible;
+    dto.costPrice = product.costPrice;
   }
 
   return dto;
@@ -219,7 +233,7 @@ export function toProductDto(
     variants: (options.variants ?? [])
       .slice()
       .sort((a, b) => a.sortOrder - b.sortOrder)
-      .map((variant) => toVariantDto(variant, imagesById)),
+      .map((variant) => toVariantDto(variant, imagesById, options.includeAdminFields)),
     lowStockThreshold: product.lowStockThreshold,
     publishedAt: product.publishedAt?.toISOString() ?? null,
     updatedAt: product.updatedAt.toISOString(),
@@ -228,6 +242,7 @@ export function toProductDto(
   if (options.includeAdminFields) {
     dto.status = product.status;
     dto.isVisible = product.isVisible;
+    dto.costPrice = product.costPrice;
 
     if (options.metrics) {
       dto.metrics = {

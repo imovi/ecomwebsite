@@ -184,6 +184,34 @@ export async function findOrderByNumber(
   return rows[0];
 }
 
+/**
+ * Customer-facing lookup for public order tracking.
+ *
+ * Requires BOTH identifiers to match. The order number alone is guessable — it
+ * comes from a sequence — so the phone number is what makes this safe to expose
+ * without a login. Callers must return an identical response for "no such
+ * order" and "phone does not match", or the endpoint becomes an oracle that
+ * confirms which order numbers exist.
+ */
+export async function findOrderForCustomer(
+  orderNumber: string,
+  phone: string,
+  executor: DatabaseExecutor = getDb(),
+): Promise<OrderRow | undefined> {
+  const rows = await executor
+    .select()
+    .from(orders)
+    .where(
+      and(
+        sql`upper(${orders.orderNumber}) = ${orderNumber.trim().toUpperCase()}`,
+        eq(orders.phone, phone),
+      ),
+    )
+    .limit(1);
+
+  return rows[0];
+}
+
 export async function findOrderByIdempotencyKey(
   key: string,
   executor: DatabaseExecutor = getDb(),

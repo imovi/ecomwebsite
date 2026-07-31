@@ -116,6 +116,35 @@ export async function registerSuccessfulLogin(
     .where(eq(admins.id, id));
 }
 
+/**
+ * Recovery path for an owner locked out of their own panel.
+ *
+ * Sets a new password AND clears everything else that keeps an account out: a
+ * lockout from repeated failed logins, and a deactivated flag. Resetting only the
+ * password would send them back to the shell a second time to discover the
+ * account was also disabled.
+ *
+ * Reachable only from a shell on the server — there is no HTTP route for it, by
+ * design.
+ */
+export async function resetAdminCredentials(
+  id: string,
+  passwordHash: string,
+  executor: DatabaseExecutor = getDb(),
+): Promise<void> {
+  await executor
+    .update(admins)
+    .set({
+      passwordHash,
+      passwordChangedAt: sql`now()`,
+      isActive: true,
+      failedLoginAttempts: 0,
+      lockedUntil: null,
+      updatedAt: sql`now()`,
+    })
+    .where(eq(admins.id, id));
+}
+
 /** Used to transparently upgrade a digest hashed with weaker parameters. */
 export async function updatePasswordHash(
   id: string,

@@ -68,9 +68,24 @@ function reject(message: string, code = ErrorCode.UNSUPPORTED_FILE_TYPE): never 
  */
 export async function optimizeImage(
   input: Buffer,
-  options: { label?: string } = {},
+  options: {
+    label?: string;
+    /**
+     * Overrides the minimum edge length.
+     *
+     * The 200px floor is right for product photography, where anything smaller
+     * is an accidental thumbnail. It is wrong for a logo: a perfectly good
+     * wordmark is often 400×80, and rejecting it would make the branding feature
+     * unusable for exactly the shops most likely to have a simple logo.
+     */
+    minDimension?: number;
+    /** Names what is being uploaded in the rejection message. */
+    kind?: string;
+  } = {},
 ): Promise<OptimizedImage> {
   const label = options.label ?? "image";
+  const minDimension = options.minDimension ?? IMAGE_LIMITS.minDimension;
+  const kind = options.kind ?? "Product images";
 
   /* `limitInputPixels` makes sharp refuse an oversized image at header-parse
      time, before allocating the decode buffer. */
@@ -95,10 +110,10 @@ export async function optimizeImage(
     reject(`"${label}" has no readable dimensions.`);
   }
 
-  if (width < IMAGE_LIMITS.minDimension || height < IMAGE_LIMITS.minDimension) {
+  if (width < minDimension || height < minDimension) {
     reject(
-      `"${label}" is ${width}×${height}. Product images must be at least ` +
-        `${IMAGE_LIMITS.minDimension}×${IMAGE_LIMITS.minDimension} pixels.`,
+      `"${label}" is ${width}×${height}. ${kind} must be at least ` +
+        `${minDimension}×${minDimension} pixels.`,
     );
   }
 

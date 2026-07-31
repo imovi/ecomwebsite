@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { sendSuccess } from "../core/response.js";
 import { authRouter } from "../modules/auth/auth.routes.js";
+import { teamAdminRouter } from "../modules/admins/admin.routes.js";
 import {
   categoryAdminRouter,
   categoryPublicRouter,
@@ -13,6 +14,20 @@ import {
   checkoutPublicRouter,
   orderAdminRouter,
 } from "../modules/orders/order.routes.js";
+import { storefrontRouter } from "../modules/orders/storefront.routes.js";
+import {
+  bannerAdminRouter,
+  bannerPublicRouter,
+} from "../modules/banners/banner.routes.js";
+import { integrationsAdminRouter } from "../modules/integrations/integrations.routes.js";
+import { expensesAdminRouter } from "../modules/reports/expense.routes.js";
+import { reportsAdminRouter } from "../modules/reports/profit.routes.js";
+import {
+  abandonedAdminRouter,
+  abandonedPublicRouter,
+} from "../modules/orders/abandoned.routes.js";
+import { courierAdminRouter } from "../modules/courier/courier.routes.js";
+import { marketingAdminRouter } from "../modules/marketing/marketing.routes.js";
 import { settingsAdminRouter } from "../modules/settings/settings.routes.js";
 
 /**
@@ -48,17 +63,61 @@ v1Router.use("/auth", authRouter);
    Public routers are read-only and unauthenticated. Everything under /admin
    is authenticated and role-guarded by the router itself, so the security
    boundary is legible from this file alone. */
+v1Router.use("/banners", bannerPublicRouter);
 v1Router.use("/categories", categoryPublicRouter);
 v1Router.use("/products", productPublicRouter);
 
+v1Router.use("/admin/banners", bannerAdminRouter);
 v1Router.use("/admin/categories", categoryAdminRouter);
 v1Router.use("/admin/products", productAdminRouter);
 
 /* --- Orders (Phase 3) -----------------------------------------------------
-   Checkout is the only public write surface in the API. There is no public
-   order-lookup route by design: order numbers are sequential and an order
-   record holds a name, a phone number and a home address. */
+   Checkout is the only public WRITE surface in the API. Public order tracking
+   exists but requires both the order number and its matching phone number,
+   returns a narrow projection, and is rate limited — see storefront.routes.ts. */
 v1Router.use("/checkout", checkoutPublicRouter);
+
+/* Incomplete checkouts. Public, because it is the storefront recording a
+   customer who is still typing — same trust level as the quote endpoint. */
+v1Router.use("/checkout", abandonedPublicRouter);
+
+/* Public storefront reads: delivery pricing, contact details, and order
+   tracking that requires BOTH the order number and its matching phone. */
+v1Router.use("/storefront", storefrontRouter);
 
 v1Router.use("/admin/orders", orderAdminRouter);
 v1Router.use("/admin/settings", settingsAdminRouter);
+
+/* --- Team ----------------------------------------------------------------
+   Managing who can sign in is `super_admin` only — see the router. */
+v1Router.use("/admin/team", teamAdminRouter);
+
+/* --- Marketing -----------------------------------------------------------
+   Tracking configuration lives in store settings; this router adds the
+   connection status and the diagnostic test event the dashboard needs. */
+v1Router.use("/admin/marketing", marketingAdminRouter);
+
+/* --- Money out -----------------------------------------------------------
+   Ads, rent, salaries: the costs that never pass through an order and without
+   which "profit" is only gross margin. */
+/* --- The call list -------------------------------------------------------
+   Customers who started a checkout and left. `manager` and above: this is the
+   order desk's daily work, not a commercial setting. */
+v1Router.use("/admin/abandoned", abandonedAdminRouter);
+
+/* --- Courier -------------------------------------------------------------
+   Handing parcels over and reading their status back. `manager` and above:
+   this is the order desk's job, right after the confirmation call. */
+v1Router.use("/admin/courier", courierAdminRouter);
+
+v1Router.use("/admin/expenses", expensesAdminRouter);
+
+/* --- Profit and loss -----------------------------------------------------
+   Reads only. Margins and buying prices are the shop's most sensitive
+   commercial numbers, so this sits at `admin`, not `manager`. */
+v1Router.use("/admin/reports", reportsAdminRouter);
+
+/* --- Order integrations --------------------------------------------------
+   Telegram alerts and the Google Sheets export. Configured in store settings;
+   this router adds status and the diagnostic buttons. */
+v1Router.use("/admin/integrations", integrationsAdminRouter);

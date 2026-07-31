@@ -4,7 +4,12 @@ import {
   productStatusEnum,
   stockStatusEnum,
 } from "../../db/schema/catalog-enums.js";
-import { paginationSchema, safeString, uuidSchema } from "../../lib/validation/schemas.js";
+import {
+  paginationSchema,
+  safeString,
+  stripControlCharacters,
+  uuidSchema,
+} from "../../lib/validation/schemas.js";
 
 /**
  * Product request contracts.
@@ -18,6 +23,17 @@ const priceField = z
   .int("Price must be a whole number of taka.")
   .min(0, "Price cannot be negative.")
   .max(100_000_000, "Price is unrealistically high.");
+
+/**
+ * What the shop pays. Nullish everywhere: absent leaves it alone, `null` clears
+ * it back to "not recorded", which is a meaningfully different state from 0 —
+ * zero would claim the stock was free and report a 100% margin.
+ */
+const costPriceField = z
+  .number()
+  .int("Buying price must be a whole number of taka.")
+  .min(0, "Buying price cannot be negative.")
+  .max(100_000_000, "Buying price is unrealistically high.");
 
 const slugField = z
   .string()
@@ -39,6 +55,40 @@ const skuField = z
     /^[A-Za-z0-9][A-Za-z0-9._/-]*$/,
     "SKU may contain letters, numbers, dots, slashes, underscores and hyphens.",
   );
+
+/**
+ * Brand — optional, with blank normalised to `null`.
+ *
+ * The admin form always submits the field, so an untouched box arrives as `""`.
+ * Storing that as an empty string would make "no brand" two different values
+ * that behave differently: `group by brand` would grow a nameless facet entry,
+ * and `lower(brand) = ''` would match rows that a NULL check would not.
+ *
+ * Length is checked after cleaning, so 80 spaces is "no brand" rather than a
+ * value that is too long.
+ */
+function normalizeBrand(value: string | null): string | null {
+  if (value === null) return null;
+  const cleaned = stripControlCharacters(value).trim();
+  return cleaned === "" ? null : cleaned;
+}
+
+const brandInput = z.union([z.string(), z.null()]);
+
+/** On create, absent means "this product has no brand". */
+const createBrandField = brandInput
+  .optional()
+  .transform((value) => normalizeBrand(value ?? null))
+  .pipe(z.string().min(1).max(80, "Brand is too long.").nullable());
+
+/**
+ * On update, absent means "leave it alone" — the service only writes keys that
+ * are present. An explicit `null` or `""` is how the brand gets cleared.
+ */
+const updateBrandField = brandInput
+  .optional()
+  .transform((value) => (value === undefined ? undefined : normalizeBrand(value)))
+  .pipe(z.string().min(1).max(80, "Brand is too long.").nullish());
 
 const tagField = z
   .string()
@@ -77,6 +127,9 @@ const variantInputSchema = z
     options: z.record(z.string().min(1).max(40), z.string().min(1).max(60)),
     price: priceField,
     oldPrice: priceField.nullish(),
+    /* Omitted means "same as the product" — usually true for a colour, not for
+       a storage tier. */
+    costPrice: costPriceField.nullish(),
     stockQuantity: z.number().int().min(0).max(1_000_000).default(0),
     isActive: z.boolean().default(true),
     sortOrder: z.number().int().min(0).max(9999).default(0),
@@ -100,7 +153,7 @@ export const createProductSchema = z
     /** Derived from `name` when omitted. */
     slug: slugField.optional(),
     sku: skuField,
-    brand: safeString({ min: 1, max: 80 }),
+    brand: createBrandField,
     categoryId: uuidSchema,
 
     shortDescription: safeString({ max: 300 }).nullish(),
@@ -117,6 +170,7 @@ export const createProductSchema = z
 
     price: priceField,
     oldPrice: priceField.nullish(),
+    costPrice: costPriceField.nullish(),
 
     stockQuantity: z.number().int().min(0).max(1_000_000).default(0),
     lowStockThreshold: z.number().int().min(0).max(10_000).default(5),
@@ -149,7 +203,7 @@ export const updateProductSchema = z
     name: safeString({ min: 2, max: 200 }).optional(),
     slug: slugField.optional(),
     sku: skuField.optional(),
-    brand: safeString({ min: 1, max: 80 }).optional(),
+    brand: updateBrandField,
     categoryId: uuidSchema.optional(),
 
     shortDescription: safeString({ max: 300 }).nullish(),
@@ -169,6 +223,7 @@ export const updateProductSchema = z
 
     price: priceField.optional(),
     oldPrice: priceField.nullish(),
+    costPrice: costPriceField.nullish(),
 
     stockQuantity: z.number().int().min(0).max(1_000_000).optional(),
     lowStockThreshold: z.number().int().min(0).max(10_000).optional(),
@@ -209,6 +264,7 @@ export const updateVariantSchema = z
     options: z.record(z.string().min(1).max(40), z.string().min(1).max(60)).optional(),
     price: priceField.optional(),
     oldPrice: priceField.nullish(),
+    costPrice: costPriceField.nullish(),
     stockQuantity: z.number().int().min(0).max(1_000_000).optional(),
     isActive: z.boolean().optional(),
     sortOrder: z.number().int().min(0).max(9999).optional(),

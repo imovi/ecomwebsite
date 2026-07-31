@@ -6,6 +6,7 @@ import { productImages } from "../../db/schema/product-images.js";
 import { BadRequestError, ConflictError, ValidationError } from "../../core/errors.js";
 import { ErrorCode } from "../../core/http-status.js";
 import { createLogger } from "../../core/logger.js";
+import { markRecovered } from "./abandoned.service.js";
 import { orderEvents as orderEventBus } from "../../lib/events/order-events.js";
 import { suggestDeliveryZone } from "../../lib/geo/delivery-zone.js";
 import { calculateTotals, getSettings } from "../settings/settings.service.js";
@@ -48,6 +49,11 @@ interface ResolvedLine {
   variant: ProductVariantRow | null;
   quantity: number;
   unitPrice: number;
+  /**
+   * What this unit costs the shop right now, or null when nobody has recorded
+   * it. Captured here so it can be frozen onto the order line — see the insert.
+   */
+  unitCost: number | null;
   variantLabel: string | null;
   imageKey: string | null;
 }
@@ -212,6 +218,10 @@ async function resolveLines(
       variant,
       quantity: item.quantity,
       unitPrice: variant?.price ?? product.price,
+      /* Mirrors how price resolves: the variant's own cost wins, the product's
+         applies otherwise. A 256 GB costs more to buy than a 128 GB, but a
+         colour usually does not. */
+      unitCost: variant?.costPrice ?? product.costPrice ?? null,
       variantLabel: variant ? variantLabelOf(variant) : null,
       imageKey: imageByProduct.get(product.id) ?? null,
     };
@@ -453,6 +463,10 @@ export async function placeOrder(
         variantLabel: line.variantLabel,
         imageKey: line.imageKey,
         unitPrice: line.unitPrice,
+        /* Frozen for the same reason as the price. Profit read from the
+           product's CURRENT buying price would rewrite every past order the
+           day a supplier raises his rate. */
+        unitCost: line.unitCost,
         quantity: line.quantity,
         lineTotal: line.unitPrice * line.quantity,
       })),
@@ -496,8 +510,38 @@ export async function placeOrder(
     phone: created.order.phone,
     grandTotal: created.order.grandTotal,
     itemCount: created.order.itemCount,
+    contents: created.items.map((item) => ({
+      sku: item.sku,
+      name: item.productName,
+      variantLabel: item.variantLabel,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      lineTotal: item.lineTotal,
+    })),
+    address: created.order.address,
+    areaText: created.order.areaText,
+    deliveryZone: created.order.deliveryZone,
+    subtotal: created.order.subtotal,
+    deliveryCharge: created.order.deliveryCharge,
+    /* The note is never stored on the order row — it lives in the timeline —
+       so it comes from the request that is still in scope here. */
+    customerNote: input.customerNote ?? null,
     placedAt: created.order.createdAt,
   });
+
+  /**
+   * Close any incomplete-checkout lead for this number.
+   *
+   * After the commit and outside it: this is bookkeeping for the shop's call
+   * list, and it must never be able to fail an order that has already been
+   * paid for in stock. Matching on the phone rather than a session covers the
+   * customer who gave up on their phone and finished on a laptop.
+   */
+  try {
+    await markRecovered(created.order.phone, created.order.id);
+  } catch (error) {
+    log.error({ err: error, orderId: created.order.id }, "Could not close the abandoned lead");
+  }
 
   return {
     order: toOrderConfirmationDto(created.order, created.items),

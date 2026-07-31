@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import { createLogger } from "../../core/logger.js";
-import type { OrderStatus } from "../../db/schema/order-enums.js";
+import type { DeliveryZone, OrderStatus } from "../../db/schema/order-enums.js";
 
 /**
  * Domain event hooks.
@@ -32,6 +32,34 @@ export interface OrderCreatedEvent {
   phone: string;
   grandTotal: number;
   itemCount: number;
+  /**
+   * Line contents, for ad-platform conversion reporting.
+   *
+   * Carried on the event rather than re-queried by the subscriber: the order is
+   * immutable at this instant, and a subscriber that re-reads it could pick up
+   * an admin edit made moments later and report a value the customer never
+   * agreed to.
+   */
+  contents: {
+    sku: string;
+    /** Product name as it was ordered, for a human-readable notification. */
+    name: string;
+    variantLabel: string | null;
+    quantity: number;
+    unitPrice: number;
+    lineTotal: number;
+  }[];
+
+  /* Delivery and money, carried for the same reason as `contents`: a subscriber
+     that re-read the order could pick up an admin correction made seconds later
+     and report figures the customer never agreed to. */
+  address: string;
+  areaText: string;
+  deliveryZone: DeliveryZone;
+  subtotal: number;
+  deliveryCharge: number;
+  customerNote: string | null;
+
   placedAt: Date;
 }
 

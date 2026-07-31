@@ -58,7 +58,7 @@ interface Product {
   name: string;
   slug: string;
   sku: string;
-  brand: string;
+  brand: string | null;
   price: number;
   oldPrice: number | null;
   discountPercent: number;
@@ -1317,5 +1317,445 @@ describe("products — trending is automatic", () => {
       });
       assert.equal(res.status, 404, `${path} must not exist`);
     }
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Optional brand.
+ *
+ * Last in the file on purpose: these tests add products, and earlier suites
+ * assert exact catalogue counts against the shared database. Running them here
+ * keeps the new fixtures from breaking assertions that have nothing to do with
+ * brands.
+ */
+describe("products — optional brand", () => {
+  it("creates a product with no brand at all", async () => {
+    const res = await api<Envelope<{ product: Product }>>(
+      ctx.baseUrl,
+      "/api/v1/admin/products",
+      {
+        method: "POST",
+        accessToken: adminToken,
+        body: {
+          name: "Generic USB-C Cable 1m",
+          sku: "GEN-USBC-1M",
+          categoryId: phonesCategoryId,
+          price: 250,
+          stockQuantity: 40,
+          status: "active",
+        },
+      },
+    );
+
+    assert.equal(res.status, 201);
+    assert.equal(res.body.data.product.brand, null, "an omitted brand is stored as null");
+  });
+
+  it("treats a blank brand as no brand rather than an empty string", async () => {
+    for (const [label, brand] of [
+      ["empty string", ""],
+      ["whitespace only", "   "],
+      ["explicit null", null],
+    ] as [string, string | null][]) {
+      const res = await api<Envelope<{ product: Product }>>(
+        ctx.baseUrl,
+        "/api/v1/admin/products",
+        {
+          method: "POST",
+          accessToken: adminToken,
+          body: {
+            name: `Blank Brand ${label}`,
+            sku: `BLANK-${label.replace(/[^a-z]/gi, "").toUpperCase()}`,
+            categoryId: phonesCategoryId,
+            price: 100,
+          },
+        },
+      );
+      assert.equal(res.status, 201, label);
+      assert.equal(res.body.data.product.brand, null, label);
+
+      /* Same normalisation when the field is explicitly present. */
+      const withField = await api<Envelope<{ product: Product }>>(
+        ctx.baseUrl,
+        "/api/v1/admin/products",
+        {
+          method: "POST",
+          accessToken: adminToken,
+          body: {
+            name: `Blank Brand Field ${label}`,
+            sku: `BLANKF-${label.replace(/[^a-z]/gi, "").toUpperCase()}`,
+            categoryId: phonesCategoryId,
+            price: 100,
+            brand,
+          },
+        },
+      );
+      assert.equal(withField.status, 201, `${label} (explicit)`);
+      assert.equal(withField.body.data.product.brand, null, `${label} (explicit)`);
+    }
+  });
+
+  it("publishes a product that has no brand", async () => {
+    const created = await api<Envelope<{ product: Product }>>(
+      ctx.baseUrl,
+      "/api/v1/admin/products",
+      {
+        method: "POST",
+        accessToken: adminToken,
+        body: {
+          name: "Unbranded Phone Stand",
+          sku: "UNBR-STAND",
+          categoryId: phonesCategoryId,
+          price: 450,
+          stockQuantity: 10,
+        },
+      },
+    );
+    assert.equal(created.status, 201);
+
+    const published = await api<Envelope<{ product: Product }>>(
+      ctx.baseUrl,
+      `/api/v1/admin/products/${created.body.data.product.id}/status`,
+      { method: "PATCH", accessToken: adminToken, body: { status: "active" } },
+    );
+    assert.equal(published.status, 200, "no brand must not block publishing");
+    assert.equal(published.body.data.product.status, "active");
+
+    /* And it is genuinely reachable by a customer. */
+    const publicRes = await api<Envelope<{ product: Product }>>(
+      ctx.baseUrl,
+      "/api/v1/products/unbranded-phone-stand",
+    );
+    assert.equal(publicRes.status, 200);
+    assert.equal(publicRes.body.data.product.brand, null);
+  });
+
+  it("clears an existing brand when sent null, and keeps it when omitted", async () => {
+    const created = await api<Envelope<{ product: Product }>>(
+      ctx.baseUrl,
+      "/api/v1/admin/products",
+      {
+        method: "POST",
+        accessToken: adminToken,
+        body: {
+          name: "Branded Then Cleared",
+          sku: "BRAND-CLEAR",
+          categoryId: phonesCategoryId,
+          price: 900,
+          brand: "Anker",
+        },
+      },
+    );
+    assert.equal(created.body.data.product.brand, "Anker");
+    const id = created.body.data.product.id;
+
+    /* An update that does not mention brand must leave it alone — otherwise
+       editing a price would silently wipe the brand. */
+    const untouched = await api<Envelope<{ product: Product }>>(
+      ctx.baseUrl,
+      `/api/v1/admin/products/${id}`,
+      { method: "PATCH", accessToken: adminToken, body: { price: 950 } },
+    );
+    assert.equal(untouched.body.data.product.brand, "Anker", "omitted brand is unchanged");
+
+    const cleared = await api<Envelope<{ product: Product }>>(
+      ctx.baseUrl,
+      `/api/v1/admin/products/${id}`,
+      { method: "PATCH", accessToken: adminToken, body: { brand: null } },
+    );
+    assert.equal(cleared.status, 200);
+    assert.equal(cleared.body.data.product.brand, null, "explicit null clears it");
+  });
+
+  it("still rejects an empty update body now that brand is optional", async () => {
+    const res = await api<Envelope<never>>(ctx.baseUrl, "/api/v1/admin/products/00000000-0000-4000-8000-000000000000", {
+      method: "PATCH",
+      accessToken: adminToken,
+      body: {},
+    });
+    /* 422, not 404: validation runs before the row is looked up. The point is
+       that an all-optional schema has not become an accept-anything schema. */
+    assert.equal(res.status, 422);
+  });
+
+});
+
+/* -------------------------------------------------------------------------- */
+/* Branding — logo and banners                                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Shop branding.
+ *
+ * Both of these used to require a code change — the logo was a hardcoded
+ * wordmark, the banners were committed SVGs — so the properties worth pinning
+ * down are the ones that make them safely operator-editable: the storefront must
+ * see changes without a deploy, and the endpoints must not let whoever holds an
+ * admin session redirect the shop's most-clicked element off-site.
+ */
+describe("branding — logo", () => {
+  interface Settings {
+    store: { logoUrl: string | null; name: string };
+  }
+
+  it("starts with no logo, so the wordmark is used", async () => {
+    const res = await api<Envelope<{ settings: Settings }>>(
+      ctx.baseUrl,
+      "/api/v1/admin/settings",
+      { accessToken: adminToken },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.data.settings.store.logoUrl, null);
+  });
+
+  it("accepts a wide wordmark that the product image floor would reject", async () => {
+    /* 420×90 — well under the 200px minimum that is right for product photos.
+       Enforcing that here would make the feature unusable for exactly the shops
+       most likely to have a simple logo. */
+    const res = await uploadFiles(
+      ctx.baseUrl,
+      "/api/v1/admin/settings/logo",
+      [{ field: "logo", filename: "wordmark.png", buffer: await makeTestImage(420, 90) }],
+      { accessToken: adminToken },
+    );
+
+    assert.equal(res.status, 200);
+    const body = res.body as Envelope<{ settings: Settings }>;
+    assert.ok(body.data.settings.store.logoUrl, "a logo URL is returned");
+    assert.match(body.data.settings.store.logoUrl ?? "", /\/uploads\/branding\//);
+  });
+
+  it("publishes the logo to the storefront without a login", async () => {
+    const res = await api<Envelope<{ settings: { store: { logoUrl: string | null } } }>>(
+      ctx.baseUrl,
+      "/api/v1/storefront/settings",
+    );
+
+    assert.equal(res.status, 200);
+    assert.ok(
+      res.body.data.settings.store.logoUrl,
+      "the header needs this on every page, so it is public",
+    );
+  });
+
+  it("replaces the logo and removes it again", async () => {
+    const replaced = await uploadFiles(
+      ctx.baseUrl,
+      "/api/v1/admin/settings/logo",
+      [{ field: "logo", filename: "new-logo.png", buffer: await makeTestImage(500, 120) }],
+      { accessToken: adminToken },
+    );
+    assert.equal(replaced.status, 200);
+
+    const removed = await api<Envelope<{ settings: Settings }>>(
+      ctx.baseUrl,
+      "/api/v1/admin/settings/logo",
+      { method: "DELETE", accessToken: adminToken },
+    );
+
+    assert.equal(removed.status, 200);
+    assert.equal(
+      removed.body.data.settings.store.logoUrl,
+      null,
+      "removing falls back to the wordmark",
+    );
+  });
+
+  it("rejects a logo upload with no file", async () => {
+    const res = await api(ctx.baseUrl, "/api/v1/admin/settings/logo", {
+      method: "POST",
+      accessToken: adminToken,
+      body: {},
+    });
+    assert.equal(res.status, 400);
+  });
+
+  it("is closed to managers", async () => {
+    const res = await uploadFiles(
+      ctx.baseUrl,
+      "/api/v1/admin/settings/logo",
+      [{ field: "logo", filename: "nope.png", buffer: await makeTestImage(400, 100) }],
+      { accessToken: managerToken },
+    );
+    assert.equal(res.status, 403);
+  });
+});
+
+describe("branding — banners", () => {
+  interface Banner {
+    id: string;
+    imageUrl: string;
+    imageMobileUrl: string | null;
+    alt: string;
+    href: string;
+    sortOrder: number;
+    isActive: boolean;
+  }
+
+  let firstId = "";
+  let secondId = "";
+
+  it("starts empty", async () => {
+    const res = await api<Envelope<{ banners: Banner[] }>>(ctx.baseUrl, "/api/v1/banners");
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body.data.banners, []);
+  });
+
+  it("requires an image to create one", async () => {
+    const res = await api(ctx.baseUrl, "/api/v1/admin/banners", {
+      method: "POST",
+      accessToken: adminToken,
+      body: {},
+    });
+    /* A banner with no artwork is a blank slot on the most valuable space on the
+       homepage, so this is refused rather than created empty. */
+    assert.equal(res.status, 400);
+  });
+
+  it("creates a banner from an uploaded image", async () => {
+    const res = await uploadFiles(
+      ctx.baseUrl,
+      "/api/v1/admin/banners",
+      [{ field: "image", filename: "sale.png", buffer: await makeTestImage(1600, 640) }],
+      {
+        accessToken: adminToken,
+        fields: { alt: "Eid sale", href: "/category/audio", isActive: "true" },
+      },
+    );
+
+    assert.equal(res.status, 201);
+    const banner = (res.body as Envelope<{ banner: Banner }>).data.banner;
+    assert.match(banner.imageUrl, /\/uploads\/banners\//);
+    assert.equal(banner.alt, "Eid sale");
+    assert.equal(banner.href, "/category/audio");
+    assert.equal(banner.imageMobileUrl, null, "no phone crop was supplied");
+    assert.equal(banner.sortOrder, 0);
+    firstId = banner.id;
+  });
+
+  it("refuses a link that leaves the site", async () => {
+    /* The banner is the single most-clicked element on the shop. An absolute URL
+       here would let whoever holds an admin session turn the homepage into a
+       redirect to anywhere. */
+    for (const href of [
+      "https://evil.example",
+      "//evil.example",
+      "javascript:alert(1)",
+      "http://gng.com.bd.evil.example",
+    ]) {
+      const res = await uploadFiles(
+        ctx.baseUrl,
+        "/api/v1/admin/banners",
+        [{ field: "image", filename: "x.png", buffer: await makeTestImage(1200, 500) }],
+        { accessToken: adminToken, fields: { href } },
+      );
+      assert.equal(res.status, 422, href);
+    }
+  });
+
+  it("appends new banners to the end rather than reshuffling", async () => {
+    const res = await uploadFiles(
+      ctx.baseUrl,
+      "/api/v1/admin/banners",
+      [{ field: "image", filename: "second.png", buffer: await makeTestImage(1500, 600) }],
+      { accessToken: adminToken, fields: { alt: "Second" } },
+    );
+
+    assert.equal(res.status, 201);
+    const banner = (res.body as Envelope<{ banner: Banner }>).data.banner;
+    assert.equal(banner.sortOrder, 1, "an operator adding a banner is not reordering the others");
+    secondId = banner.id;
+  });
+
+  it("hides an inactive banner from the storefront but not from the admin", async () => {
+    const patched = await uploadFiles(
+      ctx.baseUrl,
+      `/api/v1/admin/banners/${secondId}`,
+      [],
+      { accessToken: adminToken, method: "PATCH", fields: { isActive: "false" } },
+    );
+    assert.equal(patched.status, 200);
+
+    const publicRes = await api<Envelope<{ banners: Banner[] }>>(ctx.baseUrl, "/api/v1/banners");
+    assert.equal(publicRes.body.data.banners.length, 1);
+    assert.equal(publicRes.body.data.banners[0]?.id, firstId);
+
+    const adminRes = await api<Envelope<{ banners: Banner[] }>>(
+      ctx.baseUrl,
+      "/api/v1/admin/banners",
+      { accessToken: adminToken },
+    );
+    assert.equal(adminRes.body.data.banners.length, 2, "switched off, not deleted");
+  });
+
+  it("reorders banners", async () => {
+    const res = await api<Envelope<{ banners: Banner[] }>>(
+      ctx.baseUrl,
+      "/api/v1/admin/banners/reorder",
+      {
+        method: "PATCH",
+        accessToken: adminToken,
+        body: {
+          order: [
+            { id: secondId, sortOrder: 0 },
+            { id: firstId, sortOrder: 1 },
+          ],
+        },
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.data.banners[0]?.id, secondId);
+    assert.equal(res.body.data.banners[1]?.id, firstId);
+  });
+
+  it("rejects a reorder listing the same banner twice", async () => {
+    const res = await api(ctx.baseUrl, "/api/v1/admin/banners/reorder", {
+      method: "PATCH",
+      accessToken: adminToken,
+      body: {
+        order: [
+          { id: firstId, sortOrder: 0 },
+          { id: firstId, sortOrder: 1 },
+        ],
+      },
+    });
+    assert.equal(res.status, 422);
+  });
+
+  it("deletes a banner", async () => {
+    const res = await api(ctx.baseUrl, `/api/v1/admin/banners/${secondId}`, {
+      method: "DELETE",
+      accessToken: adminToken,
+    });
+    assert.equal(res.status, 204);
+
+    const adminRes = await api<Envelope<{ banners: Banner[] }>>(
+      ctx.baseUrl,
+      "/api/v1/admin/banners",
+      { accessToken: adminToken },
+    );
+    assert.equal(adminRes.body.data.banners.length, 1);
+  });
+
+  it("is readable by the public but writable only by an admin", async () => {
+    const publicRead = await api(ctx.baseUrl, "/api/v1/banners");
+    assert.equal(publicRead.status, 200);
+
+    const anonWrite = await api(ctx.baseUrl, "/api/v1/admin/banners", {
+      method: "POST",
+      body: {},
+    });
+    assert.equal(anonWrite.status, 401);
+
+    const managerWrite = await api(ctx.baseUrl, "/api/v1/admin/banners", {
+      method: "POST",
+      accessToken: managerToken,
+      body: {},
+    });
+    assert.equal(managerWrite.status, 403);
   });
 });

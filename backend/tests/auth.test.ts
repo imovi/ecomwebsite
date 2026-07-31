@@ -389,3 +389,59 @@ describe("rate limiting", () => {
     assert.ok(limited.headers.get("retry-after"), "Retry-After is set");
   });
 });
+
+/* -------------------------------------------------------------------------- */
+
+describe("seed credential handling", () => {
+  /**
+   * Regression guard for a silent, launch-blocking bug.
+   *
+   * `SEED_ADMIN_PASSWORD=` with no value — which is exactly what the shipped env
+   * templates contain — used to reach the seeder as `""`. A truthiness check said
+   * "no password configured, one was generated", while a `??` fallback kept the
+   * empty string, so the first super admin was created with a blank password and
+   * the operator was told to save a credential that had never been generated.
+   *
+   * The account was unusable (login requires at least one character) and the
+   * seeder's idempotency guard then refused to replace it, which is a dead end on
+   * the exact path the launch runbook prescribes.
+   *
+   * Tested at the env layer because that is where the fix lives: blank is
+   * normalised to `undefined`, so every consumer sees "absent" rather than a
+   * value that is present but empty.
+   */
+  it("treats a blank SEED_ADMIN_PASSWORD as absent, not as an empty password", async () => {
+    const { loadEnv } = await import("../src/config/env.js");
+
+    const base = {
+      NODE_ENV: "test",
+      JWT_ACCESS_SECRET: "x".repeat(48),
+      DATABASE_DRIVER: "pglite",
+      PGLITE_DATA_DIR: "memory://",
+    } as Record<string, string>;
+
+    assert.equal(
+      loadEnv({ ...base, SEED_ADMIN_PASSWORD: "" }).SEED_ADMIN_PASSWORD,
+      undefined,
+      "an empty value means generate one",
+    );
+
+    assert.equal(
+      loadEnv({ ...base, SEED_ADMIN_PASSWORD: "   " }).SEED_ADMIN_PASSWORD,
+      undefined,
+      "whitespace only is still absent",
+    );
+
+    assert.equal(
+      loadEnv({ ...base, SEED_ADMIN_PASSWORD: "CorrectHorse123" }).SEED_ADMIN_PASSWORD,
+      "CorrectHorse123",
+      "a real password is preserved exactly",
+    );
+
+    assert.equal(
+      loadEnv({ ...base, SEED_ADMIN_PASSWORD: "  padded pass  " }).SEED_ADMIN_PASSWORD,
+      "  padded pass  ",
+      "a present password is never trimmed — the printed credential must be the stored one",
+    );
+  });
+});

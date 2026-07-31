@@ -1657,6 +1657,131 @@ describe("orders — invoice", () => {
 });
 
 /* -------------------------------------------------------------------------- */
+/* Public storefront endpoints                                                */
+/* -------------------------------------------------------------------------- */
+
+describe("storefront — public settings", () => {
+  it("exposes delivery pricing and contact details without a login", async () => {
+    const res = await api<
+      Envelope<{
+        settings: {
+          delivery: { insideDhaka: number; outsideDhaka: number };
+          store: { name: string; phone: string };
+        };
+      }>
+    >(ctx.baseUrl, "/api/v1/storefront/settings");
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.data.settings.delivery.insideDhaka, 80);
+    assert.equal(res.body.data.settings.delivery.outsideDhaka, 130);
+    assert.ok(res.body.data.settings.store.name);
+  });
+
+  it("does not leak internal thresholds or the invoice footer", async () => {
+    const res = await api(ctx.baseUrl, "/api/v1/storefront/settings");
+    const body = JSON.stringify(res.body);
+
+    for (const secret of ["minimumOrderValue", "maxQuantityPerItem", "invoiceFooter"]) {
+      assert.ok(!body.includes(secret), `${secret} must stay admin-only`);
+    }
+  });
+});
+
+describe("storefront — order tracking", () => {
+  it("returns the order for a matching number and phone", async () => {
+    const number = await createOrderOk({ phone: "01755667788" });
+
+    const res = await api<
+      Envelope<{
+        order: {
+          orderNumber: string;
+          status: string;
+          grandTotal: number;
+          items: { productName: string; quantity: number }[];
+        };
+      }>
+    >(ctx.baseUrl, "/api/v1/storefront/track-order", {
+      method: "POST",
+      body: { orderNumber: number, phone: "01755667788" },
+    });
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.data.order.orderNumber, number);
+    assert.equal(res.body.data.order.status, "pending");
+    assert.ok(res.body.data.order.items.length >= 1);
+  });
+
+  it("accepts any phone format the customer might type", async () => {
+    const number = await createOrderOk({ phone: "01766554433" });
+
+    for (const phone of ["01766554433", "+8801766554433", "017 6655 4433"]) {
+      const res = await api(ctx.baseUrl, "/api/v1/storefront/track-order", {
+        method: "POST",
+        body: { orderNumber: number, phone },
+      });
+      assert.equal(res.status, 200, `rejected ${phone}`);
+    }
+  });
+
+  it("is case-insensitive on the order number", async () => {
+    const number = await createOrderOk({ phone: "01744332211" });
+
+    const res = await api(ctx.baseUrl, "/api/v1/storefront/track-order", {
+      method: "POST",
+      body: { orderNumber: number.toLowerCase(), phone: "01744332211" },
+    });
+    assert.equal(res.status, 200);
+  });
+
+  it("cannot be used to enumerate order numbers", async () => {
+    const number = await createOrderOk({ phone: "01712345678" });
+
+    /* A real order with the wrong phone, and an order that does not exist,
+       must be indistinguishable — otherwise the endpoint confirms which
+       sequential numbers are real. */
+    const wrongPhone = await api<Envelope<never>>(
+      ctx.baseUrl,
+      "/api/v1/storefront/track-order",
+      { method: "POST", body: { orderNumber: number, phone: "01999999999" } },
+    );
+    const noSuchOrder = await api<Envelope<never>>(
+      ctx.baseUrl,
+      "/api/v1/storefront/track-order",
+      { method: "POST", body: { orderNumber: "GNG-999999", phone: "01999999999" } },
+    );
+
+    assert.equal(wrongPhone.status, 404);
+    assert.equal(noSuchOrder.status, 404);
+    assert.equal(wrongPhone.body.error?.code, noSuchOrder.body.error?.code);
+    assert.equal(wrongPhone.body.error?.message, noSuchOrder.body.error?.message);
+  });
+
+  it("exposes no address, notes, timeline or customer name", async () => {
+    const number = await createOrderOk({ phone: "01733221100" });
+
+    await api(ctx.baseUrl, `/api/v1/admin/orders/${number}`, { accessToken: adminToken });
+
+    const res = await api(ctx.baseUrl, "/api/v1/storefront/track-order", {
+      method: "POST",
+      body: { orderNumber: number, phone: "01733221100" },
+    });
+
+    const body = JSON.stringify(res.body);
+    for (const field of ["address", "areaText", "internalNotes", "timeline", "customerName", "version"]) {
+      assert.ok(!body.includes(field), `${field} must not be public`);
+    }
+  });
+
+  it("validates the phone number", async () => {
+    const res = await api(ctx.baseUrl, "/api/v1/storefront/track-order", {
+      method: "POST",
+      body: { orderNumber: "GNG-10001", phone: "123" },
+    });
+    assert.equal(res.status, 422);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
 /* Event hooks                                                                */
 /* -------------------------------------------------------------------------- */
 
@@ -1710,5 +1835,436 @@ describe("orders — notification event hooks", () => {
     } finally {
       off();
     }
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Meta tracking configuration                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Meta / Facebook tracking, configured from the dashboard.
+ *
+ * The property that matters most is the one easiest to break by accident: the
+ * Conversions API token must never be readable back out of the API. The rest is
+ * ordinary settings plumbing.
+ *
+ * Last in the file because it flips the tracking switch on the shared settings
+ * row, and leaving that on would change what earlier suites observe.
+ */
+describe("marketing — Meta tracking settings", () => {
+  interface Tracking {
+    pixelId: string;
+    testEventCode: string;
+    domainVerification: string;
+    enabled: boolean;
+    hasCapiToken: boolean;
+    capiTokenHint: string;
+  }
+
+  const TOKEN = "EAAG_fake_token_for_tests_0123456789abcdef";
+
+  it("starts with tracking off and nothing configured", async () => {
+    const res = await api<Envelope<{ settings: { tracking: Tracking } }>>(
+      ctx.baseUrl,
+      "/api/v1/admin/settings",
+      { accessToken: adminToken },
+    );
+
+    assert.equal(res.status, 200);
+    const { tracking } = res.body.data.settings;
+    assert.equal(
+      tracking.enabled,
+      false,
+      "must default to off — adding columns must not start sending events",
+    );
+    assert.equal(tracking.pixelId, "");
+    assert.equal(tracking.hasCapiToken, false);
+  });
+
+  it("saves a pixel id, verification code and test code", async () => {
+    const res = await api<Envelope<{ settings: { tracking: Tracking } }>>(
+      ctx.baseUrl,
+      "/api/v1/admin/settings",
+      {
+        method: "PATCH",
+        accessToken: adminToken,
+        body: {
+          tracking: {
+            pixelId: "1234567890123456",
+            domainVerification: "abc123def456ghi789",
+            testEventCode: "TEST9999",
+          },
+        },
+      },
+    );
+
+    assert.equal(res.status, 200);
+    const { tracking } = res.body.data.settings;
+    assert.equal(tracking.pixelId, "1234567890123456");
+    assert.equal(tracking.domainVerification, "abc123def456ghi789");
+    assert.equal(tracking.testEventCode, "TEST9999");
+  });
+
+  it("rejects a malformed pixel id and verification code", async () => {
+    for (const tracking of [
+      { pixelId: "not-a-number" },
+      { pixelId: "123" },
+      { domainVerification: "has spaces and markup" },
+    ]) {
+      const res = await api(ctx.baseUrl, "/api/v1/admin/settings", {
+        method: "PATCH",
+        accessToken: adminToken,
+        body: { tracking },
+      });
+      assert.equal(res.status, 422, JSON.stringify(tracking));
+    }
+  });
+
+  it("never returns the Conversions API token, only a masked hint", async () => {
+    const saved = await api<Envelope<{ settings: { tracking: Tracking } }>>(
+      ctx.baseUrl,
+      "/api/v1/admin/settings",
+      {
+        method: "PATCH",
+        accessToken: adminToken,
+        body: { tracking: { capiToken: TOKEN } },
+      },
+    );
+
+    assert.equal(saved.status, 200);
+    assert.equal(saved.body.data.settings.tracking.hasCapiToken, true);
+    assert.equal(
+      saved.body.data.settings.tracking.capiTokenHint,
+      "••••" + TOKEN.slice(-4),
+      "the hint shows only the last four characters",
+    );
+
+    /* The whole point: the raw token must not appear anywhere in the response,
+       neither on the write that set it nor on any later read. */
+    assert.ok(
+      !JSON.stringify(saved.body).includes(TOKEN),
+      "the token must never be echoed back on write",
+    );
+
+    const read = await api<Envelope<unknown>>(ctx.baseUrl, "/api/v1/admin/settings", {
+      accessToken: adminToken,
+    });
+    assert.ok(
+      !JSON.stringify(read.body).includes(TOKEN),
+      "the token must never be readable back",
+    );
+  });
+
+  it("keeps the stored token when other tracking fields are saved", async () => {
+    /* The dashboard cannot re-send a token it is never given, so omitting the
+       field has to mean "unchanged" — otherwise saving a pixel id would silently
+       disable server-side tracking. */
+    const res = await api<Envelope<{ settings: { tracking: Tracking } }>>(
+      ctx.baseUrl,
+      "/api/v1/admin/settings",
+      {
+        method: "PATCH",
+        accessToken: adminToken,
+        body: { tracking: { pixelId: "9876543210987654" } },
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.data.settings.tracking.pixelId, "9876543210987654");
+    assert.equal(res.body.data.settings.tracking.hasCapiToken, true, "token survived");
+  });
+
+  it("clears the token only when explicitly sent null", async () => {
+    const res = await api<Envelope<{ settings: { tracking: Tracking } }>>(
+      ctx.baseUrl,
+      "/api/v1/admin/settings",
+      {
+        method: "PATCH",
+        accessToken: adminToken,
+        body: { tracking: { capiToken: null } },
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.data.settings.tracking.hasCapiToken, false);
+    assert.equal(res.body.data.settings.tracking.capiTokenHint, "");
+  });
+
+  it("reports why tracking is not sending, as a checklist", async () => {
+    const res = await api<
+      Envelope<{
+        status: {
+          ready: boolean;
+          problem: string | null;
+          pixelConfigured: boolean;
+          tokenConfigured: boolean;
+          trackingEnabled: boolean;
+          testMode: boolean;
+          eventSourceUrl: string;
+        };
+      }>
+    >(ctx.baseUrl, "/api/v1/admin/marketing/status", { accessToken: adminToken });
+
+    assert.equal(res.status, 200);
+    const { status } = res.body.data;
+    assert.equal(status.ready, false);
+    /* A pixel id is set and the token was just cleared, so the missing token is
+       the blocker that must be reported — not the switch being off. */
+    assert.equal(status.problem, "missing_token");
+    assert.equal(status.pixelConfigured, true);
+    assert.equal(status.tokenConfigured, false);
+    assert.ok(status.eventSourceUrl.endsWith("/checkout"));
+  });
+
+  it("refuses to send a test event when nothing is configured", async () => {
+    const res = await api<Envelope<{ result: { sent: boolean; reason?: string } }>>(
+      ctx.baseUrl,
+      "/api/v1/admin/marketing/test-event",
+      { method: "POST", accessToken: adminToken, body: {} },
+    );
+
+    /* 200 with a reason, not a 500: "you have not added a token yet" is a
+       successful diagnostic. No network call is made, so this never reaches
+       Meta. */
+    assert.equal(res.status, 200);
+    assert.equal(res.body.data.result.sent, false);
+    assert.match(res.body.data.result.reason ?? "", /token/i);
+  });
+
+  it("is closed to managers", async () => {
+    const status = await api(ctx.baseUrl, "/api/v1/admin/marketing/status", {
+      accessToken: managerToken,
+    });
+    const test = await api(ctx.baseUrl, "/api/v1/admin/marketing/test-event", {
+      method: "POST",
+      accessToken: managerToken,
+      body: {},
+    });
+    const write = await api(ctx.baseUrl, "/api/v1/admin/settings", {
+      method: "PATCH",
+      accessToken: managerToken,
+      body: { tracking: { enabled: true } },
+    });
+
+    assert.equal(status.status, 403);
+    assert.equal(test.status, 403);
+    assert.equal(write.status, 403);
+  });
+
+  it("requires authentication", async () => {
+    const status = await api(ctx.baseUrl, "/api/v1/admin/marketing/status");
+    assert.equal(status.status, 401);
+  });
+
+  it("exposes the pixel id publicly only while tracking is enabled", async () => {
+    interface PublicSettings {
+      settings: { tracking: { pixelId: string; domainVerification: string } };
+    }
+
+    const whileOff = await api<Envelope<PublicSettings>>(
+      ctx.baseUrl,
+      "/api/v1/storefront/settings",
+    );
+    assert.equal(
+      whileOff.body.data.settings.tracking.pixelId,
+      "",
+      "a configured but disabled pixel must not load in the browser",
+    );
+
+    await api(ctx.baseUrl, "/api/v1/admin/settings", {
+      method: "PATCH",
+      accessToken: adminToken,
+      body: { tracking: { enabled: true } },
+    });
+
+    const whileOn = await api<Envelope<PublicSettings>>(
+      ctx.baseUrl,
+      "/api/v1/storefront/settings",
+    );
+    assert.equal(whileOn.body.data.settings.tracking.pixelId, "9876543210987654");
+    assert.equal(whileOn.body.data.settings.tracking.domainVerification, "abc123def456ghi789");
+  });
+
+  it("never exposes the token or test code on the public endpoint", async () => {
+    await api(ctx.baseUrl, "/api/v1/admin/settings", {
+      method: "PATCH",
+      accessToken: adminToken,
+      body: { tracking: { capiToken: TOKEN } },
+    });
+
+    const res = await api<Envelope<unknown>>(ctx.baseUrl, "/api/v1/storefront/settings");
+    const serialised = JSON.stringify(res.body);
+
+    assert.ok(!serialised.includes(TOKEN), "token must never be public");
+    assert.ok(!serialised.includes("TEST9999"), "test event code must never be public");
+    assert.ok(!serialised.includes("capiToken"), "no token field at all");
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Google Tag Manager                                                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Google Tag Manager, configured from the dashboard.
+ *
+ * Unlike Meta there is no secret involved — a container id is public by nature —
+ * so the properties worth pinning down are different: the id must be normalised
+ * to upper case (the snippet is case-sensitive, and a silently lower-cased id
+ * loads nothing and reports no error), and its switch must be independent of the
+ * Facebook one.
+ */
+describe("marketing — Google Tag Manager", () => {
+  interface Tracking {
+    gtmContainerId: string;
+    gtmEnabled: boolean;
+    pixelId: string;
+    enabled: boolean;
+  }
+
+  it("saves a container id and upper-cases it", async () => {
+    const res = await api<Envelope<{ settings: { tracking: Tracking } }>>(
+      ctx.baseUrl,
+      "/api/v1/admin/settings",
+      {
+        method: "PATCH",
+        accessToken: adminToken,
+        /* Lower case, as a shop owner would paste it out of an email. */
+        body: { tracking: { gtmContainerId: "gtm-abc1234" } },
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.data.settings.tracking.gtmContainerId, "GTM-ABC1234");
+  });
+
+  it("rejects anything that is not a container id", async () => {
+    for (const gtmContainerId of [
+      "G-ABC1234", // a GA4 measurement id, the most likely mistake
+      "AW-123456789", // a Google Ads id
+      "GTM-", // truncated
+      "GTM-AB", // too short
+      "GTM-ABC 1234", // whitespace
+      "<script>alert(1)</script>",
+    ]) {
+      const res = await api(ctx.baseUrl, "/api/v1/admin/settings", {
+        method: "PATCH",
+        accessToken: adminToken,
+        body: { tracking: { gtmContainerId } },
+      });
+      assert.equal(res.status, 422, gtmContainerId);
+    }
+  });
+
+  it("clears the container id with an empty string", async () => {
+    const cleared = await api<Envelope<{ settings: { tracking: Tracking } }>>(
+      ctx.baseUrl,
+      "/api/v1/admin/settings",
+      {
+        method: "PATCH",
+        accessToken: adminToken,
+        body: { tracking: { gtmContainerId: "" } },
+      },
+    );
+    assert.equal(cleared.status, 200);
+    assert.equal(cleared.body.data.settings.tracking.gtmContainerId, "");
+
+    /* Put it back for the remaining tests. */
+    await api(ctx.baseUrl, "/api/v1/admin/settings", {
+      method: "PATCH",
+      accessToken: adminToken,
+      body: { tracking: { gtmContainerId: "GTM-ABC1234" } },
+    });
+  });
+
+  it("keeps its switch independent of the Facebook one", async () => {
+    interface PublicSettings {
+      settings: { tracking: { pixelId: string; gtmContainerId: string } };
+    }
+
+    /* Facebook off, Google on. An owner running GA4 through GTM must not have to
+       enable Facebook tracking to get it. */
+    await api(ctx.baseUrl, "/api/v1/admin/settings", {
+      method: "PATCH",
+      accessToken: adminToken,
+      body: { tracking: { enabled: false, gtmEnabled: true } },
+    });
+
+    const res = await api<Envelope<PublicSettings>>(
+      ctx.baseUrl,
+      "/api/v1/storefront/settings",
+    );
+    assert.equal(res.body.data.settings.tracking.gtmContainerId, "GTM-ABC1234");
+    assert.equal(
+      res.body.data.settings.tracking.pixelId,
+      "",
+      "Facebook stays off while Google is on",
+    );
+  });
+
+  it("stops publishing the container id when switched off", async () => {
+    await api(ctx.baseUrl, "/api/v1/admin/settings", {
+      method: "PATCH",
+      accessToken: adminToken,
+      body: { tracking: { gtmEnabled: false } },
+    });
+
+    const res = await api<
+      Envelope<{ settings: { tracking: { gtmContainerId: string } } }>
+    >(ctx.baseUrl, "/api/v1/storefront/settings");
+
+    assert.equal(
+      res.body.data.settings.tracking.gtmContainerId,
+      "",
+      "a configured but disabled container must not load in the browser",
+    );
+
+    /* The configuration itself survives — the switch is a switch, not a delete. */
+    const admin = await api<Envelope<{ settings: { tracking: Tracking } }>>(
+      ctx.baseUrl,
+      "/api/v1/admin/settings",
+      { accessToken: adminToken },
+    );
+    assert.equal(admin.body.data.settings.tracking.gtmContainerId, "GTM-ABC1234");
+    assert.equal(admin.body.data.settings.tracking.gtmEnabled, false);
+  });
+
+  it("reports Google readiness separately in the status checklist", async () => {
+    await api(ctx.baseUrl, "/api/v1/admin/settings", {
+      method: "PATCH",
+      accessToken: adminToken,
+      body: { tracking: { gtmEnabled: true } },
+    });
+
+    const res = await api<
+      Envelope<{
+        status: {
+          google: {
+            gtmConfigured: boolean;
+            gtmEnabled: boolean;
+            gtmContainerId: string;
+            gtmReady: boolean;
+          };
+        };
+      }>
+    >(ctx.baseUrl, "/api/v1/admin/marketing/status", { accessToken: adminToken });
+
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body.data.status.google, {
+      gtmConfigured: true,
+      gtmEnabled: true,
+      gtmContainerId: "GTM-ABC1234",
+      gtmReady: true,
+    });
+  });
+
+  it("is closed to managers", async () => {
+    const res = await api(ctx.baseUrl, "/api/v1/admin/settings", {
+      method: "PATCH",
+      accessToken: managerToken,
+      body: { tracking: { gtmContainerId: "GTM-XYZ9876" } },
+    });
+    assert.equal(res.status, 403);
   });
 });

@@ -32,6 +32,9 @@ process.env.RATE_LIMIT_MAX = "10000";
    auth-rate-limit test, which asserts the mechanism works. */
 process.env.CHECKOUT_RATE_LIMIT_MAX = "10000";
 process.env.QUOTE_RATE_LIMIT_MAX = "10000";
+/* Same reasoning for the integration "test connection" buttons: the suite
+   presses them far more often than a human setting the shop up would. */
+process.env.INTEGRATION_TEST_RATE_LIMIT_MAX = "10000";
 process.env.UPLOAD_DIR = "./.test-uploads";
 
 const { createApp } = await import("../../src/app.js");
@@ -127,12 +130,22 @@ export async function makeTestImage(
     .toBuffer();
 }
 
-/** Multipart upload helper — `fetch` builds the boundary from a FormData. */
+/**
+ * Multipart upload helper — `fetch` builds the boundary from a FormData.
+ *
+ * `fields` carries the text parts that travel WITH the files. Banners need it:
+ * their artwork, link and description are one request, because splitting them
+ * would make a half-applied edit possible.
+ */
 export async function uploadFiles<T = unknown>(
   baseUrl: string,
   path: string,
   files: { field: string; buffer: Buffer; filename: string; contentType?: string }[],
-  options: { accessToken?: string; method?: string } = {},
+  options: {
+    accessToken?: string;
+    method?: string;
+    fields?: Record<string, string>;
+  } = {},
 ): Promise<ApiResult<T>> {
   const form = new FormData();
   for (const file of files) {
@@ -141,6 +154,9 @@ export async function uploadFiles<T = unknown>(
       new Blob([new Uint8Array(file.buffer)], { type: file.contentType ?? "image/png" }),
       file.filename,
     );
+  }
+  for (const [name, value] of Object.entries(options.fields ?? {})) {
+    form.append(name, value);
   }
 
   const headers: Record<string, string> = {};

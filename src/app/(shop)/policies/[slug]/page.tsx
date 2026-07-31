@@ -1,13 +1,24 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getPolicy, policies } from "@/data/policies";
-import { getSettings } from "@/lib/data/orders";
+import { getSettings } from "@/lib/data/settings";
 import { copy } from "@/lib/copy";
 import { Container } from "@/components/ui/Layout";
 import { Icon } from "@/components/ui/Icon";
 
 export async function generateStaticParams() {
   return policies.map((p) => ({ slug: p.slug }));
+}
+
+/**
+ * Fills `{shop}` with the shop's configured name.
+ *
+ * The policy copy is static, but the name in it is not — renaming the store in
+ * the admin panel has to reach the terms and the About page, or a shopper sees
+ * two different businesses and the trust those pages exist to build is gone.
+ */
+function withShopName(text: string, shopName: string): string {
+  return text.replaceAll("{shop}", shopName);
 }
 
 export async function generateMetadata({
@@ -19,9 +30,12 @@ export async function generateMetadata({
   const policy = getPolicy(slug);
   if (!policy) return { title: copy.common.notFoundTitle };
 
+  const settings = await getSettings();
+  const shopName = settings.storeName || copy.brand.name;
+
   return {
-    title: policy.title,
-    description: policy.summary,
+    title: withShopName(policy.title, shopName),
+    description: withShopName(policy.summary, shopName),
     alternates: { canonical: `/policies/${policy.slug}` },
   };
 }
@@ -36,17 +50,19 @@ export default async function PolicyPage({
   if (!policy) notFound();
 
   const settings = await getSettings();
+  const shopName = settings.storeName || copy.brand.name;
+  const fill = (text: string) => withShopName(text, shopName);
 
   return (
     <Container className="max-w-2xl py-8">
-      <h1 className="text-display text-ink">{policy.title}</h1>
-      <p className="mt-1 text-body text-muted">{policy.summary}</p>
+      <h1 className="text-display text-ink">{fill(policy.title)}</h1>
+      <p className="mt-1 text-body text-muted">{fill(policy.summary)}</p>
 
       <div className="mt-8 flex flex-col gap-7">
         {policy.sections.map((section, i) => (
           <section key={section.heading ?? i}>
             {section.heading && (
-              <h2 className="mb-2 text-title text-ink">{section.heading}</h2>
+              <h2 className="mb-2 text-title text-ink">{fill(section.heading)}</h2>
             )}
 
             {section.paragraphs?.map((paragraph) => (
@@ -54,7 +70,7 @@ export default async function PolicyPage({
                 key={paragraph}
                 className="mb-3 text-body leading-relaxed text-ink-soft last:mb-0"
               >
-                {paragraph}
+                {fill(paragraph)}
               </p>
             ))}
 
@@ -69,7 +85,7 @@ export default async function PolicyPage({
                       className="mt-2 size-1.5 shrink-0 rounded-full bg-muted"
                       aria-hidden="true"
                     />
-                    {bullet}
+                    {fill(bullet)}
                   </li>
                 ))}
               </ul>

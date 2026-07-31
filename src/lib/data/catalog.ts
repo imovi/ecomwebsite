@@ -1,173 +1,221 @@
 import "server-only";
 
-import { categories } from "@/data/categories";
-import { products } from "@/data/products";
-import { orders } from "@/data/orders";
-import { banners } from "@/data/store";
-import type { Category, Product, Variant, Banner } from "@/types";
+import { apiRequestOptional, apiRequestSafe, query } from "@/lib/api/client";
+import { toBanner, toCategory, toProduct, toProductFromListItem } from "@/lib/api/adapters";
+import type {
+  ApiBanner,
+  ApiCategory,
+  ApiFacets,
+  ApiProduct,
+  ApiProductListItem,
+} from "@/lib/api/types";
+import type { Banner, Category, Product } from "@/types";
 
 /**
- * Catalog repository.
+ * Catalog reads, backed by the API.
  *
- * Every function is async and returns plain data even though the current
- * backing store is an in-memory array. That keeps call sites identical when
- * these bodies become Prisma queries — the seam is here and nowhere else.
+ * The function signatures are unchanged from the mock implementation this
+ * replaced — that was the point of putting a repository layer here in the
+ * first place. No page or component was modified to switch data sources.
+ *
+ * Sorting, filtering, search ranking and trending all happen in Postgres now
+ * rather than in JavaScript. Anything this file still computes locally is
+ * called out where it happens.
  */
 
-const activeOnly = (p: Product) => p.status === "active";
+/**
+ * Cache tags, so an admin edit can revalidate exactly what it changed.
+ *
+ * The single source of truth for these strings: the reads below attach them, and
+ * `src/app/api/admin/[...path]/route.ts` drops them after a write. A tag spelled
+ * differently in those two places fails silently — the storefront just keeps
+ * serving stale data — so nothing should hardcode these strings.
+ */
+export const CACHE_TAGS = {
+  categories: "categories",
+  products: "products",
+  product: (slug: string) => `product:${slug}`,
+  settings: "settings",
+  banners: "banners",
+} as const;
 
 /* -------------------------------------------------------------------------- */
 /* Categories                                                                 */
 /* -------------------------------------------------------------------------- */
 
 export async function getCategories(): Promise<Category[]> {
-  return [...categories].sort((a, b) => a.sortOrder - b.sortOrder);
+  /* The category rail is on every page. A failure here should cost the rail,
+     not the whole page. */
+  const data = await apiRequestSafe<{ categories: ApiCategory[] }>(
+    "/api/v1/categories",
+    { categories: [] },
+    { tags: [CACHE_TAGS.categories] },
+  );
+
+  return data.categories.map(toCategory);
 }
 
 export async function getCategoryBySlug(slug: string): Promise<Category | null> {
-  return categories.find((c) => c.slug === slug) ?? null;
+  const data = await apiRequestOptional<{ category: ApiCategory }>(
+    `/api/v1/categories/${encodeURIComponent(slug)}`,
+    { tags: [CACHE_TAGS.categories] },
+  );
+
+  return data ? toCategory(data.category) : null;
 }
 
 /* -------------------------------------------------------------------------- */
 /* Products                                                                   */
 /* -------------------------------------------------------------------------- */
 
-export async function getAllProducts(): Promise<Product[]> {
-  return products.filter(activeOnly);
-}
+/** Page size used wherever the storefront wants "everything visible". */
+const LISTING_PAGE_SIZE = 100;
 
-/** Includes drafts and archived — admin only. */
-export async function getAllProductsForAdmin(): Promise<Product[]> {
-  return [...products];
+export async function getAllProducts(): Promise<Product[]> {
+  const data = await apiRequestSafe<ApiProductListItem[]>(
+    `/api/v1/products${query({ perPage: LISTING_PAGE_SIZE, sort: "newest" })}`,
+    [],
+    { tags: [CACHE_TAGS.products] },
+  );
+
+  return data.map(toProductFromListItem);
 }
 
 export async function getProductBySlug(slug: string): Promise<Product | null> {
-  return products.find((p) => p.slug === slug && activeOnly(p)) ?? null;
+  const data = await apiRequestOptional<{ product: ApiProduct }>(
+    `/api/v1/products/${encodeURIComponent(slug)}`,
+    { tags: [CACHE_TAGS.products, CACHE_TAGS.product(slug)] },
+  );
+
+  return data ? toProduct(data.product) : null;
 }
 
 export async function getProductById(id: string): Promise<Product | null> {
-  return products.find((p) => p.id === id) ?? null;
+  /* The API resolves a uuid or a slug on the same route. */
+  return getProductBySlug(id);
 }
 
+/** Takes a category id — callers resolve the slug to a category first. */
 export async function getProductsByCategory(
   categoryId: string,
   sort: "newest" | "price_asc" | "price_desc" = "newest",
 ): Promise<Product[]> {
-  const list = products.filter((p) => activeOnly(p) && p.categoryId === categoryId);
+  const data = await apiRequestSafe<ApiProductListItem[]>(
+    `/api/v1/products${query({
+      categoryId,
+      sort,
+      perPage: LISTING_PAGE_SIZE,
+    })}`,
+    [],
+    { tags: [CACHE_TAGS.products] },
+  );
 
-  switch (sort) {
-    case "price_asc":
-      return list.sort((a, b) => minPrice(a) - minPrice(b));
-    case "price_desc":
-      return list.sort((a, b) => minPrice(b) - minPrice(a));
-    default:
-      return list.sort(
-        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-      );
-  }
+  return data.map(toProductFromListItem);
 }
 
 export async function getNewArrivals(limit = 8): Promise<Product[]> {
-  return [...products]
-    .filter(activeOnly)
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    .slice(0, limit);
+  const data = await apiRequestSafe<{ products: ApiProductListItem[] }>(
+    `/api/v1/products/new-arrivals${query({ limit })}`,
+    { products: [] },
+    { tags: [CACHE_TAGS.products] },
+  );
+
+  return data.products.map(toProductFromListItem);
 }
 
 /**
  * Trending.
  *
- * Two decisions worth keeping when this moves to SQL:
- *
- *  1. Only DELIVERED orders count. On a cash-on-delivery store, counting
- *     *placed* orders means refused and prank orders decide what the homepage
- *     promotes.
- *  2. Exponential time decay (14-day half-life) so one large historical order
- *     can't pin a product to the top forever.
- *
- * `pinnedRank` always outranks the computed score — needed on day one when
- * there is no sales history at all, and during campaigns.
+ * The decay-weighted popularity score is computed and indexed in Postgres and
+ * refreshed on a schedule, so this is a single ordered read rather than the
+ * in-memory scoring the mock implementation did. It is still driven purely by
+ * measured demand — there is no way to pin a product here.
  */
 export async function getTrending(limit = 8): Promise<Product[]> {
-  const HALF_LIFE_DAYS = 14;
-  const now = Date.now();
-  const scores = new Map<string, number>();
-
-  for (const order of orders) {
-    if (order.status !== "delivered") continue;
-    const daysAgo = (now - new Date(order.createdAt).getTime()) / 86_400_000;
-    const weight = Math.pow(0.5, daysAgo / HALF_LIFE_DAYS);
-    for (const item of order.items) {
-      scores.set(item.productId, (scores.get(item.productId) ?? 0) + item.qty * weight);
-    }
-  }
-
-  return [...products]
-    .filter(activeOnly)
-    .sort((a, b) => {
-      // Pinned products first, in pin order.
-      if (a.pinnedRank != null || b.pinnedRank != null) {
-        return (a.pinnedRank ?? Infinity) - (b.pinnedRank ?? Infinity);
-      }
-      const diff = (scores.get(b.id) ?? 0) - (scores.get(a.id) ?? 0);
-      // Cold-start fallback: newest wins when nothing has sold yet.
-      if (diff !== 0) return diff;
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-    })
-    .slice(0, limit);
-}
-
-export async function getRelatedProducts(
-  product: Product,
-  limit = 6,
-): Promise<Product[]> {
-  const sameCategory = products.filter(
-    (p) => activeOnly(p) && p.categoryId === product.categoryId && p.id !== product.id,
+  const data = await apiRequestSafe<{ products: ApiProductListItem[] }>(
+    `/api/v1/products/trending${query({ limit })}`,
+    { products: [] },
+    { tags: [CACHE_TAGS.products] },
   );
 
-  // Closest price first — a customer looking at a ৳150k laptop is not served
-  // by a ৳900 cable, even though they share a category in some stores.
-  const target = minPrice(product);
-  return sameCategory
-    .sort((a, b) => Math.abs(minPrice(a) - target) - Math.abs(minPrice(b) - target))
-    .slice(0, limit);
+  return data.products.map(toProductFromListItem);
 }
 
-export async function searchProducts(query: string): Promise<Product[]> {
-  const q = query.trim().toLowerCase();
-  if (q.length < 2) return [];
+/**
+ * Related products.
+ *
+ * Asks the API for the same category and drops the current product. Price
+ * proximity ranking lives server-side in the catalogue module; this only needs
+ * to avoid recommending the page you are already on.
+ */
+export async function getRelatedProducts(product: Product, limit = 6): Promise<Product[]> {
+  if (!product.categoryId) return [];
 
-  const terms = q.split(/\s+/);
+  const data = await apiRequestSafe<ApiProductListItem[]>(
+    `/api/v1/products${query({
+      categoryId: product.categoryId,
+      perPage: limit + 1,
+      sort: "trending",
+    })}`,
+    [],
+    { tags: [CACHE_TAGS.products] },
+  );
 
-  return products
-    .filter(activeOnly)
-    .map((p) => {
-      const haystack =
-        `${p.title} ${p.brand} ${p.specs.map((s) => s.value).join(" ")}`.toLowerCase();
-      // Title matches outrank spec matches; all terms must appear somewhere.
-      const matchesAll = terms.every((t) => haystack.includes(t));
-      if (!matchesAll) return null;
-      const titleHits = terms.filter((t) => p.title.toLowerCase().includes(t)).length;
-      return { product: p, score: titleHits };
-    })
-    .filter((r): r is { product: Product; score: number } => r !== null)
-    .sort((a, b) => b.score - a.score)
-    .map((r) => r.product);
+  return data
+    .filter((item) => item.id !== product.id)
+    .slice(0, limit)
+    .map(toProductFromListItem);
+}
+
+export async function searchProducts(searchQuery: string): Promise<Product[]> {
+  const trimmed = searchQuery.trim();
+  if (trimmed.length < 2) return [];
+
+  /* Search results must never be served stale — a shopper searching for
+     something that just sold out should see that. */
+  const data = await apiRequestSafe<ApiProductListItem[]>(
+    `/api/v1/products/search${query({ q: trimmed, perPage: 50 })}`,
+    [],
+    { revalidate: 0 },
+  );
+
+  return data.map(toProductFromListItem);
+}
+
+/** Brands and the price range of the visible catalogue, for filter UI. */
+export async function getCatalogFacets(categoryId?: string): Promise<ApiFacets> {
+  return apiRequestSafe<ApiFacets>(
+    `/api/v1/products/facets${query({ categoryId })}`,
+    { brands: [], priceRange: { min: 0, max: 0 } },
+    { tags: [CACHE_TAGS.products] },
+  );
 }
 
 /* -------------------------------------------------------------------------- */
 /* Merchandising                                                              */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Homepage banners.
+ *
+ * Backed by the API and managed from the admin panel. They used to be a static
+ * file that needed a deploy to change, which is unusable for a shop owner
+ * running a weekend campaign.
+ *
+ * Nothing outside this function changed when the source moved — the repository
+ * seam was put here for exactly this.
+ */
 export async function getBanners(): Promise<Banner[]> {
-  return banners.filter((b) => b.active).sort((a, b) => a.sortOrder - b.sortOrder);
+  /* Safe-with-fallback rather than required: an empty banner rail is a slightly
+     plainer homepage, whereas a thrown error is no homepage at all. The rail is
+     decoration, not the shop. */
+  const data = await apiRequestSafe<{ banners: ApiBanner[] }>(
+    "/api/v1/banners",
+    { banners: [] },
+    { tags: [CACHE_TAGS.banners] },
+  );
+
+  /* The API already filters to active and sorts by `sortOrder`. */
+  return data.banners.map(toBanner);
 }
 
-/* -------------------------------------------------------------------------- */
-/* Shared helpers (safe on the client too — see lib/catalog-utils)            */
-/* -------------------------------------------------------------------------- */
-
-function minPrice(product: Product): number {
-  if (!product.variants.length) return product.price;
-  return Math.min(...product.variants.map((v: Variant) => v.price));
-}

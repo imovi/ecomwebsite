@@ -2,9 +2,8 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useMemo } from "react";
-import { resolveLines, type CatalogMap } from "@/lib/catalog-utils";
 import { useCartStore } from "@/lib/stores/cart-store";
+import { useResolvedCart } from "@/lib/hooks/use-resolved-cart";
 import { toast } from "@/lib/stores/toast-store";
 import { formatTaka } from "@/lib/utils";
 import { copy } from "@/lib/copy";
@@ -17,21 +16,23 @@ import { QtyStepper } from "@/components/product/QtyStepper";
 /**
  * Cart.
  *
- * Prices come from `catalog`, which the server rendered from live data — the
- * store only ever holds `{ productId, variantId, qty }`. A cart left open in a
- * tab for a week therefore shows today's prices, not last week's.
+ * The store holds only `{ productId, variantId, qty }`. Names, images, prices
+ * and stock ceilings are fetched from the server on every view, so a cart left
+ * open for a week shows today's prices — and the same figures are recomputed
+ * again at order placement, so a stale cart can never buy at a stale price.
  */
-export function CartView({ catalog }: { catalog: CatalogMap }) {
+export function CartView() {
   const items = useCartStore((s) => s.items);
   const hydrated = useCartStore((s) => s.hydrated);
   const setQty = useCartStore((s) => s.setQty);
   const removeItem = useCartStore((s) => s.removeItem);
 
-  const lines = useMemo(() => resolveLines(catalog, items), [catalog, items]);
-  const subtotal = lines.reduce((sum, l) => sum + l.lineTotal, 0);
-  const count = lines.reduce((sum, l) => sum + l.qty, 0);
+  const { lines, removed, unloadable, loading, subtotal, count } = useResolvedCart(
+    items,
+    hydrated,
+  );
 
-  if (!hydrated) {
+  if (!hydrated || loading) {
     return (
       <div className="flex flex-col gap-4">
         {[0, 1].map((i) => (
@@ -43,7 +44,20 @@ export function CartView({ catalog }: { catalog: CatalogMap }) {
 
   if (lines.length === 0) {
     return (
-      <EmptyState icon="cart" title={copy.cart.empty}>
+      <EmptyState
+        icon="cart"
+        title={copy.cart.empty}
+        body={
+          /* Two different situations, two different messages. Telling a shopper
+             their item is gone when the API merely timed out sends them away
+             from an order that would work on the next refresh. */
+          unloadable > 0
+            ? "Some items could not be loaded just now. Please refresh in a moment."
+            : removed > 0
+              ? "Some items are no longer available and were removed."
+              : undefined
+        }
+      >
         <Button href="/category/all" variant="primary" size="lg">
           {copy.cart.emptyAction}
         </Button>
@@ -54,6 +68,22 @@ export function CartView({ catalog }: { catalog: CatalogMap }) {
   return (
     <>
       <p className="text-caption text-muted">{copy.cart.itemCount(count)}</p>
+
+      {removed > 0 && (
+        <p className="mt-3 rounded-sm bg-warn-soft px-3 py-2 text-caption text-warn">
+          {removed === 1
+            ? "1 item is no longer available and was removed."
+            : `${removed} items are no longer available and were removed.`}
+        </p>
+      )}
+
+      {unloadable > 0 && (
+        <p className="mt-3 rounded-sm bg-surface px-3 py-2 text-caption text-ink-soft">
+          {unloadable === 1
+            ? "1 item could not be loaded just now — it is still in your cart. Please refresh in a moment."
+            : `${unloadable} items could not be loaded just now — they are still in your cart. Please refresh in a moment.`}
+        </p>
+      )}
 
       <ul className="mt-4 flex flex-col">
         {lines.map((line) => (
@@ -78,9 +108,7 @@ export function CartView({ catalog }: { catalog: CatalogMap }) {
             <div className="flex min-w-0 flex-1 flex-col gap-1.5">
               <div className="flex items-start gap-2">
                 <Link href={`/product/${line.slug}`} className="min-w-0 flex-1">
-                  <p className="clamp-2 text-caption leading-snug text-ink">
-                    {line.title}
-                  </p>
+                  <p className="clamp-2 text-caption leading-snug text-ink">{line.title}</p>
                 </Link>
                 <button
                   type="button"
@@ -99,11 +127,7 @@ export function CartView({ catalog }: { catalog: CatalogMap }) {
                 <p className="text-micro text-muted">{line.variantLabel}</p>
               )}
 
-              <Price
-                price={line.unitPrice}
-                oldPrice={line.oldUnitPrice}
-                size="row"
-              />
+              <Price price={line.unitPrice} oldPrice={line.oldUnitPrice} size="row" />
 
               <div className="mt-1 flex items-center justify-between gap-3">
                 <QtyStepper
@@ -112,8 +136,6 @@ export function CartView({ catalog }: { catalog: CatalogMap }) {
                   max={line.maxQty}
                   onChange={(qty) => setQty(line.productId, line.variantId, qty)}
                 />
-                {/* Line subtotal — shown only when it differs from the unit
-                    price, so single-quantity rows aren't cluttered. */}
                 {line.qty > 1 && (
                   <span className="tnum text-caption font-semibold text-ink">
                     {formatTaka(line.lineTotal)}
@@ -139,8 +161,8 @@ export function CartView({ catalog }: { catalog: CatalogMap }) {
       </div>
       <p className="mt-1 text-caption text-muted">{copy.cart.deliveryNote}</p>
 
-      {/* Sticky on mobile so the action is always reachable, inline on
-          desktop where the whole cart fits on one screen. */}
+      {/* Sticky on mobile so the action is always reachable, inline on desktop
+          where the whole cart fits on one screen. */}
       <div className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-white/95 px-gutter py-3 pb-safe shadow-bar backdrop-blur-md md:static md:mt-6 md:border-0 md:p-0 md:shadow-none md:backdrop-blur-none">
         <div className="mx-auto max-w-[var(--container-page)]">
           <Button href="/checkout" variant="primary" size="xl" fullWidth>

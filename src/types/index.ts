@@ -18,10 +18,23 @@ export interface Category {
   slug: string;
   /** Key into the icon registry in `components/ui/Icon`. */
   icon: string;
+  /**
+   * Custom artwork, when the shop uploaded some. Takes precedence over `icon` —
+   * an operator who bothered to upload a picture meant it to be used.
+   */
+  imageUrl?: string | undefined;
   sortOrder: number;
 }
 
-export type VariantOptionName = "Color" | "Storage" | "Model";
+/**
+ * A variant axis name, e.g. "Color", "Storage", "Size", "Model".
+ *
+ * Deliberately `string` rather than a closed union: the axes are defined per
+ * product in the admin panel, so the catalogue — not this file — decides what
+ * they are. A union here would reject a legitimate "Size" or "Length" the
+ * moment a merchant created one.
+ */
+export type VariantOptionName = string;
 
 /** One selectable axis on a product, e.g. Storage: 128GB / 256GB. */
 export interface VariantOption {
@@ -51,7 +64,10 @@ export interface Product {
   id: string;
   slug: string;
   title: string;
-  brand: string;
+  /** Stable merchant identifier. Doubles as the content id for ad tracking. */
+  sku: string;
+  /** Optional: plenty of stock has no meaningful brand. */
+  brand: string | null;
   categoryId: string;
   /** Fallback price shown when a product has no variants. */
   price: Money;
@@ -82,8 +98,16 @@ export interface Banner {
   id: string;
   /** Wide crop for tablet/desktop. */
   image: string;
+  /**
+   * Real size of the wide crop, used to shape the slider to the artwork the shop
+   * uploaded. 0 means unknown — banners created before this was recorded.
+   */
+  width: number;
+  height: number;
   /** Taller crop for phones. Falls back to `image` when absent. */
   imageMobile?: string;
+  mobileWidth?: number | undefined;
+  mobileHeight?: number | undefined;
   alt: string;
   href: string;
   sortOrder: number;
@@ -120,6 +144,7 @@ export type DeliveryZone = "inside_dhaka" | "outside_dhaka";
 export type OrderStatus =
   | "pending"
   | "confirmed"
+  | "processing"
   | "packed"
   | "shipped"
   | "delivered"
@@ -201,4 +226,11 @@ export interface StoreSettings {
   freeDeliveryThreshold: Money;
   whatsappNumber: string;
   hotline: string;
+  /** Uploaded shop logo. Null falls back to the wordmark. */
+  logoUrl?: string | undefined;
+  /** Real logo size, so the header can size it by its own proportions. */
+  logoWidth?: number | undefined;
+  logoHeight?: number | undefined;
+  /** Shop name, used as the logo's alt text and the wordmark itself. */
+  storeName?: string | undefined;
 }

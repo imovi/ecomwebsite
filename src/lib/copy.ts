@@ -8,7 +8,15 @@
 
 export const copy = {
   brand: {
-    name: "gng",
+    /**
+     * Fallback only.
+     *
+     * The real name is the one in Settings → Store, which the header, footer,
+     * invoices, page titles and Telegram alerts all read. This is what shows if
+     * the API cannot be reached at render time, so it should stay in step with
+     * the configured name rather than being the source of it.
+     */
+    name: "Next Gadget",
     tagline: "Gadgets, delivered.",
   },
 
@@ -140,6 +148,7 @@ export const copy = {
   orderStatus: {
     pending: "Pending confirmation",
     confirmed: "Confirmed",
+    processing: "Processing",
     packed: "Packed",
     shipped: "Shipped",
     delivered: "Delivered",
@@ -172,7 +181,9 @@ export const copy = {
   footer: {
     help: "Help",
     about: "About",
-    rights: (year: number) => `© ${year} gng. All rights reserved.`,
+    /* Takes the shop name so a renamed store is not still crediting "gng". */
+    rights: (year: number, shopName: string) =>
+      `© ${year} ${shopName}. All rights reserved.`,
   },
 
   common: {

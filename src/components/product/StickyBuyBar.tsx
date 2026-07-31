@@ -61,16 +61,10 @@ export function StickyBuyBar({
           </div>
         </div>
 
+        {/* Buy Now first, matching the inline buttons. Two calls to action that
+            swap places between the inline block and the sticky bar make the
+            shopper re-read them every time the bar appears. */}
         <div className="flex flex-1 gap-2 sm:flex-none">
-          <Button
-            variant="secondary"
-            size="lg"
-            className="flex-1 sm:flex-none"
-            onClick={onAddToCart}
-            disabled={disabled}
-          >
-            {copy.product.addToCart}
-          </Button>
           <Button
             variant="primary"
             size="lg"
@@ -79,6 +73,15 @@ export function StickyBuyBar({
             disabled={disabled}
           >
             {copy.product.buyNow}
+          </Button>
+          <Button
+            variant="secondary"
+            size="lg"
+            className="flex-1 sm:flex-none"
+            onClick={onAddToCart}
+            disabled={disabled}
+          >
+            {copy.product.addToCart}
           </Button>
         </div>
       </div>

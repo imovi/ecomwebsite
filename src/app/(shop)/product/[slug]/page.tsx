@@ -67,7 +67,10 @@ export default async function ProductPage({
     name: product.title,
     image: product.images,
     description: product.description,
-    brand: { "@type": "Brand", name: product.brand },
+    /* Omitted entirely when unknown. An empty `Brand` node is worse than no
+       brand node — Google flags it as invalid structured data, which can cost
+       the rich result for the whole product. */
+    ...(product.brand ? { brand: { "@type": "Brand", name: product.brand } } : {}),
     sku: product.variants[0]?.sku ?? product.id,
     offers: {
       "@type": "Offer",

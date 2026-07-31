@@ -7,6 +7,7 @@ import { Icon } from "@/components/ui/Icon";
 const TONES: Record<OrderStatus, React.ComponentProps<typeof Badge>["tone"]> = {
   pending: "warn",
   confirmed: "neutral",
+  processing: "neutral",
   packed: "neutral",
   shipped: "neutral",
   delivered: "positive",
@@ -32,6 +33,7 @@ export function OrderStatusBadge({
 const STEPS: OrderStatus[] = [
   "pending",
   "confirmed",
+  "processing",
   "packed",
   "shipped",
   "delivered",

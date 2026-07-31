@@ -41,7 +41,9 @@ export function ZoneSelector({
   ];
 
   return (
-    <fieldset>
+    /* `data-field` so a failed checkout can scroll here: these are buttons,
+       not an input, so there is no `aria-invalid` to find. */
+    <fieldset data-field="zone">
       <legend className="mb-2 text-caption font-medium text-ink-soft">
         {copy.checkout.zoneHeading}
         <span className="text-sale"> *</span>

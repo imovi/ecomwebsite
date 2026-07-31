@@ -29,6 +29,15 @@ interface CartState {
   addItem: (line: CartLine, maxQty?: number) => void;
   setQty: (productId: string, variantId: string | undefined, qty: number) => void;
   removeItem: (productId: string, variantId: string | undefined) => void;
+  /**
+   * Drops several lines at once, for lines the server has confirmed are
+   * unbuyable.
+   *
+   * Bulk rather than a loop of `removeItem` because each `set` is a separate
+   * render and a separate localStorage write; more importantly, a loop would let
+   * a re-render observe a half-pruned cart.
+   */
+  removeLines: (lines: { productId: string; variantId?: string | undefined }[]) => void;
   clear: () => void;
 
   startBuyNow: (line: CartLine) => void;
@@ -78,6 +87,23 @@ export const useCartStore = create<CartState>()(
             (l) => !sameLine(l, { productId, variantId, qty: 0 }),
           ),
         })),
+
+      removeLines: (lines) =>
+        set((state) => {
+          if (lines.length === 0) return state;
+
+          const doomed = new Set(
+            lines.map((l) => `${l.productId}::${l.variantId ?? ""}`),
+          );
+          const items = state.items.filter(
+            (l) => !doomed.has(`${l.productId}::${l.variantId ?? ""}`),
+          );
+
+          /* Returning the same array when nothing matched keeps subscribers from
+             re-rendering on a no-op prune, which happens on every cart view once
+             the cart is clean. */
+          return items.length === state.items.length ? state : { items };
+        }),
 
       clear: () => set({ items: [] }),
 

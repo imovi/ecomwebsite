@@ -107,23 +107,14 @@ export function Gallery({ images, title, activeIndex }: GalleryProps) {
           ))}
         </div>
 
-        {/* Dots — mobile only, non-interactive targets are too small to be
-            useful buttons, so they're presentational with a live label. */}
+        {/* Frame counter — mobile only. Tells the shopper how many photos exist
+            even before they reach the thumbnails below. */}
         {images.length > 1 && (
           <>
-            <div
-              className="absolute inset-x-0 bottom-3 flex justify-center gap-1.5 md:hidden"
-              aria-hidden="true"
-            >
-              {images.map((src, i) => (
-                <span
-                  key={src}
-                  className={cn(
-                    "h-1.5 rounded-full transition-all duration-200 ease-out",
-                    i === index ? "w-4 bg-ink" : "w-1.5 bg-ink/25",
-                  )}
-                />
-              ))}
+            <div className="absolute bottom-3 right-3 md:hidden" aria-hidden="true">
+              <span className="tnum rounded-full bg-ink/70 px-2 py-0.5 text-micro font-semibold text-white backdrop-blur-sm">
+                {index + 1}/{images.length}
+              </span>
             </div>
             <p className="sr-only" aria-live="polite">
               {copy.product.imageOf(index + 1, images.length)}
@@ -131,6 +122,45 @@ export function Gallery({ images, title, activeIndex }: GalleryProps) {
           </>
         )}
       </div>
+
+      {/* Thumbnail strip — mobile only; the desktop column above does this job
+          on wide screens.
+
+          Dots used to live here instead. Dots say "there is more" but not *what*
+          more, and on a product where the extra photos are the back, the ports and
+          what is in the box, that is the difference between a shopper who scrolls
+          on and one who swipes. Real thumbnails also give a tap target, so the
+          gallery is navigable without a swipe gesture at all.
+
+          Scrolls horizontally rather than wrapping: a second row would push the
+          price below the fold on a small phone. */}
+      {images.length > 1 && (
+        <div
+          className="-mx-gutter mt-2.5 flex gap-2 overflow-x-auto px-gutter pb-1 md:hidden"
+          /* Native scrollbar hidden on mobile — the overflowing thumbnails are
+             their own affordance. */
+          style={{ scrollbarWidth: "none" }}
+        >
+          {images.map((src, i) => (
+            <button
+              key={src}
+              type="button"
+              onClick={() => scrollToIndex(i)}
+              aria-label={copy.product.imageOf(i + 1, images.length)}
+              aria-current={i === index}
+              className={cn(
+                "relative size-14 shrink-0 overflow-hidden rounded-sm border-2 transition-colors",
+                i === index ? "border-ink" : "border-transparent",
+              )}
+            >
+              <Image src={src} alt="" fill sizes="56px" className="object-cover" />
+              {/* The unselected thumbnails are dimmed rather than the selected one
+                  highlighted, so the current frame reads as the bright one. */}
+              {i !== index && <span className="absolute inset-0 bg-white/35" />}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -1,5 +1,7 @@
+import Image from "next/image";
 import Link from "next/link";
 import { getCategories } from "@/lib/data/catalog";
+import { getSettings } from "@/lib/data/settings";
 import { copy } from "@/lib/copy";
 import { Container } from "@/components/ui/Layout";
 import { Icon } from "@/components/ui/Icon";
@@ -14,7 +16,9 @@ import { SearchEntry } from "./SearchEntry";
  * they scroll is worth 28 pixels.
  */
 export async function Header() {
-  const categories = await getCategories();
+  const [categories, settings] = await Promise.all([getCategories(), getSettings()]);
+
+  const shopName = settings.storeName || copy.brand.name;
 
   return (
     <header className="sticky top-0 z-30 bg-white/85 backdrop-blur-md">
@@ -31,10 +35,34 @@ export async function Header() {
         <div className="flex h-14 items-center gap-3 border-b border-line">
           <Link
             href="/"
-            className="text-[1.375rem] font-semibold tracking-[-0.04em] text-ink"
-            aria-label={`${copy.brand.name} — ${copy.nav.home}`}
+            className="flex shrink-0 items-center"
+            aria-label={`${shopName} — ${copy.nav.home}`}
           >
-            {copy.brand.name}
+            {settings.logoUrl ? (
+              /* Sized from the logo's OWN dimensions rather than a fixed box.
+                 `width`/`height` are the real pixel size, so the browser reserves
+                 the correct space and the header does not jump as it loads; the
+                 CSS then caps it to the bar's height and a sensible width, with
+                 `object-contain` so nothing is ever stretched or cropped.
+                 A wide wordmark fills the width, a square mark stays square.
+
+                 `unoptimized` is deliberate — a logo is already small, and
+                 re-encoding a transparent PNG through the optimiser costs more
+                 than it saves. */
+              <Image
+                src={settings.logoUrl}
+                alt={shopName}
+                width={settings.logoWidth ?? 160}
+                height={settings.logoHeight ?? 36}
+                preload
+                unoptimized
+                className="h-auto max-h-10 w-auto max-w-[180px] object-contain object-left"
+              />
+            ) : (
+              <span className="text-[1.375rem] font-semibold tracking-[-0.04em] text-ink">
+                {shopName}
+              </span>
+            )}
           </Link>
 
           <div className="flex flex-1 items-center justify-end gap-1 sm:justify-between sm:pl-6">

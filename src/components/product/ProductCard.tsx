@@ -102,7 +102,9 @@ export function ProductGrid({
   return (
     <div
       className={cn(
-        "grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-3 sm:gap-x-4 lg:grid-cols-4",
+        /* Five and six across on wide monitors: with a 1600px page, stopping
+           at four would just inflate every card rather than show more stock. */
+        "grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-3 sm:gap-x-4 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6",
         className,
       )}
     >

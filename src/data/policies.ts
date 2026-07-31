@@ -8,6 +8,11 @@
  *
  * Content is structured data rather than markdown so no parser ships to the
  * browser. Replace the copy with the merchant's real terms before launch.
+ *
+ * `{shop}` stands in for the shop's name and is substituted at render time from
+ * store settings. Hardcoding it here would mean a rename in the admin panel
+ * left the old name sitting in the terms and the About page — the two places a
+ * shopper looks when deciding whether the business is real.
  */
 
 export interface PolicySection {
@@ -103,12 +108,12 @@ export const policies: Policy[] = [
   {
     slug: "warranty",
     title: "Warranty",
-    summary: "How warranty claims work on products bought from gng.",
+    summary: "How warranty claims work on products bought from {shop}.",
     sections: [
       {
         heading: "Warranty period",
         paragraphs: [
-          "The warranty period for each product is listed on its product page and printed on your invoice. Most products carry either official brand warranty or gng service warranty.",
+          "The warranty period for each product is listed on its product page and printed on your invoice. Most products carry either official brand warranty or {shop} service warranty.",
         ],
       },
       {
@@ -131,12 +136,12 @@ export const policies: Policy[] = [
   },
   {
     slug: "about",
-    title: "About gng",
+    title: "About {shop}",
     summary: "A small gadget store built around one idea: no surprises.",
     sections: [
       {
         paragraphs: [
-          "gng is an online gadget store serving customers across Bangladesh. We sell smartphones, audio, wearables, laptops and accessories — original products only, with the warranty stated on every product page.",
+          "{shop} is an online gadget store serving customers across Bangladesh. We sell smartphones, audio, wearables, laptops and accessories — original products only, with the warranty stated on every product page.",
           "We keep the store deliberately simple. Clear prices, an honest delivery charge shown before you order, cash on delivery everywhere, and a phone number that a person answers.",
         ],
       },
@@ -162,7 +167,7 @@ export const policies: Policy[] = [
   {
     slug: "terms",
     title: "Terms & conditions",
-    summary: "The rules that apply when you order from gng.",
+    summary: "The rules that apply when you order from {shop}.",
     sections: [
       {
         heading: "Orders",

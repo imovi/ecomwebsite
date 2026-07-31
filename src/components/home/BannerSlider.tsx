@@ -20,9 +20,36 @@ import { cn } from "@/lib/utils";
  *    `prefers-reduced-motion`.
  *  - Separate mobile and desktop crops, so phones never download a 1600px
  *    wide-format image they'd only see letterboxed.
+ *  - **The rail takes the shape of the artwork.** It used to force every banner
+ *    into a hardcoded 5:2 (and 9:7.6 on phones) and crop whatever did not fit,
+ *    so a shop uploading a square or an unusually wide banner silently lost the
+ *    edges. The first slide's real dimensions now set the ratio, and slides are
+ *    letterboxed rather than cropped.
+ *
+ *    The FIRST slide decides, because a horizontal rail must have one height —
+ *    and it is the slide most people see. Consistently sized artwork therefore
+ *    fits perfectly; mixed sizes fit inside without losing anything.
  */
+
+/** Falls back to the old fixed ratios when dimensions are unknown (0). */
+function ratio(width?: number, height?: number, fallback = 5 / 2): number {
+  if (!width || !height) return fallback;
+  /* Guard against a nonsensical stored value producing a zero-height rail. */
+  const value = width / height;
+  return Number.isFinite(value) && value > 0.2 && value < 12 ? value : fallback;
+}
 export function BannerSlider({ banners }: { banners: Banner[] }) {
   const railRef = useRef<HTMLDivElement>(null);
+
+  const first = banners[0];
+  /* Phones use the mobile crop's shape when there is one, otherwise the wide
+     image's — matching whichever file they will actually download. */
+  const mobileRatio = ratio(
+    first?.mobileWidth ?? first?.width,
+    first?.mobileHeight ?? first?.height,
+    9 / 7.6,
+  );
+  const desktopRatio = ratio(first?.width, first?.height);
   const [index, setIndex] = useState(0);
   const [autoPlay, setAutoPlay] = useState(true);
   const jumpingRef = useRef(false);
@@ -70,6 +97,15 @@ export function BannerSlider({ banners }: { banners: Banner[] }) {
       <div
         ref={railRef}
         onScroll={onScroll}
+        /* Both ratios are published as custom properties so the breakpoint can
+           be expressed in CSS. An inline `aspectRatio` cannot vary by media
+           query, and phones and desktop use differently-shaped crops. */
+        style={
+          {
+            "--banner-ratio": String(mobileRatio),
+            "--banner-ratio-wide": String(desktopRatio),
+          } as React.CSSProperties
+        }
         className="snap-rail rounded-lg"
         aria-roledescription="carousel"
         aria-label="Promotions"
@@ -78,7 +114,7 @@ export function BannerSlider({ banners }: { banners: Banner[] }) {
           <Link
             key={banner.id}
             href={banner.href}
-            className="snap-item relative aspect-[9/7.6] w-full overflow-hidden bg-surface sm:aspect-[5/2]"
+            className="snap-item relative w-full overflow-hidden bg-surface aspect-[var(--banner-ratio)] sm:aspect-[var(--banner-ratio-wide)]"
             aria-label={banner.alt}
           >
             <Image
@@ -88,7 +124,10 @@ export function BannerSlider({ banners }: { banners: Banner[] }) {
               sizes="100vw"
               preload={i === 0}
               loading={i === 0 ? "eager" : "lazy"}
-              className="object-cover sm:hidden"
+              /* `contain`, not `cover`: the whole picture is shown. A banner
+                 carries words, and cropping them is worse than a narrow band of
+                 background beside an oddly-shaped one. */
+              className="object-contain sm:hidden"
             />
             <Image
               src={banner.image}
@@ -97,7 +136,7 @@ export function BannerSlider({ banners }: { banners: Banner[] }) {
               sizes="(max-width: 640px) 0px, 100vw"
               preload={i === 0}
               loading={i === 0 ? "eager" : "lazy"}
-              className="hidden object-cover sm:block"
+              className="hidden object-contain sm:block"
             />
           </Link>
         ))}

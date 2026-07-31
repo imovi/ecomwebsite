@@ -69,7 +69,10 @@
 
   /* --- Layout ----------------------------------------------------------- */
   --spacing-gutter: 1rem; /* page side padding on mobile */
-  --container-page: 1120px;
+  /* Wide enough to use a desktop monitor rather than sitting in a column with
+     a third of the screen empty on either side. Long-form pages (policies,
+     checkout) narrow themselves further where line length matters. */
+  --container-page: 1600px;
 }
 
 @layer base {

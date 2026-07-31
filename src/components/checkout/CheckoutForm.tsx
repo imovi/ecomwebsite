@@ -1,23 +1,28 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { DeliveryZone, StoreSettings } from "@/types";
-import { resolveLines, type CatalogMap } from "@/lib/catalog-utils";
+import { useResolvedCart } from "@/lib/hooks/use-resolved-cart";
 import { suggestZone, type ZoneSuggestion } from "@/lib/geo";
-import { deliveryChargeFor } from "@/lib/pricing";
+import { trackInitiateCheckout } from "@/lib/analytics/events";
+import { rememberOrder } from "@/lib/stores/last-order";
 import { useCartStore } from "@/lib/stores/cart-store";
 import { toast } from "@/lib/stores/toast-store";
 import { formatTaka, normalizePhone } from "@/lib/utils";
 import { copy } from "@/lib/copy";
-import { placeOrderAction } from "@/app/actions";
+import {
+  placeOrderAction,
+  quoteAction,
+  recordIncompleteCheckoutAction,
+} from "@/app/actions";
 import { Button } from "@/components/ui/Button";
 import { Input, Textarea } from "@/components/ui/Field";
 import { EmptyState, Skeleton } from "@/components/ui/Layout";
 import { Icon } from "@/components/ui/Icon";
 import { AreaField } from "./AreaField";
 import { ZoneSelector } from "./ZoneSelector";
-import { OrderSummary, type AppliedCoupon } from "./OrderSummary";
+import { OrderSummary } from "./OrderSummary";
 
 const DRAFT_KEY = "gng-checkout-draft-v1";
 
@@ -40,13 +45,7 @@ interface Draft {
  *    buyer gets a pre-filled form, which is the single cheapest conversion win
  *    available on a guest checkout.
  */
-export function CheckoutForm({
-  catalog,
-  settings,
-}: {
-  catalog: CatalogMap;
-  settings: StoreSettings;
-}) {
+export function CheckoutForm({ settings }: { settings: StoreSettings }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const buyNowMode = searchParams.get("mode") === "buynow";
@@ -66,9 +65,14 @@ export function CheckoutForm({
   /** Set only when the customer picks a zone themselves. Once set, it wins
    *  over any suggestion — their choice is what gets stored on the order. */
   const [zoneOverride, setZoneOverride] = useState<DeliveryZone | null>(null);
-  const [coupon, setCoupon] = useState<AppliedCoupon | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
+
+  /* One key per mounted checkout attempt. A retry after a dropped connection
+     reuses it, so the API returns the original order rather than creating a
+     second one — the single most expensive bug a flaky mobile network can
+     cause on a cash-on-delivery store. */
+  const idempotencyKey = useRef<string>(crypto.randomUUID());
 
   /* --- Lines ------------------------------------------------------------ */
 
@@ -78,10 +82,9 @@ export function CheckoutForm({
     return items;
   }, [hydrated, buyNowMode, buyNow, items]);
 
-  const lines = useMemo(
-    () => resolveLines(catalog, sourceLines).filter((l) => l.qty > 0),
-    [catalog, sourceLines],
-  );
+  /* Resolved server-side against live catalogue data, so prices and stock are
+     current rather than whatever was cached when the cart was filled. */
+  const { lines, loading: resolvingCart } = useResolvedCart(sourceLines, hydrated);
 
   /* --- Draft restore / persist ------------------------------------------ */
 
@@ -119,17 +122,152 @@ export function CheckoutForm({
   const zoneTouched = zoneOverride !== null;
   const zone: DeliveryZone | null = zoneOverride ?? suggestion?.zone ?? null;
 
-  /* --- Totals ------------------------------------------------------------ */
+  /* --- Recording an incomplete checkout ---------------------------------
+     A customer who typed their number and then vanished is a warm lead with a
+     known phone, and today that information dies with the tab. Saved on a
+     debounce once the number is actually valid, so a half-typed number never
+     creates a lead nobody can ring.
 
-  const subtotal = lines.reduce((sum, l) => sum + l.lineTotal, 0);
-  const discount = Math.min(coupon?.discount ?? 0, subtotal);
-  const payable = subtotal - discount;
-  const deliveryCharge = zone ? deliveryChargeFor(zone, payable, settings) : 0;
-  const total = payable + deliveryCharge;
-  const freeDeliveryRemaining =
-    settings.freeDeliveryThreshold > 0 && payable < settings.freeDeliveryThreshold
-      ? settings.freeDeliveryThreshold - payable
-      : 0;
+     The record closes itself when the order arrives — see the server action —
+     so finishing normally never puts anyone on the call list. */
+
+  const savedLeadRef = useRef<string>("");
+
+  useEffect(() => {
+    const phone = normalizePhone(form.phone);
+    if (!/^01[3-9]\d{8}$/.test(phone)) return;
+    if (lines.length === 0) return;
+
+    /* A snapshot of what would be saved. Skipping an unchanged one keeps a
+       customer tabbing between fields from generating a request per keystroke
+       batch. */
+    const fingerprint = JSON.stringify([
+      phone,
+      form.customerName.trim(),
+      form.address.trim(),
+      form.areaText.trim(),
+      lines.map((l) => [l.productId, l.variantId, l.qty]),
+    ]);
+    if (fingerprint === savedLeadRef.current) return;
+
+    const timer = setTimeout(() => {
+      savedLeadRef.current = fingerprint;
+
+      void recordIncompleteCheckoutAction({
+        phone,
+        ...(form.customerName.trim() ? { customerName: form.customerName.trim() } : {}),
+        ...(form.address.trim() ? { address: form.address.trim() } : {}),
+        ...(form.areaText.trim() ? { areaText: form.areaText.trim() } : {}),
+        ...(zone ? { deliveryZone: zone } : {}),
+        lines: lines.map((l) => ({
+          productId: l.productId,
+          variantId: l.variantId,
+          qty: l.qty,
+        })),
+      });
+    }, 1500);
+
+    return () => clearTimeout(timer);
+    /* `zone` is intentionally absent: it is derived from `areaText`, which is
+       already a dependency, and including it would re-fire on every
+       suggestion recalculation. */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.phone, form.customerName, form.address, form.areaText, lines]);
+
+
+  /* --- Totals ------------------------------------------------------------
+     Priced by the API, not here. The same calculation runs again at order
+     placement, so the number the customer agrees to is the number the order is
+     written with — a locally computed total could disagree with the server the
+     moment a price or a delivery charge changed.
+
+     The local subtotal is kept only as an optimistic value so the summary is
+     not blank on first paint. */
+
+  const localSubtotal = lines.reduce((sum, l) => sum + l.lineTotal, 0);
+
+  const [quote, setQuote] = useState<{
+    subtotal: number;
+    deliveryCharge: number;
+    grandTotal: number;
+    amountToFreeDelivery: number;
+  } | null>(null);
+  const [pricing, setPricing] = useState(false);
+
+  const subtotal = quote?.subtotal ?? localSubtotal;
+  const deliveryCharge = quote?.deliveryCharge ?? 0;
+  const total = quote?.grandTotal ?? localSubtotal;
+  const freeDeliveryRemaining = quote?.amountToFreeDelivery ?? 0;
+
+  /* Re-price whenever the cart or the delivery zone changes. Debounced,
+     because the zone re-derives on every keystroke in the area field and a
+     request per character would hammer the API for nothing. */
+  const cartKey = lines
+    .map((l) => `${l.productId}:${l.variantId ?? ""}:${l.qty}`)
+    .join("|");
+
+  useEffect(() => {
+    /* No lines means the empty state is rendered and the quote is never read,
+       so there is nothing to clear. */
+    if (lines.length === 0) return;
+
+    let cancelled = false;
+    /* Flags the summary as pending while a fresh quote is in flight, so the
+       figures dim on the same paint as the change that invalidated them. The
+       alternative — setting it inside the debounce timer — leaves stale totals
+       looking authoritative for 250ms, which is exactly the window in which a
+       customer reads the number and taps Place Order. */
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPricing(true);
+
+    const timer = setTimeout(() => {
+      void quoteAction({
+        lines: lines.map((l) => ({
+          productId: l.productId,
+          variantId: l.variantId,
+          qty: l.qty,
+        })),
+        ...(zone ? { deliveryZone: zone } : {}),
+      }).then((result) => {
+        if (cancelled) return;
+        setPricing(false);
+        if (result.ok) {
+          setQuote({
+            subtotal: result.subtotal,
+            deliveryCharge: result.deliveryCharge,
+            grandTotal: result.grandTotal,
+            amountToFreeDelivery: result.amountToFreeDelivery,
+          });
+        }
+      });
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    /* Keyed on the cart contents and the zone rather than the array identity,
+       which changes on every render. */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cartKey, zone]);
+
+  /* Report reaching checkout once the cart is priced, so both platforms can
+     report a checkout-to-purchase rate. */
+  const reportedCheckout = useRef(false);
+  useEffect(() => {
+    if (reportedCheckout.current || lines.length === 0) return;
+    reportedCheckout.current = true;
+
+    trackInitiateCheckout({
+      value: localSubtotal,
+      /* The SKU, not the product id. Both platforms match items on this field,
+         and every other event in the funnel — view_item, add_to_cart, purchase —
+         reports the SKU. A product id here would make this look like a different
+         product and break the funnel entirely. */
+      items: lines.map((l) => ({ sku: l.sku, title: l.title, quantity: l.qty })),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lines.length]);
 
   /* --- Submit ------------------------------------------------------------ */
 
@@ -143,7 +281,14 @@ export function CheckoutForm({
     });
   }
 
-  function validate(): boolean {
+  /**
+   * Top to bottom, matching the form. The first problem in this order is the
+   * one the customer is told about — listing four at once on a phone is how a
+   * checkout gets abandoned.
+   */
+  const FIELD_ORDER = ["customerName", "phone", "address", "areaText", "zone"] as const;
+
+  function validate(): Record<string, string> {
     const next: Record<string, string> = {};
     if (form.customerName.trim().length < 3) next.customerName = copy.checkout.invalidName;
     if (!/^01[3-9]\d{8}$/.test(normalizePhone(form.phone)))
@@ -153,7 +298,7 @@ export function CheckoutForm({
     if (!zone) next.zone = copy.checkout.zoneManual;
 
     setErrors(next);
-    return Object.keys(next).length === 0;
+    return next;
   }
 
   async function submit(e: React.FormEvent) {
@@ -164,11 +309,28 @@ export function CheckoutForm({
       toast(copy.checkout.emptyCart, { tone: "error" });
       return;
     }
-    if (!validate()) {
-      // Send focus to the first problem so the customer isn't hunting for it.
-      document
-        .querySelector<HTMLElement>('[aria-invalid="true"]')
-        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    const problems = validate();
+    if (Object.keys(problems).length > 0) {
+      const first = FIELD_ORDER.find((field) => problems[field]);
+
+      /* Say what is wrong, rather than only marking it red further up the page.
+         The Place Order button sits at the bottom on a phone, so an inline
+         error on a field that scrolled out of view reads as a dead button —
+         the customer taps again, nothing happens, and they leave. */
+      if (first) toast(problems[first] ?? copy.checkout.required, { tone: "error" });
+
+      /* Then take them to it. The zone selector is a pair of buttons rather
+         than an input, so it is found by its own marker, not by
+         `aria-invalid`. */
+      const target =
+        document.querySelector<HTMLElement>(`[data-field="${first ?? ""}"]`) ??
+        document.querySelector<HTMLElement>('[aria-invalid="true"]');
+
+      target?.scrollIntoView({ behavior: "smooth", block: "center" });
+      /* Focus only what can take it — scrolling is enough for the rest. */
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+        target.focus({ preventScroll: true });
+      }
       return;
     }
 
@@ -179,13 +341,15 @@ export function CheckoutForm({
       phone: form.phone,
       address: form.address,
       areaText: form.areaText,
-      zone: zone!,
-      couponCode: coupon?.code,
+      deliveryZone: zone!,
       lines: lines.map((l) => ({
         productId: l.productId,
         variantId: l.variantId,
         qty: l.qty,
       })),
+      /* Stable for this checkout attempt, so a retry after a dropped
+         connection returns the original order instead of creating a second. */
+      idempotencyKey: idempotencyKey.current,
     });
 
     if (!result.ok) {
@@ -195,18 +359,22 @@ export function CheckoutForm({
       return;
     }
 
+    /* Stash the confirmation so the success page can itemise the order
+       without a public lookup endpoint. */
+    rememberOrder(result.order);
+
     // Clear only what was actually purchased.
     if (buyNowMode) clearBuyNow();
     else clearCart();
 
     // replace(), not push() — Back from the success page must not return to a
     // checkout form that would place a second order.
-    router.replace(`/order/success/${result.orderId}`);
+    router.replace(`/order/success/${encodeURIComponent(result.order.orderNumber)}`);
   }
 
   /* --- Render ------------------------------------------------------------ */
 
-  if (!hydrated) {
+  if (!hydrated || resolvingCart) {
     return (
       <div className="flex flex-col gap-4">
         <Skeleton className="h-12 w-full" />
@@ -246,6 +414,7 @@ export function CheckoutForm({
             value={form.customerName}
             onChange={(e) => update("customerName", e.target.value)}
             error={errors.customerName}
+            data-field="customerName"
             autoComplete="name"
             required
           />
@@ -257,6 +426,7 @@ export function CheckoutForm({
             value={form.phone}
             onChange={(e) => update("phone", e.target.value)}
             error={errors.phone}
+            data-field="phone"
             type="tel"
             inputMode="numeric"
             autoComplete="tel"
@@ -269,6 +439,7 @@ export function CheckoutForm({
             placeholder={copy.checkout.addressPlaceholder}
             value={form.address}
             onChange={(e) => update("address", e.target.value)}
+            data-field="address"
             error={errors.address}
             autoComplete="street-address"
             rows={3}
@@ -294,10 +465,10 @@ export function CheckoutForm({
             insideCharge={settings.deliveryInsideDhaka}
             outsideCharge={settings.deliveryOutsideDhaka}
             suggestion={zoneTouched ? null : suggestion}
-            freeDelivery={
-              settings.freeDeliveryThreshold > 0 &&
-              payable >= settings.freeDeliveryThreshold
-            }
+            /* Taken from the quote rather than recomputed: the API owns the
+               free-delivery rule, and a local copy of it would eventually
+               disagree with the charge actually applied. */
+            freeDelivery={zone !== null && deliveryCharge === 0}
             error={errors.zone}
           />
         </section>
@@ -321,13 +492,11 @@ export function CheckoutForm({
         <OrderSummary
           lines={lines}
           subtotal={subtotal}
-          discount={discount}
           deliveryCharge={deliveryCharge}
           total={total}
           zoneChosen={zone !== null}
-          coupon={coupon}
-          onCouponChange={setCoupon}
           freeDeliveryRemaining={freeDeliveryRemaining}
+          isPricing={pricing}
         />
 
         {/* Sticky on mobile, inline on desktop. */}

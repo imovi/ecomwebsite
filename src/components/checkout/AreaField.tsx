@@ -47,6 +47,7 @@ export function AreaField({
         <Icon name="location" size={18} className="shrink-0 text-muted" />
         <input
           id={id}
+          data-field="areaText"
           value={value}
           required
           autoComplete="address-level2"

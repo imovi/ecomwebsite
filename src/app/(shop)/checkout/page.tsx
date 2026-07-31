@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { getAllProducts } from "@/lib/data/catalog";
-import { getSettings } from "@/lib/data/orders";
-import { toCatalogMap } from "@/lib/catalog-utils";
+import { getSettings } from "@/lib/data/settings";
 import { copy } from "@/lib/copy";
 import { Container, Skeleton } from "@/components/ui/Layout";
 import { CheckoutForm } from "@/components/checkout/CheckoutForm";
@@ -12,8 +10,15 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
+/**
+ * Checkout.
+ *
+ * Settings are passed in for the zone selector's displayed charges; every
+ * figure the customer actually pays comes from the API's quote endpoint at
+ * render time and is recomputed again at order placement.
+ */
 export default async function CheckoutPage() {
-  const [products, settings] = await Promise.all([getAllProducts(), getSettings()]);
+  const settings = await getSettings();
 
   return (
     <Container className="py-6 pb-32 lg:pb-10">
@@ -21,7 +26,7 @@ export default async function CheckoutPage() {
 
       {/* CheckoutForm reads `mode=buynow` via useSearchParams. */}
       <Suspense fallback={<Skeleton className="h-96 w-full" />}>
-        <CheckoutForm catalog={toCatalogMap(products)} settings={settings} />
+        <CheckoutForm settings={settings} />
       </Suspense>
     </Container>
   );

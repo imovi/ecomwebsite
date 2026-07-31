@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getCategories } from "@/lib/data/catalog";
-import { getSettings } from "@/lib/data/orders";
+import { getSettings } from "@/lib/data/settings";
 import { copy } from "@/lib/copy";
 import { Container } from "@/components/ui/Layout";
 import { Icon } from "@/components/ui/Icon";
@@ -12,8 +12,9 @@ const HELP_LINKS = [
   { href: "/policies/warranty", label: "Warranty" },
 ];
 
+/** `{shop}` is filled from store settings — see the policy pages. */
 const ABOUT_LINKS = [
-  { href: "/policies/about", label: "About gng" },
+  { href: "/policies/about", label: "About {shop}" },
   { href: "/policies/contact", label: "Contact" },
   { href: "/policies/terms", label: "Terms" },
   { href: "/policies/privacy", label: "Privacy" },
@@ -21,6 +22,7 @@ const ABOUT_LINKS = [
 
 export async function Footer() {
   const [categories, settings] = await Promise.all([getCategories(), getSettings()]);
+  const shopName = settings.storeName || copy.brand.name;
 
   return (
     /* Bottom padding clears the sticky buy bar on product pages. */
@@ -28,7 +30,9 @@ export async function Footer() {
       <Container>
         <div className="grid grid-cols-2 gap-8 md:grid-cols-4">
           <div className="col-span-2 md:col-span-1">
-            <p className="text-title tracking-[-0.04em] text-ink">{copy.brand.name}</p>
+            {/* The shop's own name, so a store that renamed itself in Settings is
+                not still called "gng" down here while the header shows its logo. */}
+            <p className="text-title tracking-[-0.04em] text-ink">{shopName}</p>
             <p className="mt-1 text-caption text-muted">{copy.brand.tagline}</p>
 
             <a
@@ -59,14 +63,14 @@ export async function Footer() {
           <FooterColumn title={copy.footer.about}>
             {ABOUT_LINKS.map((l) => (
               <FooterLink key={l.href} href={l.href}>
-                {l.label}
+                {l.label.replaceAll("{shop}", shopName)}
               </FooterLink>
             ))}
           </FooterColumn>
         </div>
 
-        <p className="mt-10 border-t border-line pt-6 text-caption text-muted">
-          {copy.footer.rights(new Date().getFullYear())}
+        <p className="mt-10 border-t border-line pt-6 text-center text-caption text-muted">
+          {copy.footer.rights(new Date().getFullYear(), shopName)}
         </p>
       </Container>
     </footer>

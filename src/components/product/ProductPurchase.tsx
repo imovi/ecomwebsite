@@ -13,6 +13,7 @@ import { formatTaka, savings } from "@/lib/utils";
 import { copy } from "@/lib/copy";
 import { useCartStore } from "@/lib/stores/cart-store";
 import { toast } from "@/lib/stores/toast-store";
+import { trackAddToCart, trackViewContent } from "@/lib/analytics/events";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
@@ -73,6 +74,18 @@ export function ProductPurchase({ product }: { product: Product }) {
      render and would lose the original intent. */
   const qty = Math.max(1, Math.min(requestedQty, Math.max(stock, 1)));
 
+  /* Report the product view to Meta once per mount. Guarded by a ref rather
+     than an empty dep array so a variant change cannot re-fire it — one page
+     view is one ViewContent, or the audience Facebook builds is skewed towards
+     indecisive shoppers. */
+  const reportedView = useRef(false);
+  useEffect(() => {
+    if (reportedView.current) return;
+    reportedView.current = true;
+    trackViewContent({ sku: product.sku, title: product.title, price });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [product.id]);
+
   /* Show the sticky bar only once the inline buttons have scrolled away. */
   useEffect(() => {
     const target = inlineActionsRef.current;
@@ -107,6 +120,12 @@ export function ProductPurchase({ product }: { product: Product }) {
   function handleAddToCart() {
     if (!ensureSelection() || !inStock) return;
     addItem({ productId: product.id, variantId: variant?.id, qty }, stock);
+    trackAddToCart({
+      sku: variant?.sku ?? product.sku,
+      title: product.title,
+      price,
+      quantity: qty,
+    });
     setSheetOpen(false);
     toast(copy.product.addedToast, {
       tone: "positive",
@@ -161,8 +180,15 @@ export function ProductPurchase({ product }: { product: Product }) {
 
         <div className="mt-5 flex flex-col gap-5 md:mt-0">
           <div>
-            <p className="text-caption font-medium text-muted">{product.brand}</p>
-            <h1 className="mt-1 text-display text-ink">{product.title}</h1>
+            {/* Brand is optional. The element is dropped rather than rendered
+                empty, so an unbranded product does not sit under a blank line
+                that reads as a loading failure. */}
+            {product.brand && (
+              <p className="text-caption font-medium text-muted">{product.brand}</p>
+            )}
+            <h1 className={product.brand ? "mt-1 text-display text-ink" : "text-display text-ink"}>
+              {product.title}
+            </h1>
           </div>
 
           <div className="flex flex-col gap-2">
@@ -198,8 +224,20 @@ export function ProductPurchase({ product }: { product: Product }) {
             <QtyStepper value={qty} onChange={setRequestedQty} max={Math.max(stock, 1)} />
           </div>
 
-          {/* Two full-width buttons, stacked. Buy Now is the dominant one. */}
+          {/* Two full-width buttons, stacked, with Buy Now FIRST.
+              On a phone the top button is the one under the thumb after reading
+              the price, so the direct path to checkout gets that position and Add
+              to Cart takes the secondary slot below it. */}
           <div ref={inlineActionsRef} className="flex flex-col gap-2.5">
+            <Button
+              variant="primary"
+              size="xl"
+              fullWidth
+              onClick={handleBuyNow}
+              disabled={!inStock}
+            >
+              {copy.product.buyNow}
+            </Button>
             <Button
               variant="secondary"
               size="xl"
@@ -209,15 +247,6 @@ export function ProductPurchase({ product }: { product: Product }) {
             >
               <Icon name="cart" size={19} />
               {copy.product.addToCart}
-            </Button>
-            <Button
-              variant="primary"
-              size="xl"
-              fullWidth
-              onClick={handleBuyNow}
-              disabled={!inStock}
-            >
-              {copy.product.buyNow}
             </Button>
           </div>
 

@@ -1,0 +1,19 @@
+# Anything here would be copied into the build context and slow every build.
+node_modules
+dist
+.pglite
+.test-uploads
+uploads
+
+# Real secrets must never enter an image layer — layers are recoverable even if
+# a later step deletes the file.
+.env
+.env.*
+!.env.example
+
+tests
+docs
+*.log
+.DS_Store
+Dockerfile
+.dockerignore

@@ -1,0 +1,21 @@
+# The backend has its own image; including it here would double the context.
+backend
+
+node_modules
+.next
+out
+build
+
+.env
+.env.*
+!.env.example
+
+.git
+.claude
+coverage
+*.log
+*.tsbuildinfo
+.DS_Store
+Dockerfile
+.dockerignore
+docs

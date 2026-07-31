@@ -1,17 +1,48 @@
 # gng
 
-A mobile-first gadget storefront for the Bangladesh market. Cash on delivery,
-guest checkout, no accounts.
+A mobile-first gadget store for the Bangladesh market. Cash on delivery, guest
+checkout, no customer accounts.
 
-Built with Next.js 16 (App Router), React 19.2, TypeScript and Tailwind v4.
-**Frontend-only**: all data is served from in-memory mocks behind a repository
-layer, so swapping in Postgres is a change in one directory.
+Two deployables in one repository:
+
+- **`/`** — Next.js 16 storefront and admin panel (React 19.2, Tailwind v4)
+- **`/backend`** — Express 5 API on Postgres (Drizzle ORM, TypeScript ESM)
+
+The browser never talks to the API directly. Page data is fetched by the Next
+server, and admin requests go through an authenticated proxy inside it — so the
+API can sit on a private network and needs no CORS rule for the storefront.
+
+To deploy this for real, follow [`docs/LAUNCH.md`](docs/LAUNCH.md).
+
+## Running it locally
+
+Two terminals. The API first:
 
 ```bash
-npm run dev     # http://localhost:3000
-npm run build
-npm start
+cd backend && cp .env.example .env && npm install && npm run db:migrate && npm run db:seed && npm run dev
 ```
+
+Then the storefront:
+
+```bash
+cp .env.example .env.local && npm install && npm run dev
+```
+
+The API defaults to `DATABASE_DRIVER=pglite` friendly settings for local work —
+an embedded Postgres, no server to install. Switch to `postgres` with a
+`DATABASE_URL` when you want the real thing.
+
+Seed a realistic catalogue through the public API:
+
+```bash
+cd backend && npm run seed:catalog
+```
+
+| | |
+|---|---|
+| Storefront | http://localhost:3000 |
+| Admin | http://localhost:3000/admin |
+| API | http://localhost:4000/api/v1 |
 
 ---
 
@@ -23,168 +54,167 @@ npm start
 | Category | `/category/[slug]` | `all` is a virtual category |
 | Product | `/product/[slug]` | Sticky buy bar, variant sheet, JSON-LD. ISR 5m |
 | Search | `/search?q=` | noindex |
-| Cart | `/cart` | localStorage, prices resolved server-side |
+| Cart | `/cart` | localStorage; prices resolved server-side on every view |
 | Checkout | `/checkout` | `?mode=buynow` bypasses the cart |
-| Order success | `/order/success/[id]` | |
-| Track order | `/track` | Order number + phone |
+| Order success | `/order/success/[orderNumber]` | |
+| Track order | `/track` | Order number **and** matching phone |
 | Policies | `/policies/[slug]` | delivery, returns, warranty, terms, privacy, about, contact |
-| Admin | `/admin` | Dashboard, orders, products, stock |
+| Admin | `/admin` | Overview, orders, profit, products, categories, branding, tracking, alerts, team, settings |
+
+The admin panel is behind real authentication — see below.
 
 ## Architecture
 
 ```
 src/
   app/
-    (shop)/          storefront routes + shell
-    (admin)/         admin routes + shell
-    actions.ts       server actions — the only write path
-    admin-actions.ts admin mutations
+    (shop)/            storefront routes + shell
+    (admin)/           admin routes (login is outside the shell)
+    api/admin/[...path] authenticated proxy to the API — owns token refresh
+    actions.ts         storefront server actions: cart resolve, quote, order, track
+  proxy.ts             admin route guard (the `proxy` file convention)
   components/
-    ui/              Button, Badge, Price, Field, Sheet, Toaster, Icon, Layout
-    product/         Gallery, VariantPicker, QtyStepper, StickyBuyBar, ProductCard
-    home/            BannerSlider, CategoryRail
-    cart/ checkout/ shop/ admin/
+    ui/                Button, Badge, Price, Field, Sheet, Toaster, Icon, Layout
+    product/ home/ cart/ checkout/ shop/
+    admin/             shell, product form, image manager, order detail, settings
   lib/
-    data/            REPOSITORY LAYER — the only module that touches storage
-    stores/          zustand: cart, toast
-    geo.ts           delivery-zone resolution
-    pricing.ts       all order arithmetic
-    catalog-utils.ts pure helpers, safe on client and server
-    copy.ts          every user-facing string
-  data/              mock tables (products, orders, categories, policies…)
+    api/               typed client, DTO mirror, adapters, config
+    data/              REPOSITORY LAYER — the only module that reads the API for pages
+    admin/             session, client, revalidation
+    analytics/         Meta Pixel, Google Tag Manager, dataLayer events
+    stores/            zustand: cart, toast, last order
+    geo.ts             delivery-zone suggestion
+    copy.ts            every user-facing string
+
+backend/src/
+  modules/             auth, admins, categories, products, orders, settings, marketing, integrations, banners, reports, health
+  db/                  schema, migrations, seed, driver abstraction
+  middleware/          security stack, validation, auth, upload, rate limits
+  core/                errors, response envelope
 ```
+
+`lib/data/*` kept the same function signatures when the mock tables were
+replaced by real API calls, which is why no page or component changed during
+that swap. That was the point of putting a repository layer there.
 
 ### Rules the codebase follows
 
 - **Money is always an integer number of taka.** Never a float. Formatting
-  happens only in `formatTaka`.
-- **Discount percentages are derived, never stored.** A stored percentage goes
-  stale the first time someone edits a price.
-- **The cart stores only `{ productId, variantId, qty }`.** Prices are
-  re-resolved from the catalog on render and re-validated server-side at order
-  placement, so a stale cart can never buy at a stale price.
-- **Order items carry snapshots** of title, price and image. Editing a product
+  happens only in `formatTaka`. The API rejects a decimal price rather than
+  truncating it.
+- **Discount percentages are derived, never stored** — a stored percentage goes
+  stale the first time someone edits a price. It is a generated column in
+  Postgres.
+- **Cost is snapshotted onto the order line, exactly like price.** Profit joined
+  to a product's *current* buying price would rewrite every past order the day a
+  supplier raises his rate. A line with no recorded cost counts as earning
+  nothing rather than as pure profit — the report understates rather than
+  flatters, and says how much of itself is unknown.
+- **The cart stores only `{ productId, variantId, qty }`.** Names, prices, images
+  and stock ceilings are fetched fresh on every cart view and recomputed again at
+  order placement, so a stale cart can never buy at a stale price.
+- **Order items carry snapshots** of name, price and image. Editing a product
   must never rewrite order history.
-- **No component hardcodes user-facing text.** It all lives in `lib/copy.ts`,
-  so switching the UI to Bangla is one file.
-- **`lib/data/*` is `server-only`.** Client components get a trimmed projection
-  (`toCatalogMap`), not full product objects.
+- **No component hardcodes user-facing text.** It all lives in `lib/copy.ts`, so
+  switching the UI to Bangla is one file.
+- **`lib/data/*` and `lib/api/*` are `server-only`.**
+- **Every order mutation is inside a transaction and writes an audit entry.**
+  Nothing about an order is ever silently modified.
 
 ---
 
-## Two decisions worth understanding
+## Three decisions worth understanding
 
-### Delivery zone is confirmed, never inferred
+### Admin credentials never reach the browser
+
+The API issues a short-lived access token plus a rotating refresh token. The Next
+server captures both and stores them in its own httpOnly cookies; the browser
+holds nothing but an opaque cookie for the storefront's own origin. Every admin
+request goes through `src/app/api/admin/[...path]/route.ts`, which attaches the
+bearer token server-side.
+
+An access token in `localStorage` is readable by any XSS. Here an XSS can act as
+the admin while the page is open but cannot exfiltrate a credential to use later.
+Token refresh lives in that one route handler because rotation must write a
+cookie, and only a route handler or server action can.
+
+`src/proxy.ts` checks only that a session cookie *exists* — it does not validate
+the token, because that would add a network round trip to every navigation. Real
+enforcement is the API's signature check plus the proxy's refusal to forward
+without a session. A forged cookie yields an empty shell and a 401 on every
+request.
+
+### Delivery zone is suggested, never silently inferred
 
 `lib/geo.ts` matches free-typed area text against thana, neighbourhood and
-district lists to **pre-select** a zone. The customer's confirmed selection is
-what gets stored on the order.
+district lists to **pre-select** a zone; the customer's confirmed selection is
+what gets stored, and the API recomputes the charge server-side regardless.
 
 A naive `text.includes("dhaka")` is wrong in both directions, and each mistake
 costs money at the doorstep:
 
-- `"Dhanmondi"`, `"Mirpur 10"`, `"Uttara Sector 7"` — inside Dhaka, but the
-  word "Dhaka" never appears.
+- `"Dhanmondi"`, `"Mirpur 10"`, `"Uttara Sector 7"` — inside Dhaka, but the word
+  "Dhaka" never appears.
 - `"Savar, Dhaka"`, `"Keraniganj, Dhaka"`, `"Tongi, Gazipur"` — contain "Dhaka"
   but couriers bill them at the outside-city rate.
 
-Hence the check order in `suggestZone`: outside-overrides → inside-Dhaka areas
-→ districts → bare "dhaka". Bangla script and common misspellings are mapped.
+Hence the check order in `suggestZone`: outside-overrides → inside-Dhaka areas →
+districts → bare "dhaka". Bangla script and common misspellings are mapped.
 
-```bash
-node --experimental-strip-types --no-warnings scripts/test-geo.mjs
-```
+### Trending is measured, never pinned
 
-### Trending counts delivered orders, with decay
+Products are ranked by a decay-weighted score over **delivered** orders,
+computed and indexed in Postgres. On a COD store, counting *placed* orders lets
+refused and prank orders decide what the homepage promotes.
 
-`getTrending` scores products by `qty × 0.5^(daysAgo / 14)` over **delivered**
-orders only. On a COD store, counting *placed* orders lets refused and prank
-orders decide what the homepage promotes. `pinnedRank` always outranks the
-computed score — needed on day one before any sales exist, and during
-campaigns.
+There is deliberately no way for an operator to pin a product into Trending. A
+"trending" rail that can be hand-arranged is just a second Featured rail, and it
+stops telling you anything true about demand.
 
 ---
 
 ## Order lifecycle
 
 ```
-PENDING → CONFIRMED → PACKED → SHIPPED → DELIVERED
-             ↓           ↓        ↓
-         CANCELLED   CANCELLED  RETURNED
+PENDING → CONFIRMED → PROCESSING → PACKED → SHIPPED → DELIVERED
+             ↓            ↓          ↓         ↓          ↓
+         CANCELLED    CANCELLED  CANCELLED CANCELLED   RETURNED
 ```
 
 `PENDING → CONFIRMED` is the confirmation phone call, made an explicit logged
-transition so "did anyone ring this customer?" is a fact, not a guess. Stock is
-reserved at placement and released on cancel or return. Revenue and trending
-count `DELIVERED` only. Illegal transitions are rejected by
-`allowedTransitions` in `lib/data/orders.ts`.
+transition so "did anyone ring this customer?" is a fact rather than a guess.
+
+Stock is decremented at placement with a conditional `UPDATE ... WHERE
+stock_quantity >= qty` — so two simultaneous orders for the last unit cannot both
+succeed — and released on cancel or return. Illegal transitions are rejected by
+the service, and cancellation requires a reason that is recorded permanently.
+
+Every edit — a corrected phone number, a changed quantity, a status change —
+appends an immutable audit entry recording who changed what, from what, to what,
+and when.
 
 ---
 
-## Performance
-
-Measured against a production build, gzipped, homepage:
-
-| | |
-|---|---|
-| Framework baseline (Next 16 + React 19.2) | ~187–190 KB |
-| Application code on top of it | 12–19 KB per route |
-
-The catalog does **not** ship to the client (verified — no product strings in
-any client chunk). The `geo.ts` dataset is code-split into its own chunk and
-only loads on checkout. The framework baseline is the dominant cost and is not
-something the app code influences; if it needs to come down, that is a
-framework version decision, not a refactor.
-
-Other measures in place:
-
-- Native CSS scroll-snap for the gallery, banner and rails — no carousel
-  library, real iOS momentum, works before hydration.
-- No icon package; `components/ui/Icon.tsx` is inline SVG.
-- No `tailwind-merge`; variant maps never emit conflicting utilities.
-- Only the first banner and first gallery frame use `preload`; everything else
-  lazy-loads. (Next 16 deprecated `priority` in favour of `preload`.)
-- AVIF/WebP with phone-first `deviceSizes`.
-- All animation is `transform`/`opacity` and respects
-  `prefers-reduced-motion`.
-
----
-
-## Placeholder assets
-
-`public/products/*` and `public/banners/*` are generated SVGs so the store runs
-with no network access:
+## Verification
 
 ```bash
-node scripts/generate-placeholders.mjs
+npm run build                    # storefront
+cd backend && npm run verify     # typecheck + lint + 298 integration tests
 ```
 
-Replace them with real 1:1 product photography — the paths come from
-`data/products.ts`, so nothing else changes. At that point the
-`dangerouslyAllowSVG` block in `next.config.ts` can be deleted.
+The backend suite runs against a real embedded Postgres, not mocks — migrations,
+constraints, generated columns and transaction behaviour are all exercised.
 
 ---
 
-## Before this goes live
-
-1. **Authenticate `/admin`.** There is no auth today. It needs a real gate plus
-   middleware protecting the route — deliberately not faked, so nobody mistakes
-   it for protection that does not exist.
-2. **Replace `lib/data/*` with real queries.** Every function there is already
-   `async` and returns plain data; the mock tables in `src/data/` then go away.
-   Schema notes are in `types/index.ts`.
-3. **Real policy copy.** `data/policies.ts` is written for a BD COD store, but
-   the terms are placeholders. Facebook Business verification checks these.
-4. **Analytics.** Meta Pixel plus **Conversions API server-side** from
-   `placeOrderAction` — browser-only pixels lose a large share of BD Purchase
-   events. Worth firing: ViewContent, AddToCart, InitiateCheckout, Purchase.
-5. **Set the real domain.** `metadataBase` in `app/layout.tsx`, `sitemap.ts`
-   and `robots.ts` all point at `https://gng.com.bd`.
-6. **Store settings.** Delivery charges, free-delivery threshold, hotline and
-   WhatsApp number are in `data/store.ts`.
-
-### Deliberately not built
+## Deliberately not built
 
 Reviews and ratings (an empty review section hurts a new store more than it
 helps — the product-page trust badges do that job instead), customer accounts,
-online payment, and the admin categories/customers/coupons/banners screens.
+wishlists, coupons, online payment, email/SMS transports, and an analytics
+dashboard.
+
+What *is* attached to the order event bus: Meta's Conversions API, Telegram
+alerts and the Google Sheets export. Each is a subscriber that reads its own
+configuration from store settings, so adding SMS later is another subscriber
+rather than a refactor — and a failing one can never fail a checkout.

@@ -1,0 +1,122 @@
+# ---------------------------------------------------------------------------
+# gng — full stack
+#
+#   docker compose up -d
+#   docker compose exec api npm run db:migrate
+#   docker compose exec api npm run db:seed      # creates the first admin
+#
+# Runs Postgres, the API and the storefront. Suitable as-is for a single-VPS
+# deployment behind a reverse proxy that terminates TLS; see docs/LAUNCH.md.
+#
+# Secrets come from a `.env` file beside this one — never inline them here, since
+# this file belongs in git and that one does not.
+# ---------------------------------------------------------------------------
+
+name: gng
+
+services:
+  postgres:
+    # Pinned to a major.minor. A surprise major upgrade will not start against an
+    # existing data directory, and finding that out during a deploy is no fun.
+    image: postgres:17.2-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-gng}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-gng}
+      # Deterministic collation, so index ordering does not shift with a locale
+      # change in the base image.
+      POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    # No published port by default: the database is reachable on the compose
+    # network and nothing else. Uncomment only to attach a client from the host,
+    # and bind to loopback when you do.
+    # ports:
+    #   - "127.0.0.1:5432:5432"
+    healthcheck:
+      # `pg_isready` alone returns true while the init scripts are still running,
+      # so the database name is included to confirm it is actually serving.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gng} -d ${POSTGRES_DB:-gng}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  api:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        # Not merely "started": the API validates its config and connects at
+        # boot, so starting it against a database still initialising is a
+        # guaranteed crash loop.
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      API_URL: ${API_PUBLIC_URL:?set API_PUBLIC_URL in .env}
+      CORS_ORIGINS: ${SITE_URL:?set SITE_URL in .env}
+      # The storefront and the reverse proxy both sit in front of this service.
+      # Must be > 0 in production or rate limiting sees one IP for every visitor.
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
+
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_PRETTY: "false"
+
+      DATABASE_DRIVER: postgres
+      DATABASE_URL: postgres://${POSTGRES_USER:-gng}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-gng}
+      DATABASE_SSL: "false"
+
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?set JWT_ACCESS_SECRET in .env}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
+
+      STORAGE_DRIVER: local
+      UPLOAD_DIR: /app/uploads
+
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+      SEED_ADMIN_NAME: ${SEED_ADMIN_NAME:-Super Admin}
+    volumes:
+      # Product photos live on disk with STORAGE_DRIVER=local. Without this
+      # volume every image vanishes on the next deploy.
+      - uploads:/app/uploads
+    ports:
+      # Loopback only. The reverse proxy needs to reach `/uploads/*` to serve
+      # product photos to customers; everything else on the API is reached
+      # server-to-server over the compose network and is never exposed.
+      - "127.0.0.1:4000:4000"
+
+  web:
+    build:
+      context: .
+      args:
+        # Build-time values. `NEXT_PUBLIC_*` is inlined into the client bundle,
+        # and API_URL is read by next.config.ts for the image allowlist — so
+        # changing either requires a rebuild, not just a restart.
+        API_URL: http://api:4000
+        IMAGE_HOST: ${API_PUBLIC_URL}
+        NEXT_PUBLIC_SITE_URL: ${SITE_URL}
+        NEXT_PUBLIC_WHATSAPP_NUMBER: ${NEXT_PUBLIC_WHATSAPP_NUMBER:-}
+        NEXT_PUBLIC_HOTLINE: ${NEXT_PUBLIC_HOTLINE:-}
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      NODE_ENV: production
+      # Server-side calls take the internal address; the browser never uses it.
+      API_URL: http://api:4000
+      NEXT_PUBLIC_SITE_URL: ${SITE_URL}
+      # Meta tracking is deliberately absent: the pixel id and Conversions API
+      # token live in the database and are set from /admin/marketing, so changing
+      # them needs neither a rebuild nor a restart.
+    ports:
+      # Loopback only. TLS is the reverse proxy's job — exposing this directly
+      # would serve the shop over plaintext HTTP.
+      - "127.0.0.1:3000:3000"
+
+volumes:
+  postgres-data:
+  uploads:

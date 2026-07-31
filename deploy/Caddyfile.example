@@ -1,0 +1,53 @@
+# gng — reverse proxy and HTTPS.
+#
+#   sudo cp deploy/Caddyfile.example /etc/caddy/Caddyfile
+#   sudo nano /etc/caddy/Caddyfile      # replace both domains
+#   sudo systemctl reload caddy
+#
+# Caddy obtains and renews Let's Encrypt certificates on its own — there is no
+# certbot step and nothing to remember to renew.
+#
+# Point DNS at this server BEFORE reloading: certificate issuance is validated
+# over HTTP, so it fails against a domain that does not resolve here yet.
+
+gng.com.bd {
+	# The storefront and the admin panel. Everything a browser talks to.
+	reverse_proxy 127.0.0.1:3000
+
+	encode gzip zstd
+
+	header {
+		# Sent by the proxy rather than the app so they cover static assets too.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# The admin panel shows customer names, phones and addresses.
+		X-Frame-Options "SAMEORIGIN"
+	}
+}
+
+api.gng.com.bd {
+	# ONLY the uploads path is public — that is how product photos reach a
+	# customer's browser. Every other API route is called server-to-server by the
+	# storefront over the private Docker network, so exposing them here would
+	# widen the attack surface for no benefit.
+	handle /uploads/* {
+		reverse_proxy 127.0.0.1:4000
+
+		header {
+			# Uploaded files are content-addressed: the name changes when the
+			# image does, so they can be cached hard.
+			Cache-Control "public, max-age=31536000, immutable"
+			X-Content-Type-Options "nosniff"
+		}
+	}
+
+	handle {
+		respond 404
+	}
+}
+
+# Optional: send www to the apex so search engines see one site, not two.
+# www.gng.com.bd {
+# 	redir https://gng.com.bd{uri} permanent
+# }

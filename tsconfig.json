@@ -22,13 +22,23 @@
       "@/*": ["./src/*"]
     }
   },
+  /* Scoped to this app's own sources rather than a repository-wide glob. A bare
+     recursive glob picks up anything that lands in the working tree — an
+     extracted release tarball, a backup copy — and type-checks it with this
+     app's options, producing a wall of errors from files that are not part of
+     the build. */
   "include": [
     "next-env.d.ts",
-    "**/*.ts",
-    "**/*.tsx",
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "*.ts",
+    "*.mts",
     ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts",
-    "**/*.mts"
+    ".next/dev/types/**/*.ts"
   ],
-  "exclude": ["node_modules"]
+  /* `backend/` is a separate application with its own tsconfig, stricter
+     settings and a Node — not DOM — lib. Type-checking it from here applies
+     the wrong compiler options to it and reports errors that its own build
+     does not have. */
+  "exclude": ["node_modules", "backend", "dist", ".next"]
 }

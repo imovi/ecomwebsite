@@ -12,6 +12,13 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+
+    /* `backend/` is a separate application with its own ESLint config, its own
+       type-aware ruleset and Node — not browser — globals. Linting it from here
+       applies the wrong rules and reports hundreds of errors its own lint run
+       does not have. */
+    "backend/**",
+    "scripts/**",
   ]),
 ]);
 

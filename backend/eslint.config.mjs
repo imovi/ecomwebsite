@@ -41,7 +41,9 @@ export default tseslint.config(
   },
   {
     /* Scripts that run outside the server process may log directly. */
-    files: ["src/db/seed.ts", "src/db/migrate.ts"],
+    /* Operator-facing CLI scripts: their entire output IS the interface, so
+       stdout is correct here rather than the structured logger. */
+    files: ["src/db/seed.ts", "src/db/migrate.ts", "src/db/create-admin.ts"],
     rules: { "no-console": "off" },
   },
   {

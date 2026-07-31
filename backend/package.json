@@ -17,9 +17,10 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx --env-file-if-exists=.env src/db/migrate.ts",
     "db:seed": "tsx --env-file-if-exists=.env src/db/seed.ts",
-    "test": "tsx --test tests/auth.test.ts tests/catalog.test.ts tests/orders.test.ts",
+    "test": "tsx --test tests/auth.test.ts tests/catalog.test.ts tests/orders.test.ts tests/admin.test.ts tests/profit.test.ts",
     "verify": "npm run typecheck && npm run lint && npm test",
-    "smoke": "node scripts/smoke-orders.mjs"
+    "smoke": "node scripts/smoke-orders.mjs",
+    "seed:catalog": "node scripts/seed-catalog.mjs"
   },
   "dependencies": {
     "@node-rs/argon2": "^2.0.2",

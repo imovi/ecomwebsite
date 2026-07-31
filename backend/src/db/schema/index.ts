@@ -20,9 +20,19 @@ export * from "./product-metrics.js";
 
 /* Phase 3 — orders */
 export * from "./order-enums.js";
+export * from "./banners.js";
 export * from "./store-settings.js";
 export * from "./orders.js";
 export * from "./order-items.js";
 export * from "./order-events.js";
+
+/* Phase 4 — profit and loss */
+export * from "./expenses.js";
+
+/* Phase 5 — recovering incomplete checkouts */
+export * from "./abandoned-checkouts.js";
+
+/* Phase 6 — courier hand-off */
+export * from "./courier-shipments.js";
 
 export * from "./relations.js";

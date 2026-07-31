@@ -1,6 +1,7 @@
 import { sql, type SQL } from "drizzle-orm";
 import {
   boolean,
+  check,
   customType,
   index,
   integer,
@@ -51,7 +52,19 @@ export const products = pgTable(
     name: text("name").notNull(),
     slug: text("slug").notNull(),
     sku: text("sku").notNull(),
-    brand: text("brand").notNull(),
+
+    /**
+     * Optional.
+     *
+     * Plenty of stock has no meaningful brand — a generic cable, a phone case, a
+     * mixed lot. Requiring it does not produce better data, it produces "N/A"
+     * and the shop's own name sitting permanently in the brand filter and the
+     * search index.
+     *
+     * NULL rather than empty string, so "no brand" is one value instead of two
+     * that behave differently in `group by`.
+     */
+    brand: text("brand"),
 
     /* RESTRICT, not CASCADE: deleting a category must never silently delete
        its products. The service returns a 409 listing what is in the way. */
@@ -94,6 +107,15 @@ export const products = pgTable(
     price: integer("price").notNull(),
     /** Pre-discount reference price. Null when not discounted. */
     oldPrice: integer("old_price"),
+
+    /**
+     * What the shop pays for one unit. Never shown to a customer.
+     *
+     * Null means "not recorded", which the profit reports surface as unknown
+     * rather than treating as free. A default of 0 would report a 100% margin
+     * on every product nobody has costed yet — a lie shaped like data.
+     */
+    costPrice: integer("cost_price"),
 
     /**
      * Derived, never written.
@@ -188,6 +210,11 @@ export const products = pgTable(
     index("products_search_idx").using("gin", table.searchVector),
     /* GIN over tags for `tags && array['usb-c']` containment filters. */
     index("products_tags_idx").using("gin", table.tags),
+
+    check(
+      "products_cost_price_non_negative",
+      sql`${table.costPrice} is null or ${table.costPrice} >= 0`,
+    ),
   ],
 );
 

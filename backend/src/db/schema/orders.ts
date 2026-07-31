@@ -127,6 +127,12 @@ export const orders = pgTable(
       .on(table.deliveredAt.desc())
       .where(sql`${table.status} = 'delivered'`),
 
+    /* The same access path for the other end of the lifecycle: a return is a
+       cost, counted on the day the parcel came back. Rare, so partial. */
+    index("orders_returned_at_idx")
+      .on(table.returnedAt.desc())
+      .where(sql`${table.status} = 'returned'`),
+
     /* Totals must add up. A CHECK is cheap and catches an arithmetic bug at
        the point of the write rather than in a month-end report. */
     check(

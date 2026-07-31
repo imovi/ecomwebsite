@@ -36,6 +36,69 @@
       "when": 1785340498079,
       "tag": "0004_order_event_sequence",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1785404731412,
+      "tag": "0005_optional_product_brand",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1785405729400,
+      "tag": "0006_meta_tracking_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1785415690468,
+      "tag": "0007_google_tag_manager",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1785433437436,
+      "tag": "0008_logo_and_banners",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1785434852737,
+      "tag": "0009_image_dimensions",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1785435912218,
+      "tag": "0010_telegram_and_sheets",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1785435972218,
+      "tag": "0011_costs_and_expenses",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1785436032218,
+      "tag": "0012_abandoned_checkouts",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1785436092218,
+      "tag": "0013_courier",
+      "breakpoints": true
     }
   ]
 }

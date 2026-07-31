@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -47,6 +48,14 @@ export const productVariants = pgTable(
 
     price: integer("price").notNull(),
     oldPrice: integer("old_price"),
+
+    /**
+     * What this option costs the shop. Falls back to the product's cost when
+     * null — 256 GB costs more to buy than 128 GB, exactly as it sells for
+     * more, but most variants (colours) cost the same as their parent.
+     */
+    costPrice: integer("cost_price"),
+
     stockQuantity: integer("stock_quantity").notNull().default(0),
 
     /* SET NULL rather than CASCADE: deleting an image must not delete the
@@ -65,6 +74,11 @@ export const productVariants = pgTable(
     /* Supports "cheapest in-stock variant", which drives the price shown on
        a listing card. */
     index("product_variants_product_price_idx").on(table.productId, table.price),
+
+    check(
+      "product_variants_cost_price_non_negative",
+      sql`${table.costPrice} is null or ${table.costPrice} >= 0`,
+    ),
   ],
 );
 

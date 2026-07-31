@@ -36,11 +36,22 @@ async function main(): Promise<void> {
     return;
   }
 
-  const generated = !config.seed.adminPassword;
-  const password = config.seed.adminPassword ?? randomBytes(18).toString("base64url");
+  /* Read once. Deriving `generated` from a truthiness check while resolving the
+     password with `??` is how this previously created an admin whose password was
+     the empty string: `""` is falsy but not nullish, so it reported a generated
+     password and stored a blank one. Env parsing now normalises blank to
+     undefined, and both values come from the same binding so they cannot
+     disagree again. */
+  const configured = config.seed.adminPassword;
+  const generated = configured === undefined;
+  const password = configured ?? randomBytes(18).toString("base64url");
 
-  if (!generated && password.length < 12) {
-    throw new Error("SEED_ADMIN_PASSWORD must be at least 12 characters.");
+  if (password.length < 12) {
+    throw new Error(
+      generated
+        ? "Failed to generate a password. This is a bug; do not seed with a weak credential."
+        : "SEED_ADMIN_PASSWORD must be at least 12 characters.",
+    );
   }
 
   const admin = await createAdmin({

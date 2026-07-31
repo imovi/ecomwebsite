@@ -50,6 +50,17 @@ export const orderItems = pgTable(
 
     /** Price per unit at the moment of ordering, in whole taka. */
     unitPrice: integer("unit_price").notNull(),
+
+    /**
+     * What the unit cost the SHOP at the moment of ordering.
+     *
+     * Snapshotted for the same reason as `unitPrice`: profit joined to the
+     * product's current buying price would rewrite every past order the day a
+     * supplier raises his rate. Null where the product had no cost recorded —
+     * reported as unknown, never as free.
+     */
+    unitCost: integer("unit_cost"),
+
     quantity: integer("quantity").notNull(),
     /** Persisted rather than computed, so the row is self-contained. */
     lineTotal: integer("line_total").notNull(),
@@ -66,6 +77,10 @@ export const orderItems = pgTable(
 
     check("order_items_quantity_positive", sql`${table.quantity} > 0`),
     check("order_items_price_non_negative", sql`${table.unitPrice} >= 0`),
+    check(
+      "order_items_unit_cost_non_negative",
+      sql`${table.unitCost} is null or ${table.unitCost} >= 0`,
+    ),
     check(
       "order_items_line_total_consistent",
       sql`${table.lineTotal} = ${table.unitPrice} * ${table.quantity}`,

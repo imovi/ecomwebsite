@@ -1,0 +1,19 @@
+-- Brand becomes optional.
+--
+-- A shop selling unbranded or generic stock — a phone case, a cable, a mixed lot
+-- — has no honest value to put here, and a required field invites the worst
+-- possible answer: someone types "N/A" or the shop's own name, and from then on
+-- that noise sits permanently in the brand filter and the search index.
+--
+-- Nothing else needs changing to accommodate NULL:
+--
+--   * `products_search_vector` already wraps brand in `coalesce(brand, '')`, so
+--     the generated column keeps working and simply contributes nothing for a
+--     product with no brand.
+--   * `products_brand_idx` is a btree on `lower(brand)`. Postgres btree indexes
+--     store NULLs, so the index stays usable and `lower(brand) = ANY(...)`
+--     correctly matches nothing for those rows.
+--
+-- Existing rows are untouched — every product created before this migration has
+-- a brand, and it is left exactly as it was.
+ALTER TABLE "products" ALTER COLUMN "brand" DROP NOT NULL;

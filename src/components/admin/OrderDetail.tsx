@@ -1,0 +1,787 @@
+"use client";
+
+import { useCallback, useState } from "react";
+import Image from "next/image";
+import { adminApi, AdminApiError } from "@/lib/admin/client";
+import { useLoad } from "@/lib/admin/use-load";
+import { formatTaka, formatDateTime } from "@/lib/utils";
+import { copy } from "@/lib/copy";
+import { toast } from "@/lib/stores/toast-store";
+import type { ApiOrderDetail, ApiOrderStatus } from "@/lib/api/types";
+import { AdminShell } from "./AdminShell";
+import { AsyncState, Card, CardHeader, ErrorBanner, PageBody } from "./ui";
+import { Button } from "@/components/ui/Button";
+import { Badge } from "@/components/ui/Badge";
+import { Icon } from "@/components/ui/Icon";
+import { Input, Textarea } from "@/components/ui/Field";
+
+/**
+ * Order detail — the screen the store is actually run from.
+ *
+ * Every mutation sends `expectedVersion`. The API rejects a stale version with
+ * a conflict, which is what stops two people on a confirmation call from
+ * overwriting each other's correction without either noticing. On conflict the
+ * order is reloaded and the operator is told to look again rather than having
+ * their edit silently replayed onto newer data.
+ */
+export function OrderDetail({ identifier }: { identifier: string }) {
+  const [order, setOrder] = useState<ApiOrderDetail | null>(null);
+  const [shipment, setShipment] = useState<Shipment | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  /* Does not raise `loading` on entry: this also runs after every mutation,
+     and blanking the order behind a skeleton mid-edit is disorienting. */
+  const load = useCallback(async () => {
+    try {
+      const data = await adminApi.get<{ order: ApiOrderDetail }>(`admin/orders/${identifier}`);
+      setOrder(data.order);
+
+      /* Separate call, and a failure here is swallowed: a courier being
+         unreachable must not stop the order itself from loading. */
+      try {
+        const parcel = await adminApi.get<{ shipment: Shipment | null }>(
+          `admin/courier/order/${data.order.id}`,
+        );
+        setShipment(parcel.shipment);
+      } catch {
+        setShipment(null);
+      }
+
+      setError(null);
+    } catch (caught) {
+      setError(caught instanceof AdminApiError ? caught.message : "Could not load the order.");
+    } finally {
+      setLoading(false);
+    }
+  }, [identifier]);
+
+  useLoad(load);
+
+  /** Runs a mutation, then refreshes so `version` and the timeline stay true. */
+  const mutate = useCallback(
+    async (action: () => Promise<unknown>, successMessage: string): Promise<boolean> => {
+      setBusy(true);
+      setActionError(null);
+      try {
+        await action();
+        toast(successMessage);
+        await load();
+        return true;
+      } catch (caught) {
+        if (caught instanceof AdminApiError) {
+          setActionError(
+            caught.status === 409
+              ? "Someone else changed this order while you were editing. It has been reloaded — please check and try again."
+              : caught.message,
+          );
+          if (caught.status === 409) await load();
+        } else {
+          setActionError("Could not save. Please try again.");
+        }
+        return false;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [load],
+  );
+
+  if (loading || error || !order) {
+    return (
+      <AdminShell title="Order">
+        <AsyncState loading={loading} error={error} onRetry={() => {
+            setLoading(true);
+            void load();
+          }}>
+          <p />
+        </AsyncState>
+      </AdminShell>
+    );
+  }
+
+  const isClosed = order.status === "cancelled" || order.status === "returned";
+
+  return (
+    <AdminShell
+      title={order.orderNumber}
+      action={
+        <div className="flex items-center gap-2 2xl:col-span-2">
+          <Button href="/admin/orders" variant="ghost" size="sm">
+            Back
+          </Button>
+          {/* Opens the API's printable invoice through the authenticated proxy. */}
+          <Button
+            href={`/api/admin/admin/orders/${order.orderNumber}/invoice`}
+            target="_blank"
+            rel="noopener"
+            variant="secondary"
+            size="sm"
+          >
+            Invoice
+          </Button>
+        </div>
+      }
+    >
+      <PageBody>
+        <ErrorBanner message={actionError} className="2xl:col-span-2" />
+
+        <div className="flex flex-wrap items-center gap-2 2xl:col-span-2">
+          <Badge tone={isClosed ? "saleSoft" : order.status === "delivered" ? "positive" : "ink"}>
+            {copy.orderStatus[order.status]}
+          </Badge>
+          <span className="text-caption text-muted">
+            Placed {formatDateTime(order.createdAt)}
+          </span>
+          <span className="text-caption text-muted">· Cash on delivery</span>
+        </div>
+
+        {order.cancellationReason && (
+          <p className="rounded-sm bg-sale-soft px-3 py-2 text-caption text-sale">
+            Cancelled: {order.cancellationReason}
+          </p>
+        )}
+
+        <StatusActions
+          order={order}
+          busy={busy}
+          onTransition={(status, note) =>
+            mutate(
+              () =>
+                adminApi.patch(`admin/orders/${order.id}/status`, {
+                  status,
+                  expectedVersion: order.version,
+                  ...(note ? { note } : {}),
+                }),
+              `Marked ${copy.orderStatus[status].toLowerCase()}`,
+            )
+          }
+          onCancel={(reason) =>
+            mutate(
+              () =>
+                adminApi.post(`admin/orders/${order.id}/cancel`, {
+                  reason,
+                  expectedVersion: order.version,
+                }),
+              "Order cancelled",
+            )
+          }
+        />
+
+        <CourierPanel
+          order={order}
+          shipment={shipment}
+          busy={busy}
+          onSend={() =>
+            mutate(
+              () => adminApi.post(`admin/courier/order/${order.id}/send`, {}),
+              "Sent to the courier",
+            )
+          }
+          onSync={() =>
+            shipment
+              ? mutate(
+                  () => adminApi.post(`admin/courier/shipment/${shipment.id}/sync`, {}),
+                  "Status refreshed",
+                )
+              : Promise.resolve(false)
+          }
+        />
+
+        <CustomerCard order={order} busy={busy} mutate={mutate} />
+
+        <Card>
+          <CardHeader title="Items" />
+          <ul className="divide-y divide-line">
+            {order.items.map((item) => (
+              <li key={item.id} className="flex items-center gap-3 p-4">
+                <span className="relative size-12 shrink-0 overflow-hidden rounded-xs bg-surface">
+                  {item.imageUrl ? (
+                    <Image
+                      src={item.imageUrl}
+                      alt=""
+                      fill
+                      sizes="48px"
+                      className="object-cover"
+                    />
+                  ) : (
+                    <Icon
+                      name="package"
+                      size={18}
+                      className="absolute inset-0 m-auto text-muted"
+                    />
+                  )}
+                </span>
+
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-caption text-ink">{item.productName}</p>
+                  <p className="truncate text-micro text-muted">
+                    {item.variantLabel ? `${item.variantLabel} · ` : ""}
+                    {item.sku}
+                  </p>
+                </div>
+
+                <ItemQuantity
+                  order={order}
+                  itemId={item.id}
+                  quantity={item.quantity}
+                  disabled={isClosed || busy}
+                  mutate={mutate}
+                />
+
+                <span className="tnum w-24 shrink-0 text-right text-caption font-medium text-ink">
+                  {formatTaka(item.lineTotal)}
+                </span>
+              </li>
+            ))}
+          </ul>
+
+          <dl className="flex flex-col gap-1.5 border-t border-line p-4 text-caption">
+            <div className="flex justify-between">
+              <dt className="text-muted">Subtotal</dt>
+              <dd className="tnum text-ink">{formatTaka(order.subtotal)}</dd>
+            </div>
+            <div className="flex justify-between">
+              <dt className="text-muted">
+                Delivery · {order.deliveryZone === "inside_dhaka" ? "Inside Dhaka" : "Outside Dhaka"}
+              </dt>
+              <dd className="tnum text-ink">{formatTaka(order.deliveryCharge)}</dd>
+            </div>
+            <div className="mt-1 flex justify-between border-t border-line pt-2 text-body font-semibold">
+              <dt className="text-ink">Collect on delivery</dt>
+              <dd className="tnum text-ink">{formatTaka(order.grandTotal)}</dd>
+            </div>
+          </dl>
+        </Card>
+
+        <NotesCard order={order} busy={busy} mutate={mutate} />
+        <Timeline order={order} />
+      </PageBody>
+    </AdminShell>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Status                                                                     */
+/* -------------------------------------------------------------------------- */
+
+/* -------------------------------------------------------------------------- */
+
+interface Shipment {
+  id: string;
+  provider: string;
+  consignmentId: string;
+  trackingCode: string;
+  status: string;
+  courierStatus: string;
+  codAmount: number;
+  lastSyncedAt: string | null;
+  lastError: string;
+}
+
+/** Our vocabulary, in the words the shop would use out loud. */
+const SHIPMENT_LABELS: Record<string, string> = {
+  pending: "Waiting for pickup",
+  picked_up: "Picked up",
+  in_transit: "On the way",
+  out_for_delivery: "Out for delivery",
+  delivered: "Delivered",
+  returned: "Returned",
+  cancelled: "Cancelled",
+  unknown: "Check with the courier",
+};
+
+/**
+ * Hand-off and tracking for one order.
+ *
+ * Before it is sent this is a single button; after, it is a status line. The
+ * button is deliberately absent for a pending order — the API refuses it too,
+ * because an unconfirmed parcel is the refusal this whole workflow exists to
+ * prevent, and a button that only ever errors is worse than no button.
+ */
+function CourierPanel({
+  order,
+  shipment,
+  busy,
+  onSend,
+  onSync,
+}: {
+  order: ApiOrderDetail;
+  shipment: Shipment | null;
+  busy: boolean;
+  onSend: () => Promise<boolean>;
+  onSync: () => Promise<boolean>;
+}) {
+  const finished = order.status === "cancelled" || order.status === "returned";
+
+  if (!shipment) {
+    if (finished) return null;
+
+    return (
+      <Card>
+        <CardHeader title="Courier" />
+        <div className="flex flex-wrap items-center gap-3 p-4">
+          {order.status === "pending" ? (
+            <p className="text-caption text-muted">
+              Confirm this order by phone first. Sending an unconfirmed parcel is how they come
+              back.
+            </p>
+          ) : (
+            <>
+              <Button variant="primary" size="sm" loading={busy} onClick={() => void onSend()}>
+                <Icon name="truck" size={16} />
+                Send to courier
+              </Button>
+              <p className="text-caption text-muted">
+                Creates the parcel and marks this order shipped.
+              </p>
+            </>
+          )}
+        </div>
+      </Card>
+    );
+  }
+
+  const mismatch = shipment.codAmount !== order.grandTotal;
+
+  return (
+    <Card>
+      <CardHeader title="Courier" />
+      <div className="flex flex-col gap-3 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-body font-semibold text-ink">
+              {SHIPMENT_LABELS[shipment.status] ?? shipment.status}
+            </p>
+            <p className="text-caption text-muted">
+              {shipment.provider}
+              {shipment.trackingCode && (
+                <>
+                  {" · "}
+                  <span className="tnum select-all font-mono">{shipment.trackingCode}</span>
+                </>
+              )}
+              {shipment.lastSyncedAt && ` · checked ${formatDateTime(shipment.lastSyncedAt)}`}
+            </p>
+          </div>
+
+          <Button variant="soft" size="sm" loading={busy} onClick={() => void onSync()}>
+            <Icon name="refresh" size={15} />
+            Refresh
+          </Button>
+        </div>
+
+        {/* The courier's own wording, kept visible for a support call —
+            "they told me partial_delivered" is a real conversation. */}
+        {shipment.courierStatus && (
+          <p className="text-micro text-muted">Courier says: {shipment.courierStatus}</p>
+        )}
+
+        {mismatch && (
+          <p className="flex items-start gap-2 rounded-sm bg-warn-soft px-3 py-2 text-caption text-warn">
+            <Icon name="alert" size={15} className="mt-0.5 shrink-0" />
+            The courier will collect {formatTaka(shipment.codAmount)}, but this order totals{" "}
+            {formatTaka(order.grandTotal)}. Fix it in the courier&apos;s panel before delivery.
+          </p>
+        )}
+
+        {shipment.lastError && (
+          <p className="rounded-sm bg-sale-soft px-3 py-2 text-caption text-sale">
+            Last check failed: {shipment.lastError}
+          </p>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function StatusActions({
+  order,
+  busy,
+  onTransition,
+  onCancel,
+}: {
+  order: ApiOrderDetail;
+  busy: boolean;
+  onTransition: (status: ApiOrderStatus, note?: string) => Promise<boolean>;
+  onCancel: (reason: string) => Promise<boolean>;
+}) {
+  const [cancelling, setCancelling] = useState(false);
+  const [reason, setReason] = useState("");
+
+  /* Cancellation has its own required reason, so it is excluded here and gets
+     a dedicated control. */
+  const transitions = order.allowedTransitions.filter((status) => status !== "cancelled");
+  const canCancel = order.allowedTransitions.includes("cancelled");
+
+  if (transitions.length === 0 && !canCancel) return null;
+
+  return (
+    <Card>
+      <CardHeader title="Update status" />
+      <div className="flex flex-col gap-3 p-4">
+        {transitions.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {transitions.map((status) => (
+              <Button
+                key={status}
+                type="button"
+                variant={status === "confirmed" ? "primary" : "secondary"}
+                size="sm"
+                disabled={busy}
+                onClick={() => void onTransition(status)}
+              >
+                {copy.orderStatus[status]}
+              </Button>
+            ))}
+          </div>
+        )}
+
+        {canCancel &&
+          (cancelling ? (
+            <div className="flex flex-col gap-2 rounded-sm border border-line p-3">
+              <Input
+                label="Why is this order being cancelled?"
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                hint="Recorded permanently in the order history."
+                placeholder="Customer not reachable after 3 calls"
+                required
+              />
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="danger"
+                  size="sm"
+                  loading={busy}
+                  disabled={reason.trim().length < 3}
+                  onClick={async () => {
+                    if (await onCancel(reason.trim())) {
+                      setCancelling(false);
+                      setReason("");
+                    }
+                  }}
+                >
+                  Cancel order
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setCancelling(false)}
+                >
+                  Keep order
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <Button
+              type="button"
+              variant="danger"
+              size="sm"
+              className="self-start"
+              onClick={() => setCancelling(true)}
+            >
+              Cancel order
+            </Button>
+          ))}
+      </div>
+    </Card>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Customer                                                                   */
+/* -------------------------------------------------------------------------- */
+
+type Mutate = (action: () => Promise<unknown>, message: string) => Promise<boolean>;
+
+function CustomerCard({
+  order,
+  busy,
+  mutate,
+}: {
+  order: ApiOrderDetail;
+  busy: boolean;
+  mutate: Mutate;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({
+    customerName: order.customerName,
+    phone: order.phone,
+    address: order.address,
+    areaText: order.areaText,
+    note: "",
+  });
+
+  const set = (key: keyof typeof form, value: string) =>
+    setForm((current) => ({ ...current, [key]: value }));
+
+  if (!editing) {
+    return (
+      <Card>
+        <CardHeader title="Customer" />
+        <div className="flex flex-col gap-2 p-4">
+          <p className="text-body font-medium text-ink">{order.customerName}</p>
+          <a
+            href={`tel:${order.phone}`}
+            className="tnum inline-flex w-fit items-center gap-1.5 text-caption text-ink hover:underline"
+          >
+            <Icon name="phone" size={15} />
+            {order.phone}
+          </a>
+          <p className="text-caption text-ink-soft">{order.address}</p>
+          <p className="text-caption text-muted">{order.areaText}</p>
+
+          <Button
+            type="button"
+            variant="soft"
+            size="sm"
+            className="mt-1 self-start"
+            onClick={() => {
+              setForm({
+                customerName: order.customerName,
+                phone: order.phone,
+                address: order.address,
+                areaText: order.areaText,
+                note: "",
+              });
+              setEditing(true);
+            }}
+          >
+            Correct details
+          </Button>
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader
+        title="Correct customer details"
+        hint="Every change is recorded with your name and the previous value."
+      />
+      <div className="flex flex-col gap-4 p-4">
+        <Input
+          label="Name"
+          value={form.customerName}
+          onChange={(event) => set("customerName", event.target.value)}
+        />
+        <Input
+          label="Phone"
+          value={form.phone}
+          inputMode="tel"
+          onChange={(event) => set("phone", event.target.value)}
+        />
+        <Textarea
+          label="Address"
+          value={form.address}
+          rows={3}
+          onChange={(event) => set("address", event.target.value)}
+        />
+        <Input
+          label="Area"
+          value={form.areaText}
+          onChange={(event) => set("areaText", event.target.value)}
+          hint="Changing the area may change the delivery charge and the total."
+        />
+        <Input
+          label="Note (optional)"
+          value={form.note}
+          onChange={(event) => set("note", event.target.value)}
+          placeholder="Corrected during confirmation call"
+        />
+
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            variant="primary"
+            size="sm"
+            loading={busy}
+            onClick={async () => {
+              /* Only changed fields are sent: the API records one audit entry
+                 per field, and resending an unchanged value would log a change
+                 that never happened. */
+              const payload: Record<string, string | number> = {
+                expectedVersion: order.version,
+              };
+              if (form.customerName !== order.customerName)
+                payload.customerName = form.customerName.trim();
+              if (form.phone !== order.phone) payload.phone = form.phone.trim();
+              if (form.address !== order.address) payload.address = form.address.trim();
+              if (form.areaText !== order.areaText) payload.areaText = form.areaText.trim();
+              if (form.note.trim()) payload.note = form.note.trim();
+
+              if (Object.keys(payload).length === 1) {
+                setEditing(false);
+                return;
+              }
+
+              if (await mutate(
+                () => adminApi.patch(`admin/orders/${order.id}/customer`, payload),
+                "Customer details updated",
+              )) {
+                setEditing(false);
+              }
+            }}
+          >
+            Save changes
+          </Button>
+          <Button type="button" variant="ghost" size="sm" onClick={() => setEditing(false)}>
+            Cancel
+          </Button>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Items and notes                                                            */
+/* -------------------------------------------------------------------------- */
+
+function ItemQuantity({
+  order,
+  itemId,
+  quantity,
+  disabled,
+  mutate,
+}: {
+  order: ApiOrderDetail;
+  itemId: string;
+  quantity: number;
+  disabled: boolean;
+  mutate: Mutate;
+}) {
+  const change = (next: number) => {
+    if (next < 1) return;
+    void mutate(
+      () =>
+        adminApi.patch(`admin/orders/${order.id}/items/${itemId}/quantity`, {
+          quantity: next,
+          expectedVersion: order.version,
+        }),
+      "Quantity updated",
+    );
+  };
+
+  return (
+    <div className="flex shrink-0 items-center gap-1">
+      <button
+        type="button"
+        onClick={() => change(quantity - 1)}
+        disabled={disabled || quantity <= 1}
+        aria-label="Decrease quantity"
+        className="flex size-7 items-center justify-center rounded-xs border border-line text-ink disabled:opacity-30"
+      >
+        <Icon name="minus" size={13} />
+      </button>
+      <span className="tnum w-7 text-center text-caption text-ink">{quantity}</span>
+      <button
+        type="button"
+        onClick={() => change(quantity + 1)}
+        disabled={disabled}
+        aria-label="Increase quantity"
+        className="flex size-7 items-center justify-center rounded-xs border border-line text-ink disabled:opacity-30"
+      >
+        <Icon name="plus" size={13} />
+      </button>
+    </div>
+  );
+}
+
+function NotesCard({
+  order,
+  busy,
+  mutate,
+}: {
+  order: ApiOrderDetail;
+  busy: boolean;
+  mutate: Mutate;
+}) {
+  const [notes, setNotes] = useState(order.internalNotes ?? "");
+  const changed = notes !== (order.internalNotes ?? "");
+
+  return (
+    <Card>
+      <CardHeader title="Internal notes" hint="Staff only. Never shown to the customer." />
+      <div className="flex flex-col gap-3 p-4">
+        <Textarea
+          label="Notes"
+          value={notes}
+          rows={3}
+          onChange={(event) => setNotes(event.target.value)}
+          placeholder="Called at 6pm, asked to deliver after Friday prayers."
+        />
+        {changed && (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            loading={busy}
+            className="self-start"
+            onClick={() =>
+              void mutate(
+                () =>
+                  adminApi.patch(`admin/orders/${order.id}/notes`, {
+                    internalNotes: notes.trim() === "" ? null : notes.trim(),
+                    expectedVersion: order.version,
+                  }),
+                "Notes saved",
+              )
+            }
+          >
+            Save notes
+          </Button>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Timeline                                                                   */
+/* -------------------------------------------------------------------------- */
+
+/** Renders an audited value; `null` means the field was cleared. */
+function renderValue(value: unknown): string {
+  if (value === null || value === undefined) return "—";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
+function Timeline({ order }: { order: ApiOrderDetail }) {
+  return (
+    <Card>
+      <CardHeader
+        title="History"
+        hint="Every change to this order, oldest first. This record cannot be edited."
+      />
+      <ol className="flex flex-col divide-y divide-line">
+        {order.timeline.map((event) => (
+          <li key={event.id} className="flex flex-col gap-0.5 px-4 py-3">
+            <div className="flex flex-wrap items-baseline gap-2">
+              <span className="text-caption font-medium text-ink">
+                {event.type.replace(/_/g, " ")}
+              </span>
+              <span className="text-micro text-muted">{formatDateTime(event.createdAt)}</span>
+              <span className="text-micro text-muted">· {event.actorName}</span>
+            </div>
+
+            {event.field && (
+              <p className="text-micro text-ink-soft">
+                <span className="text-muted">{event.field}:</span>{" "}
+                {renderValue(event.previousValue)} → {renderValue(event.newValue)}
+              </p>
+            )}
+
+            {event.note && <p className="text-micro text-muted">“{event.note}”</p>}
+          </li>
+        ))}
+      </ol>
+    </Card>
+  );
+}

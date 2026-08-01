@@ -1,0 +1,24 @@
+# Line endings.
+#
+# Everything is stored and checked out with LF, including on Windows.
+#
+# This is not a style preference. The project is developed on Windows and
+# deployed to Linux, and a Dockerfile committed with CRLF breaks the build in a
+# way that gives no usable error: `RUN npm ci\r` passes the carriage return to
+# npm as an argument, npm answers by printing its usage block, and the build
+# fails with "npm ci did not complete successfully: exit code 1" — nothing that
+# points at line endings.
+#
+# `bootstrap.sh` fails the same way, more obviously: a CRLF shebang makes the
+# kernel look for an interpreter named `bash\r`.
+* text=auto eol=lf
+
+# Binary files must never be touched by any of the above.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.avif binary
+*.ico binary
+*.woff binary
+*.woff2 binary

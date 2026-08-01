@@ -118,12 +118,16 @@ docker compose exec -T postgres pg_isready -U gng -d gng >/dev/null 2>&1 \
   || fail "Postgres did not come up. Check: docker compose logs postgres"
 
 step "Creating the database schema"
-docker compose exec -T api npm run db:migrate
+# `:prod` runs the COMPILED entrypoint. The runtime image is pruned with
+# `npm prune --omit=dev`, so `tsx` — and the TypeScript source it would run —
+# are both absent from it. Calling the dev script here fails with
+# `sh: tsx: not found` after everything else has already succeeded.
+docker compose exec -T api npm run db:migrate:prod
 
 step "Creating your admin account"
 # The seeder is idempotent: on a re-run against a database that already has an
 # admin it prints "Skipped" and changes nothing.
-SEED_OUTPUT="$(docker compose exec -T api npm run db:seed 2>&1)"
+SEED_OUTPUT="$(docker compose exec -T api npm run db:seed:prod 2>&1)"
 echo "$SEED_OUTPUT" | grep -vE '^\s*$|^>' || true
 
 # --- Done ------------------------------------------------------------------

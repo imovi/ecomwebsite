@@ -3,7 +3,9 @@ import { z } from "zod";
 import { authenticate, requireRole } from "../../middleware/authenticate.js";
 import { validate, validated } from "../../middleware/validate.js";
 import { sendSuccess } from "../../core/response.js";
+import { safeString, uuidSchema } from "../../lib/validation/schemas.js";
 import * as service from "./profit.service.js";
+import * as adSpend from "./product-ad-spend.service.js";
 
 /**
  * Profit and loss — /api/v1/admin/reports.
@@ -63,5 +65,69 @@ const profitCsv: RequestHandler = async (req, res) => {
   res.send(service.toCsv(report));
 };
 
+/* -------------------------------------------------------------------------- */
+/* Per-product boosts                                                         */
+/* -------------------------------------------------------------------------- */
+
+const boostRangeSchema = z
+  .object({
+    from: z.iso.date(),
+    to: z.iso.date(),
+    productId: uuidSchema.optional(),
+  })
+  .strict()
+  .refine((query) => query.from <= query.to, {
+    message: "from must not be after to.",
+    path: ["from"],
+  });
+
+const boostBodySchema = z
+  .object({
+    productId: uuidSchema,
+    /* A calendar day, matching how the budget was actually set. */
+    spentOn: z.iso.date(),
+    amount: z.number().int().min(0).max(100_000_000),
+    note: safeString({ max: 200 }).optional(),
+  })
+  .strict();
+
+const listBoosts: RequestHandler = async (req, res) => {
+  const { query } = validated<unknown, z.infer<typeof boostRangeSchema>>(req);
+
+  sendSuccess(res, {
+    boosts: await adSpend.listForRange(
+      { from: query.from, to: query.to },
+      query.productId,
+    ),
+  });
+};
+
+const recordBoost: RequestHandler = async (req, res) => {
+  const { body } = validated<z.infer<typeof boostBodySchema>>(req);
+
+  sendSuccess(res, {
+    boost: await adSpend.record({
+      productId: body.productId,
+      spentOn: body.spentOn,
+      amount: body.amount,
+      ...(body.note !== undefined ? { note: body.note } : {}),
+    }),
+  });
+};
+
+const deleteBoost: RequestHandler = async (req, res) => {
+  const { params } = validated<unknown, unknown, { id: string }>(req);
+  await adSpend.remove(params.id);
+  sendSuccess(res, { deleted: true });
+};
+
 reportsAdminRouter.get("/profit", validate({ query: rangeQuerySchema }), profit);
 reportsAdminRouter.get("/profit.csv", validate({ query: rangeQuerySchema }), profitCsv);
+
+reportsAdminRouter.get("/boosts", validate({ query: boostRangeSchema }), listBoosts);
+reportsAdminRouter.put("/boosts", validate({ body: boostBodySchema }), recordBoost);
+reportsAdminRouter.delete(
+  "/boosts/:id",
+  validate({ params: z.object({ id: uuidSchema }) }),
+  deleteBoost,
+);

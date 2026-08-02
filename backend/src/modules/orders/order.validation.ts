@@ -232,6 +232,29 @@ export const listOrdersQuerySchema = paginationSchema
 
 export type ListOrdersQuery = z.infer<typeof listOrdersQuerySchema>;
 
+/**
+ * The date window for the overview tiles.
+ *
+ * Only the two date fields — the tiles count every status by definition, so
+ * accepting a `status` filter here would produce a set of counts that
+ * contradicts its own labels.
+ */
+export const statusCountsQuerySchema = z
+  .object({
+    dateFrom: z.iso.datetime({ offset: true }).or(z.iso.date()).optional(),
+    dateTo: z.iso.datetime({ offset: true }).or(z.iso.date()).optional(),
+  })
+  .strict()
+  .refine(
+    (query) =>
+      query.dateFrom === undefined ||
+      query.dateTo === undefined ||
+      new Date(query.dateFrom) <= new Date(query.dateTo),
+    { message: "dateFrom must not be after dateTo.", path: ["dateFrom"] },
+  );
+
+export type StatusCountsQuery = z.infer<typeof statusCountsQuerySchema>;
+
 /* -------------------------------------------------------------------------- */
 /* Params                                                                     */
 /* -------------------------------------------------------------------------- */

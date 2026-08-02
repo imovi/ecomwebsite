@@ -8,7 +8,7 @@ import type { ApiStoreSettings } from "@/lib/api/types";
 import { AdminShell } from "./AdminShell";
 import { AsyncState, Card, CardHeader, ErrorBanner, PageBody, SuccessBanner } from "./ui";
 import { Button } from "@/components/ui/Button";
-import { Input, Select, Textarea } from "@/components/ui/Field";
+import { Input, Textarea } from "@/components/ui/Field";
 import { Icon } from "@/components/ui/Icon";
 
 /**
@@ -28,6 +28,10 @@ interface IntegrationStatus {
     chatConfigured: boolean;
     enabled: boolean;
     chatId: string;
+    /** Buttons and commands — fails independently of the alerts themselves. */
+    botEnabled: boolean;
+    allowedUserIds: string;
+    webhook: { url: string; pendingUpdates: number; lastError: string } | null;
   };
   googleSheets: {
     ready: boolean;
@@ -50,17 +54,7 @@ interface TestResult {
 }
 
 /** Which card an action belongs to. */
-type Scope = "telegram" | "sheets" | "courier";
-
-interface CourierStatus {
-  ready: boolean;
-  problem: string | null;
-  provider: string;
-  credentialsConfigured: boolean;
-  storeIdConfigured: boolean;
-  enabled: boolean;
-  openShipments: number;
-}
+type Scope = "telegram" | "sheets";
 
 export function IntegrationsForm() {
   const [settings, setSettings] = useState<ApiStoreSettings | null>(null);
@@ -87,11 +81,6 @@ export function IntegrationsForm() {
   const [telegramResult, setTelegramResult] = useState<TestResult | null>(null);
   const [sheetsResult, setSheetsResult] = useState<TestResult | null>(null);
 
-  const [courierStatus, setCourierStatus] = useState<CourierStatus | null>(null);
-  const [courierResult, setCourierResult] = useState<{ ok: boolean; detail: string } | null>(
-    null,
-  );
-
   const hydrate = (data: ApiStoreSettings) => {
     setSettings(data);
     setChatId(data.integrations.telegram.chatId);
@@ -104,14 +93,12 @@ export function IntegrationsForm() {
 
   const load = useCallback(async () => {
     try {
-      const [settingsData, statusData, courierData] = await Promise.all([
+      const [settingsData, statusData] = await Promise.all([
         adminApi.get<{ settings: ApiStoreSettings }>("admin/settings"),
         adminApi.get<{ status: IntegrationStatus }>("admin/integrations/status"),
-        adminApi.get<{ status: CourierStatus }>("admin/courier/status"),
       ]);
       hydrate(settingsData.settings);
       setStatus(statusData.status);
-      setCourierStatus(courierData.status);
       setError(null);
     } catch (caught) {
       setError(
@@ -153,52 +140,6 @@ export function IntegrationsForm() {
     }
   }
 
-  /**
-   * The courier lives in its own settings group rather than under
-   * `integrations`, so it gets its own saver rather than a flag threaded
-   * through the shared one.
-   */
-  async function saveCourier(patch: Record<string, unknown>, message: string) {
-    setBusy(true);
-    setSaveError(null);
-    try {
-      const data = await adminApi.patch<{ settings: ApiStoreSettings }>("admin/settings", {
-        courier: patch,
-      });
-      hydrate(data.settings);
-      const courierData = await adminApi.get<{ status: CourierStatus }>("admin/courier/status");
-      setCourierStatus(courierData.status);
-      toast(message);
-    } catch (caught) {
-      setSaveError({
-        scope: "courier",
-        message: caught instanceof AdminApiError ? caught.message : "Could not save.",
-      });
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function testCourier() {
-    setBusy(true);
-    setSaveError(null);
-    setCourierResult(null);
-    try {
-      const data = await adminApi.post<{ result: { ok: boolean; detail: string } }>(
-        "admin/courier/test",
-        {},
-      );
-      setCourierResult(data.result);
-    } catch (caught) {
-      setSaveError({
-        scope: "courier",
-        message: caught instanceof AdminApiError ? caught.message : "Could not test.",
-      });
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function runTest(path: string, scope: Scope, set: (result: TestResult) => void) {
     setBusy(true);
     setSaveError(null);
@@ -229,18 +170,6 @@ export function IntegrationsForm() {
         >
           {settings && status && (
             <>
-              {courierStatus && (
-                <CourierCard
-                  settings={settings}
-                  status={courierStatus}
-                  busy={busy}
-                  saveError={saveError?.scope === "courier" ? saveError.message : null}
-                  result={courierResult}
-                  onSave={saveCourier}
-                  onTest={testCourier}
-                />
-              )}
-
               {/* ---------------- Telegram ----------------
                   The verdict and its card are one unit: as separate grid
                   children they would land in different columns, captioning the
@@ -412,13 +341,24 @@ export function IntegrationsForm() {
                     <span>
                       Send an alert for every new order
                       <span className="mt-0.5 block text-micro text-muted">
-                        Cancellations and returns are also announced. Other status changes are
-                        not — an alert per packing step trains everyone to ignore the channel.
+                        Also: cancellations, returns, delivered parcels, and customers who left
+                        without finishing. Packing steps are deliberately silent — an alert for
+                        each one trains everyone to ignore the channel.
                       </span>
                     </span>
                   </label>
                 </div>
               </Card>
+
+              <BotCard
+                status={status.telegram}
+                allowedUserIds={settings.integrations.telegram.allowedUserIds ?? ""}
+                busy={busy}
+                onReload={load}
+                onSaveAllowed={(ids) =>
+                  save({ telegram: { allowedUserIds: ids } }, "Saved")
+                }
+              />
 
               </div>
 
@@ -600,186 +540,169 @@ export function IntegrationsForm() {
 
 /* -------------------------------------------------------------------------- */
 
-/* ---------------- Courier ---------------- */
-
 /**
- * Courier hand-off.
+ * Buttons and commands.
  *
- * Same shape as the other two integrations — paste a credential, prove it
- * works, then switch it on — because testing before enabling is the order that
- * matters. A courier switched on but misconfigured fails at the exact moment
- * somebody is trying to dispatch a parcel.
+ * Its own card rather than another checkbox on the Telegram one, because it is a
+ * different kind of thing: alerts are one-way and carry no risk, whereas this
+ * lets anyone in the chat confirm and cancel orders. Presenting them as one
+ * switch would hide that.
  */
-function CourierCard({
-  settings,
+function BotCard({
   status,
+  allowedUserIds,
   busy,
-  saveError,
-  result,
-  onSave,
-  onTest,
+  onReload,
+  onSaveAllowed,
 }: {
-  settings: ApiStoreSettings;
-  status: CourierStatus;
+  status: IntegrationStatus["telegram"];
+  allowedUserIds: string;
   busy: boolean;
-  saveError: string | null;
-  result: { ok: boolean; detail: string } | null;
-  onSave: (patch: Record<string, unknown>, message: string) => Promise<void>;
-  onTest: () => Promise<void>;
+  onReload: () => Promise<void>;
+  onSaveAllowed: (ids: string) => Promise<void>;
 }) {
-  const [provider, setProvider] = useState(settings.courier.provider);
-  const [apiKey, setApiKey] = useState("");
-  const [apiSecret, setApiSecret] = useState("");
-  const [storeId, setStoreId] = useState(settings.courier.storeId);
+  const [working, setWorking] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; detail: string } | null>(null);
+  const [ids, setIds] = useState(allowedUserIds);
 
-  const isPathao = provider === "pathao";
+  async function toggle(on: boolean) {
+    setWorking(true);
+    setResult(null);
+    try {
+      const data = await adminApi.post<{ result: { ok: boolean; detail: string } }>(
+        on ? "admin/integrations/telegram/bot/enable" : "admin/integrations/telegram/bot/disable",
+        {},
+      );
+      setResult(data.result);
+      if (data.result.ok) {
+        toast(on ? "Bot on" : "Bot off");
+        await onReload();
+      }
+    } catch (caught) {
+      setResult({
+        ok: false,
+        detail: caught instanceof AdminApiError ? caught.message : "Could not change it.",
+      });
+    } finally {
+      setWorking(false);
+    }
+  }
 
   return (
     <div className="flex flex-col gap-4">
       <Verdict
-        ok={status.ready}
-        label={status.ready ? "Courier: parcels can be sent" : "Courier: not connected yet"}
+        ok={status.botEnabled}
+        label={status.botEnabled ? "Bot: buttons and commands on" : "Bot: alerts only"}
       />
 
       <Card>
         <CardHeader
-          title="Courier"
-          hint="Send parcels straight from an order, and let the courier tell you when it was delivered."
+          title="Bot buttons and commands"
+          hint="Confirm or cancel an order straight from the alert, and ask the bot questions."
         />
-
         <div className="flex flex-col gap-4 p-4">
-          <Steps
-            steps={
-              isPathao
-                ? [
-                    "In Pathao Merchant, open Developer API and create credentials.",
-                    "Paste the Client ID and Client Secret below, plus your Store ID.",
-                    "Press Test connection — it checks the store id too.",
-                    "Turn it on, then send parcels from each order page.",
-                  ]
-                : [
-                    "In the Steadfast merchant panel, open API and copy the Api Key and Secret Key.",
-                    "Paste both below and save.",
-                    "Press Test connection — it reads your balance back.",
-                    "Turn it on, then send parcels from each order page.",
-                  ]
-            }
-          />
+          <div className="rounded-sm bg-surface px-3 py-2.5">
+            <p className="text-caption font-medium text-ink">What you get</p>
+            <ul className="mt-1 flex list-disc flex-col gap-0.5 pl-4">
+              <li className="text-micro text-muted">
+                <b>Confirm</b> and <b>Cancel</b> buttons on every new-order alert. Cancel asks
+                twice — it sits right beside Confirm on a phone.
+              </li>
+              <li className="text-micro text-muted">
+                <code>/today</code> — today&apos;s orders and takings
+              </li>
+              <li className="text-micro text-muted">
+                <code>/pending</code> — orders still waiting for a call
+              </li>
+              <li className="text-micro text-muted">
+                <code>/order GNG-10001</code> — look up one order
+              </li>
+              <li className="text-micro text-muted">
+                <code>/stock</code> — products low or out of stock
+              </li>
+              <li className="text-micro text-muted">
+                A summary each night, and a nudge when someone leaves without finishing.
+              </li>
+            </ul>
+          </div>
 
-          <Select
-            label="Courier"
-            value={provider}
-            onChange={(event) => setProvider(event.target.value)}
-            hint="One at a time. Changing it does not affect parcels already sent."
-          >
-            <option value="">Not using a courier API</option>
-            <option value="steadfast">Steadfast</option>
-            <option value="pathao">Pathao</option>
-          </Select>
+          {/* Stated plainly rather than buried: this is the one thing about the
+              feature that could surprise someone later. */}
+          <p className="flex items-start gap-2 rounded-sm bg-warn-soft px-3 py-2 text-caption text-warn">
+            <Icon name="alert" size={15} className="mt-0.5 shrink-0" />
+            <span>
+              Anyone in that Telegram chat can confirm and cancel orders. Fine for your own
+              staff group — add user ids below if it is a wider one.
+            </span>
+          </p>
 
-          {settings.courier.hasCredentials && (
-            <p className="flex items-center gap-2 rounded-sm bg-positive-soft px-3 py-2 text-caption text-positive">
-              <Icon name="check" size={15} />
-              Credentials saved ({settings.courier.apiKeyHint}).
+          {status.webhook?.lastError ? (
+            <ErrorBanner
+              message={`Telegram cannot reach this shop: ${status.webhook.lastError}`}
+            />
+          ) : null}
+
+          {status.botEnabled && (status.webhook?.pendingUpdates ?? 0) > 0 && (
+            <p className="rounded-sm bg-warn-soft px-3 py-2 text-caption text-warn">
+              {status.webhook?.pendingUpdates} update(s) waiting — Telegram is holding them
+              because it could not deliver.
             </p>
           )}
 
-          {provider !== "" && (
-            <>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Input
-                  label={isPathao ? "Client ID" : "Api Key"}
-                  type="password"
-                  autoComplete="off"
-                  value={apiKey}
-                  onChange={(event) => setApiKey(event.target.value)}
-                  hint="Leave blank to keep the saved one."
-                />
-                <Input
-                  label={isPathao ? "Client Secret" : "Secret Key"}
-                  type="password"
-                  autoComplete="off"
-                  value={apiSecret}
-                  onChange={(event) => setApiSecret(event.target.value)}
-                />
-              </div>
-
-              {isPathao && (
-                <Input
-                  label="Store ID"
-                  value={storeId}
-                  inputMode="numeric"
-                  onChange={(event) => setStoreId(event.target.value.trim())}
-                  hint="From Pathao Merchant → Stores. Parcels are dispatched from this store."
-                />
-              )}
-            </>
-          )}
+          <Input
+            label="Who may press the buttons (optional)"
+            value={ids}
+            onChange={(event) => setIds(event.target.value)}
+            placeholder="852271924, 123456789"
+            hint="Telegram user ids, comma separated. Leave blank to allow everyone in the chat."
+          />
 
           <div className="flex flex-wrap gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              loading={busy}
-              onClick={() =>
-                void onSave(
-                  {
-                    provider,
-                    ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
-                    ...(apiSecret.trim() ? { apiSecret: apiSecret.trim() } : {}),
-                    ...(isPathao ? { storeId } : {}),
-                  },
-                  "Courier saved",
-                ).then(() => {
-                  setApiKey("");
-                  setApiSecret("");
-                })
-              }
-            >
-              Save courier
-            </Button>
+            {status.botEnabled ? (
+              <Button
+                variant="danger"
+                size="sm"
+                loading={working || busy}
+                onClick={() => void toggle(false)}
+              >
+                Turn buttons off
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                size="sm"
+                loading={working || busy}
+                disabled={!status.tokenConfigured || !status.chatConfigured}
+                onClick={() => void toggle(true)}
+              >
+                Turn buttons on
+              </Button>
+            )}
 
-            <Button
-              variant="primary"
-              size="sm"
-              loading={busy}
-              disabled={!settings.courier.hasCredentials}
-              onClick={() => void onTest()}
-            >
-              Test connection
-            </Button>
+            {ids !== allowedUserIds && (
+              <Button
+                variant="secondary"
+                size="sm"
+                loading={busy}
+                onClick={() => void onSaveAllowed(ids)}
+              >
+                Save who
+              </Button>
+            )}
           </div>
-
-          <ErrorBanner message={saveError} />
 
           {result?.ok && <SuccessBanner message={result.detail} />}
           {result && !result.ok && <ErrorBanner message={result.detail} />}
 
-          <label className="flex items-start gap-2.5 text-caption text-ink">
-            <input
-              type="checkbox"
-              className="mt-0.5"
-              checked={settings.courier.enabled}
-              onChange={(event) =>
-                void onSave(
-                  { enabled: event.target.checked },
-                  event.target.checked ? "Courier on" : "Courier off",
-                )
-              }
-            />
-            <span>
-              Allow parcels to be sent to this courier
-              <span className="mt-0.5 block text-micro text-muted">
-                Delivery status is then checked every 10 minutes, which is what marks orders
-                delivered in your profit figures.
-              </span>
-            </span>
-          </label>
-
-          {status.openShipments > 0 && (
+          {!status.tokenConfigured || !status.chatConfigured ? (
             <p className="text-micro text-muted">
-              {status.openShipments} parcel{status.openShipments === 1 ? "" : "s"} still on the
-              way.
+              Add the bot token and choose the chat above first — the bot only answers there.
+            </p>
+          ) : (
+            <p className="text-micro text-muted">
+              Turning this on registers a webhook with Telegram. Your API address must be
+              reachable over https, and <code>/api/v1/webhooks/*</code> must be open in the
+              reverse proxy.
             </p>
           )}
         </div>

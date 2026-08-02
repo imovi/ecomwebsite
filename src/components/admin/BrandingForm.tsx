@@ -2,7 +2,6 @@
 
 import { useCallback, useRef, useState } from "react";
 import { adminApi, AdminApiError } from "@/lib/admin/client";
-import { copy } from "@/lib/copy";
 import { useLoad } from "@/lib/admin/use-load";
 import { toast } from "@/lib/stores/toast-store";
 import { cn } from "@/lib/utils";
@@ -136,6 +135,22 @@ export function BrandingForm() {
                 }
               />
 
+              <FaviconCard
+                faviconUrl={settings.store.faviconUrl}
+                busy={busy}
+                onUpload={(file) => {
+                  const form = new FormData();
+                  form.append("favicon", file);
+                  return run(
+                    () => adminApi.upload("admin/settings/favicon", form),
+                    "Tab icon updated",
+                  );
+                }}
+                onRemove={() =>
+                  run(() => adminApi.delete("admin/settings/favicon"), "Tab icon removed")
+                }
+              />
+
               <BannerSection
                 banners={banners}
                 busy={busy}
@@ -230,9 +245,10 @@ function LogoCard({
               className="h-9 w-auto max-w-[160px] object-contain object-left"
             />
           ) : (
-            <span className="text-[1.375rem] font-semibold tracking-[-0.04em] text-ink">
-              {shopName || copy.brand.name}
-            </span>
+            /* Shows what the shop ACTUALLY shows with no logo, which is
+               nothing. Previewing the shop name here would promise a wordmark
+               the storefront no longer renders. */
+            <span className="text-caption italic text-muted">Nothing shown</span>
           )}
 
           <span className="text-micro text-muted">
@@ -240,7 +256,7 @@ function LogoCard({
               ? logoWidth && logoHeight
                 ? `Current logo · ${logoWidth}×${logoHeight}px`
                 : "Current logo"
-              : "No logo — the shop name is shown instead"}
+              : "No logo — the header's left corner is left empty"}
           </span>
         </div>
 
@@ -273,7 +289,7 @@ function LogoCard({
               size="sm"
               loading={busy}
               onClick={() => {
-                if (!window.confirm("Remove the logo? The shop name will be shown instead."))
+                if (!window.confirm("Remove the logo? The header will show nothing there."))
                   return;
                 void onRemove();
               }}
@@ -289,6 +305,109 @@ function LogoCard({
             "A wide, landscape shape works best — it sits in a 40px-tall bar.",
             "PNG with a transparent background looks cleanest on white.",
             "Any size is accepted from 48px up; it is scaled to fit automatically without cropping.",
+          ]}
+        />
+      </div>
+    </Card>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Favicon                                                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The browser-tab icon.
+ *
+ * Its own card rather than a second button on the logo card, because it is a
+ * different picture: a wordmark shrunk to 32px is an unreadable smudge, and
+ * 32px in a crowded row of tabs is the only size this one is ever seen at.
+ */
+function FaviconCard({
+  faviconUrl,
+  busy,
+  onUpload,
+  onRemove,
+}: {
+  faviconUrl: string | null;
+  busy: boolean;
+  onUpload: (file: File) => Promise<boolean>;
+  onRemove: () => Promise<boolean>;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  return (
+    <Card>
+      <CardHeader
+        title="Browser tab icon"
+        hint="The little square next to your shop's name in a browser tab and in bookmarks."
+      />
+      <div className="flex flex-col gap-4 p-4">
+        {/* Previewed at the two sizes browsers actually use, so an icon that
+            looks fine large but turns to mush small is obvious here rather
+            than after it is live. */}
+        <div className="flex items-center gap-4 rounded-sm border border-line bg-white p-4">
+          {faviconUrl ? (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={faviconUrl} alt="" className="size-8 rounded-xs object-contain" />
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={faviconUrl} alt="" className="size-4 rounded-xs object-contain" />
+              <span className="text-micro text-muted">Shown at 32px and 16px</span>
+            </>
+          ) : (
+            <span className="text-micro text-muted">
+              No icon yet — browsers show the default one.
+            </span>
+          )}
+        </div>
+
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) void onUpload(file);
+            if (fileRef.current) fileRef.current.value = "";
+          }}
+        />
+
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={busy}
+            onClick={() => fileRef.current?.click()}
+          >
+            <Icon name="camera" size={15} />
+            {faviconUrl ? "Replace icon" : "Upload icon"}
+          </Button>
+
+          {faviconUrl && (
+            <Button
+              variant="danger"
+              size="sm"
+              loading={busy}
+              onClick={() => {
+                if (!window.confirm("Remove the tab icon? The default one comes back.")) return;
+                void onRemove();
+              }}
+            >
+              Remove
+            </Button>
+          )}
+        </div>
+
+        <SizeGuide
+          recommended="512 × 512 px"
+          lines={[
+            "Square. A rectangle is padded to a square by the browser, which leaves it looking small and off-centre.",
+            "512px is uploaded once and scaled down to every size a browser asks for — 16px in the tab, 32px in bookmarks, up to 192px on an Android home screen.",
+            "Use your mark or a single letter, not the full wordmark. At 16px a line of text is an unreadable smudge.",
+            "Accepted from 16px up, but small originals look blurry on a high-resolution screen — give it 512 if you have it.",
+            "PNG with a transparent background works in both light and dark browser themes.",
           ]}
         />
       </div>

@@ -1,0 +1,23 @@
+-- Courier webhook: the courier tells us, instead of us asking every ten minutes.
+--
+-- WHY THIS MATTERS MORE THAN IT LOOKS
+-- The profit report counts revenue from `delivered_at`. Until now that timestamp
+-- arrived whenever the ten-minute poll happened to notice, so "what did I earn
+-- today" was answered with up to ten minutes of yesterday still missing. A push
+-- from the courier lands the moment the rider marks the parcel, which fixes the
+-- accounting as well as the latency.
+--
+-- The poll stays. A webhook is a delivery nobody retries forever: if Steadfast
+-- gives up while our server is restarting, that parcel would sit in "on the way"
+-- until someone noticed by eye. Polling is the floor, the webhook is the speed.
+--
+-- WHY A TOKEN COLUMN
+-- The endpoint has to be reachable from the public internet, and it moves orders
+-- to `delivered`. Without a shared secret anyone who guessed a consignment id
+-- could book revenue for a parcel that never arrived — silently, and in the one
+-- number the shop is run on. Steadfast sends it as `Authorization: Bearer …`.
+--
+-- Empty is "closed", not "no check": a blank stored token must never match a
+-- blank presented one, or turning the feature off would open it instead.
+alter table "store_settings"
+  add column if not exists "courier_webhook_token" text not null default '';

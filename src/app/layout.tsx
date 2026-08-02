@@ -30,14 +30,26 @@ export async function generateMetadata(): Promise<Metadata> {
   const settings = await getSettings();
   const name = settings.storeName || copy.brand.name;
 
+  /**
+   * The shop's own words win, with the old wording as the fallback.
+   *
+   * Only `default` is overridden, not `template`: the template is what puts the
+   * shop name after a product's own title, and replacing that with a fixed
+   * marketing line would give every product page the same title — the fastest
+   * way to lose the search results this is meant to help.
+   */
+  const title = settings.seoTitle || `${name} — ${copy.brand.tagline}`;
+  const description =
+    settings.seoDescription ||
+    "Buy original smartphones, earbuds, smartwatches, laptops and accessories in Bangladesh. Cash on delivery nationwide, 24–48 hour delivery in Dhaka.";
+
   return {
     metadataBase: new URL(siteConfig.url),
     title: {
-      default: `${name} — ${copy.brand.tagline}`,
+      default: title,
       template: `%s · ${name}`,
     },
-    description:
-      "Buy original smartphones, earbuds, smartwatches, laptops and accessories in Bangladesh. Cash on delivery nationwide, 24–48 hour delivery in Dhaka.",
+    description,
     applicationName: name,
     formatDetection: { telephone: true },
     openGraph: {
@@ -46,6 +58,17 @@ export async function generateMetadata(): Promise<Metadata> {
       siteName: name,
     },
     robots: { index: true, follow: true },
+    /**
+     * Tab icon, uploaded from the branding screen.
+     *
+     * The default lives in `public/`, NOT at `app/favicon.ico`. Next's
+     * file-convention metadata wins over anything set here, so while the file
+     * sat in the route segment an uploaded icon was accepted, stored and then
+     * silently ignored by every browser. Moving it makes this the single place
+     * the icon is decided, with the bundled file as the fallback when no icon
+     * has been uploaded.
+     */
+    icons: { icon: settings.faviconUrl ?? "/favicon.ico" },
   };
 }
 

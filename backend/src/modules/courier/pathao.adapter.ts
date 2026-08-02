@@ -92,15 +92,18 @@ export function createPathaoAdapter(config: PathaoConfig): CourierProviderAdapte
 
     const body = (await response.json().catch(() => null)) as Record<string, unknown> | null;
 
-    if (!body) {
-      throw new CourierError(`Pathao returned an unreadable response (${response.status}).`);
-    }
-
+    /* Status first, body second: a rejected credential comes back as HTML
+       rather than JSON, and reporting that as "unreadable response (401)"
+       reads like an outage instead of pointing at Settings. */
     if (response.status === 401) {
       /* Force a fresh token on the next call rather than failing every
          subsequent one with a stale credential. */
       cached = null;
       throw new CourierError("Pathao rejected the credentials. Check them in Settings.", true);
+    }
+
+    if (!body) {
+      throw new CourierError(`Pathao returned an unreadable response (${response.status}).`);
     }
 
     if (!response.ok) {

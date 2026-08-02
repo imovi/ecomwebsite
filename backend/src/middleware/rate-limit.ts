@@ -84,3 +84,22 @@ export const authRateLimit: RequestHandler = rateLimit({
   /* A successful login should not consume budget — only failures matter. */
   skipSuccessfulRequests: true,
 });
+
+/**
+ * Applied to the courier webhook.
+ *
+ * Generous, because a real courier can legitimately burst: a day's parcels all
+ * scanned at one depot arrive as a rush of notifications, and throttling those
+ * would lose delivery confirmations the profit report is built on. Tight enough
+ * that an anonymous caller guessing at the bearer token cannot do so quickly.
+ *
+ * Only rejected calls count. A courier delivering real updates should never be
+ * throttled by its own success.
+ */
+export const webhookRateLimit: RequestHandler = rateLimit({
+  ...shared,
+  windowMs: 60_000,
+  limit: 300,
+  handler: rejectWithAppError(60_000),
+  skipSuccessfulRequests: true,
+});

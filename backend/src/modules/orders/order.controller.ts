@@ -1,5 +1,5 @@
 import type { Request, RequestHandler } from "express";
-import { sendCreated, sendPaginated, sendSuccess } from "../../core/response.js";
+import { sendCreated, sendNoContent, sendPaginated, sendSuccess } from "../../core/response.js";
 import { UnauthorizedError } from "../../core/errors.js";
 import { validated } from "../../middleware/validate.js";
 import { searchAreas } from "../../lib/geo/delivery-zone.js";
@@ -14,6 +14,7 @@ import type {
   ListOrdersQuery,
   PlaceOrderInput,
   QuoteInput,
+  StatusCountsQuery,
   UpdateCustomerInput,
   UpdateItemQuantityInput,
   UpdateItemVariantInput,
@@ -82,6 +83,34 @@ export const searchDeliveryAreas: RequestHandler = (req, res) => {
 /* Admin — reads                                                              */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Turns the two date query parameters into a range.
+ *
+ * Shared by the list and the status tiles so a chosen range means exactly the
+ * same thing to both — tiles counting one window while the list below shows
+ * another is the kind of discrepancy that costs trust in every other number on
+ * the screen.
+ */
+function toDateRange(query: { dateFrom?: string; dateTo?: string }): {
+  dateFrom?: Date;
+  dateTo?: Date;
+} {
+  const range: { dateFrom?: Date; dateTo?: Date } = {};
+
+  if (query.dateFrom) range.dateFrom = new Date(query.dateFrom);
+
+  if (query.dateTo) {
+    /* A bare date means the whole day. Without this, `dateTo=2026-07-29`
+       resolves to midnight and silently excludes everything ordered that day
+       — the single most confusing filter bug in any admin panel. */
+    const to = new Date(query.dateTo);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(query.dateTo)) to.setUTCHours(23, 59, 59, 999);
+    range.dateTo = to;
+  }
+
+  return range;
+}
+
 function toFilters(query: ListOrdersQuery): OrderFilters {
   const filters: OrderFilters = {};
 
@@ -92,16 +121,9 @@ function toFilters(query: ListOrdersQuery): OrderFilters {
   if (query.minTotal !== undefined) filters.minTotal = query.minTotal;
   if (query.maxTotal !== undefined) filters.maxTotal = query.maxTotal;
 
-  if (query.dateFrom) filters.dateFrom = new Date(query.dateFrom);
-
-  if (query.dateTo) {
-    /* A bare date means the whole day. Without this, `dateTo=2026-07-29`
-       resolves to midnight and silently excludes everything ordered that day
-       — the single most confusing filter bug in any admin panel. */
-    const to = new Date(query.dateTo);
-    if (/^\d{4}-\d{2}-\d{2}$/.test(query.dateTo)) to.setUTCHours(23, 59, 59, 999);
-    filters.dateTo = to;
-  }
+  const range = toDateRange(query);
+  if (range.dateFrom) filters.dateFrom = range.dateFrom;
+  if (range.dateTo) filters.dateTo = range.dateTo;
 
   return filters;
 }
@@ -120,15 +142,60 @@ export const list: RequestHandler = async (req, res) => {
   sendPaginated(res, result.items, result.pagination);
 };
 
-/** GET /api/v1/admin/orders/status-counts — badge numbers for the status tabs. */
-export const statusCounts: RequestHandler = async (_req, res) => {
-  sendSuccess(res, { counts: await orderService.statusCounts() });
+/**
+ * GET /api/v1/admin/orders/status-counts — badge numbers for the status tabs.
+ *
+ * Takes the same optional `dateFrom`/`dateTo` as the list, so the overview
+ * tiles can answer "how many today" rather than only "how many ever".
+ */
+export const statusCounts: RequestHandler = async (req, res) => {
+  const { query } = validated<unknown, StatusCountsQuery>(req);
+  sendSuccess(res, { counts: await orderService.statusCounts(toDateRange(query)) });
 };
 
 /** GET /api/v1/admin/orders/:identifier — uuid or order number. */
 export const detail: RequestHandler = async (req, res) => {
   const { params } = validated<unknown, unknown, { identifier: string }>(req);
   sendSuccess(res, { order: await orderService.getByIdentifier(params.identifier) });
+};
+
+/* -------------------------------------------------------------------------- */
+/* Trash                                                                      */
+/* -------------------------------------------------------------------------- */
+
+/** GET /api/v1/admin/orders/trash — what is waiting to be purged. */
+export const listTrash: RequestHandler = async (req, res) => {
+  const { query } = validated<unknown, ListOrdersQuery>(req);
+
+  const result = await orderService.list({
+    filters: { ...toFilters(query), deleted: "trashed" },
+    sort: query.sort,
+    page: query.page,
+    perPage: query.perPage,
+  });
+
+  sendPaginated(res, result.items, result.pagination);
+};
+
+/** DELETE /api/v1/admin/orders/:id — to the trash, not gone. */
+export const moveToTrash: RequestHandler = async (req, res) => {
+  const { params } = validated<unknown, unknown, { id: string }>(req);
+  await orderService.moveToTrash(params.id, actorFrom(req));
+  sendNoContent(res);
+};
+
+/** POST /api/v1/admin/orders/:id/restore */
+export const restore: RequestHandler = async (req, res) => {
+  const { params } = validated<unknown, unknown, { id: string }>(req);
+  await orderService.restoreFromTrash(params.id, actorFrom(req));
+  sendSuccess(res, { order: await orderService.getByIdentifier(params.id) });
+};
+
+/** DELETE /api/v1/admin/orders/:id/purge — gone for good. */
+export const purge: RequestHandler = async (req, res) => {
+  const { params } = validated<unknown, unknown, { id: string }>(req);
+  await orderService.purgeFromTrash(params.id);
+  sendNoContent(res);
 };
 
 /**

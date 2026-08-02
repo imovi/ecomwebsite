@@ -11,6 +11,7 @@ import {
   internalNotesSchema,
   invoiceQuerySchema,
   listOrdersQuerySchema,
+  statusCountsQuerySchema,
   orderIdParamSchema,
   orderIdentifierParamSchema,
   orderItemParamSchema,
@@ -110,7 +111,19 @@ orderAdminRouter.use(authenticate, requireRole("manager"));
 /* Literal paths before the `/:identifier` catch-all; Express matches in
    declaration order and would otherwise treat "status-counts" as an order
    number. */
-orderAdminRouter.get("/status-counts", controller.statusCounts);
+orderAdminRouter.get(
+  "/status-counts",
+  validate({ query: statusCountsQuerySchema }),
+  controller.statusCounts,
+);
+
+/* Also before `/:identifier` — Express matches in declaration order and would
+   otherwise read "trash" as an order number. */
+orderAdminRouter.get(
+  "/trash",
+  validate({ query: listOrdersQuerySchema }),
+  controller.listTrash,
+);
 
 orderAdminRouter.get(
   "/",
@@ -179,4 +192,28 @@ orderAdminRouter.patch(
   "/:id/notes",
   validate({ params: orderIdParamSchema, body: internalNotesSchema }),
   controller.updateInternalNotes,
+);
+
+/* --- Trash ---------------------------------------------------------------
+   Moving to the trash is `manager`, the same floor as working the queue: it is
+   a tidying action and it is reversible for thirty days. Destroying an order
+   for good is `admin`, because that one is not. */
+
+orderAdminRouter.delete(
+  "/:id",
+  validate({ params: orderIdParamSchema }),
+  controller.moveToTrash,
+);
+
+orderAdminRouter.post(
+  "/:id/restore",
+  validate({ params: orderIdParamSchema }),
+  controller.restore,
+);
+
+orderAdminRouter.delete(
+  "/:id/purge",
+  requireRole("admin"),
+  validate({ params: orderIdParamSchema }),
+  controller.purge,
 );

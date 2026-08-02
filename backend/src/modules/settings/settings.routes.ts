@@ -34,6 +34,28 @@ const updateSettingsSchema = z
       })
       .strict()
       .optional(),
+    /**
+     * What new order numbers start with.
+     *
+     * Letters, digits and a dash only. A space or a slash would break the
+     * moment the number went into a URL or a courier's own form, and the shop
+     * would find out from a customer rather than from a validation message.
+     * Empty is allowed and means "just the number".
+     */
+    orderNumberPrefix: z
+      .union([
+        z.literal(""),
+        z
+          .string()
+          .trim()
+          .max(10)
+          .regex(
+            /^[A-Za-z0-9-]+$/,
+            "Use letters, numbers and dashes only — no spaces or slashes.",
+          ),
+      ])
+      .optional(),
+
     ordering: z
       .object({
         minimumOrderValue: money.optional(),
@@ -90,6 +112,27 @@ const updateSettingsSchema = z
         email: z.union([z.literal(""), z.email()]).optional(),
         address: safeString({ max: 400 }).optional(),
         invoiceFooter: safeString({ max: 400 }).optional(),
+
+        /* Accepted loosely and normalised to digits in the service — an owner
+           will type "+880 1712-345678" and should not be told off for it. */
+        whatsapp: z
+          .union([
+            z.literal(""),
+            z
+              .string()
+              .trim()
+              .max(30)
+              .refine(
+                (value) => value.replace(/\D/g, "").length >= 10,
+                "Include the country code, like 8801712345678.",
+              ),
+          ])
+          .optional(),
+
+        /* Empty means "use the built-in", so the shop can clear an override
+           and get the default back rather than being stuck with a blank tab. */
+        seoTitle: safeString({ max: 70 }).optional(),
+        seoDescription: safeString({ max: 200 }).optional(),
       })
       .strict()
       .optional(),
@@ -185,6 +228,27 @@ const updateSettingsSchema = z
               .optional(),
 
             enabled: z.boolean().optional(),
+
+            /**
+             * Who may press the buttons, as comma-separated Telegram user ids.
+             *
+             * Empty means anyone in the configured chat, which is right for a
+             * private staff group. Not a secret — these are public ids — so
+             * unlike the token it is returned and editable.
+             */
+            allowedUserIds: z
+              .union([
+                z.literal(""),
+                z
+                  .string()
+                  .trim()
+                  .max(300)
+                  .regex(
+                    /^\d{1,20}(\s*,\s*\d{1,20})*$/,
+                    "Use Telegram user ids — numbers, separated by commas.",
+                  ),
+              ])
+              .optional(),
           })
           .strict()
           .optional(),
@@ -251,6 +315,23 @@ const deleteLogo: RequestHandler = async (_req, res) => {
   sendSuccess(res, { settings: await service.removeLogo() });
 };
 
+/** POST /api/v1/admin/settings/favicon — multipart, field name `favicon`. */
+const uploadFavicon: RequestHandler = async (req, res) => {
+  if (!req.file) {
+    throw new BadRequestError('No file received. Send one image in the "favicon" field.');
+  }
+
+  const settings = await service.setFavicon({
+    buffer: req.file.buffer,
+    originalname: req.file.originalname,
+  });
+  sendSuccess(res, { settings });
+};
+
+const deleteFavicon: RequestHandler = async (_req, res) => {
+  sendSuccess(res, { settings: await service.removeFavicon() });
+};
+
 export const settingsAdminRouter: Router = Router();
 
 settingsAdminRouter.use(authenticate);
@@ -267,3 +348,10 @@ settingsAdminRouter.patch(
    `admin` floor used for settings writes rather than the `manager` read. */
 settingsAdminRouter.post("/logo", requireRole("admin"), uploadImage("logo"), uploadLogo);
 settingsAdminRouter.delete("/logo", requireRole("admin"), deleteLogo);
+settingsAdminRouter.post(
+  "/favicon",
+  requireRole("admin"),
+  uploadImage("favicon"),
+  uploadFavicon,
+);
+settingsAdminRouter.delete("/favicon", requireRole("admin"), deleteFavicon);

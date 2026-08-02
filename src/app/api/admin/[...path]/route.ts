@@ -38,20 +38,23 @@ const ALLOWED_PATHS = [
   /^admin\/products(\/.*)?$/,
   /^admin\/categories(\/.*)?$/,
   /^admin\/orders(\/.*)?$/,
+  /^admin\/reports\/boosts(\/[^/]+)?$/,
   /^admin\/settings$/,
   /^admin\/settings\/logo$/,
+  /^admin\/settings\/favicon$/,
   /^admin\/banners(\/.*)?$/,
   /^admin\/marketing\/(status|test-event)$/,
   /^admin\/team(\/.*)?$/,
-  /^admin\/integrations\/(status|telegram\/(test|find-chats)|sheets\/test)$/,
+  /^admin\/integrations\/(status|telegram\/(test|find-chats|bot\/(enable|disable))|sheets\/test)$/,
   /^admin\/expenses(\/.*)?$/,
   /* Reads only, and `profit.csv` is a distinct path rather than a query flag
      so the allowlist can name it. */
   /^admin\/reports\/profit(\.csv)?$/,
   /^admin\/abandoned(\/.*)?$/,
-  /^admin\/courier\/(status|test|sync)$/,
+  /^admin\/courier\/(status|test|sync|webhook-token)$/,
   /^admin\/courier\/(order|shipment)\/[^/]+(\/send|\/sync)?$/,
   /^auth\/me$/,
+  /^auth\/change-password$/,
 ];
 
 const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);

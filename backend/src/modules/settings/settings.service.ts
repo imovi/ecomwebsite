@@ -27,6 +27,10 @@ export interface SettingsDto {
     outsideDhaka: number;
     freeDeliveryThreshold: number;
   };
+  /**
+   * What every NEW order number starts with. Existing orders keep theirs.
+   */
+  orderNumberPrefix: string;
   ordering: {
     minimumOrderValue: number;
     maxQuantityPerItem: number;
@@ -50,6 +54,11 @@ export interface SettingsDto {
     email: string;
     address: string;
     invoiceFooter: string;
+    /** Digits with country code, for the floating WhatsApp button. */
+    whatsapp: string;
+    /** Empty means "use the built-in title/description". */
+    seoTitle: string;
+    seoDescription: string;
     /**
      * Resolved URL of the uploaded logo, or null to use the wordmark.
      *
@@ -60,6 +69,14 @@ export interface SettingsDto {
     /** Real size of the logo, so the header can reserve the right box. */
     logoWidth: number | null;
     logoHeight: number | null;
+    /**
+     * Resolved URL of the browser-tab icon, or null to use the bundled one.
+     *
+     * No dimensions alongside it, unlike the logo: the browser renders a
+     * favicon into a fixed square whatever its real size, so there is nothing
+     * a client could do with them.
+     */
+    faviconUrl: string | null;
   };
   /**
    * Meta / Facebook tracking.
@@ -94,6 +111,15 @@ export interface SettingsDto {
     storeId: string;
     baseUrl: string;
     enabled: boolean;
+    /**
+     * Webhook secret state only — never the value.
+     *
+     * Write-only like every other credential here. The owner sees it once when
+     * it is generated, because that is the moment they paste it into the
+     * courier's panel, and only a masked hint afterwards.
+     */
+    hasWebhookToken: boolean;
+    webhookTokenHint: string;
   };
   /**
    * Order integrations.
@@ -107,6 +133,8 @@ export interface SettingsDto {
       botTokenHint: string;
       chatId: string;
       enabled: boolean;
+      /** Public Telegram user ids, so unlike the token these are returned. */
+      allowedUserIds: string;
     };
     googleSheets: {
       hasCredentials: boolean;
@@ -151,6 +179,7 @@ export function toSettingsDto(row: StoreSettingsRow): SettingsDto {
       outsideDhaka: row.deliveryChargeOutsideDhaka,
       freeDeliveryThreshold: row.freeDeliveryThreshold,
     },
+    orderNumberPrefix: row.orderNumberPrefix,
     ordering: {
       minimumOrderValue: row.minimumOrderValue,
       maxQuantityPerItem: row.maxQuantityPerItem,
@@ -167,9 +196,13 @@ export function toSettingsDto(row: StoreSettingsRow): SettingsDto {
       email: row.storeEmail,
       address: row.storeAddress,
       invoiceFooter: row.invoiceFooter,
+      whatsapp: row.storeWhatsapp,
+      seoTitle: row.seoTitle,
+      seoDescription: row.seoDescription,
       logoUrl: row.storeLogoKey ? getStorage().url(row.storeLogoKey) : null,
       logoWidth: row.storeLogoWidth,
       logoHeight: row.storeLogoHeight,
+      faviconUrl: row.storeFaviconKey ? getStorage().url(row.storeFaviconKey) : null,
     },
     tracking: {
       pixelId: row.metaPixelId,
@@ -188,6 +221,8 @@ export function toSettingsDto(row: StoreSettingsRow): SettingsDto {
       storeId: row.courierStoreId,
       baseUrl: row.courierBaseUrl,
       enabled: row.courierEnabled,
+      hasWebhookToken: row.courierWebhookToken !== "",
+      webhookTokenHint: tokenHint(row.courierWebhookToken),
     },
     integrations: {
       telegram: {
@@ -195,6 +230,9 @@ export function toSettingsDto(row: StoreSettingsRow): SettingsDto {
         botTokenHint: tokenHint(row.telegramBotToken),
         chatId: row.telegramChatId,
         enabled: row.telegramEnabled,
+        /* Public ids, not a secret — returned so the form can show and edit
+           them, unlike the token beside it. */
+        allowedUserIds: row.telegramAllowedUserIds,
       },
       googleSheets: {
         hasCredentials: row.googleSheetsCredentials !== "",
@@ -240,6 +278,8 @@ export interface UpdateSettingsInput {
     outsideDhaka?: number;
     freeDeliveryThreshold?: number;
   };
+  /** New orders only — see the column comment. */
+  orderNumberPrefix?: string;
   ordering?: {
     minimumOrderValue?: number;
     maxQuantityPerItem?: number;
@@ -265,6 +305,9 @@ export interface UpdateSettingsInput {
     email?: string;
     address?: string;
     invoiceFooter?: string;
+    whatsapp?: string;
+    seoTitle?: string;
+    seoDescription?: string;
   };
   tracking?: {
     pixelId?: string;
@@ -289,6 +332,8 @@ export interface UpdateSettingsInput {
       botToken?: string | null;
       chatId?: string;
       enabled?: boolean;
+      /** Comma-separated Telegram user ids; empty means everyone in the chat. */
+      allowedUserIds?: string;
     };
     googleSheets?: {
       /** Omitted keeps the stored key; `null` clears it. */
@@ -322,7 +367,22 @@ export async function updateSettings(input: UpdateSettingsInput): Promise<Settin
   if (input.store?.phone !== undefined) patch.storePhone = input.store.phone;
   if (input.store?.email !== undefined) patch.storeEmail = input.store.email;
   if (input.store?.address !== undefined) patch.storeAddress = input.store.address;
+  if (input.orderNumberPrefix !== undefined) {
+    /* Upper-cased and trimmed so `gng-` and `GNG-` cannot both exist and make
+       two shapes of the same number. */
+    patch.orderNumberPrefix = input.orderNumberPrefix.trim().toUpperCase();
+  }
   if (input.store?.invoiceFooter !== undefined) patch.invoiceFooter = input.store.invoiceFooter;
+  if (input.store?.whatsapp !== undefined) {
+    /* Stored as bare digits. wa.me rejects anything else, and an owner will
+       reasonably type "+880 1712-345678" — normalising here means the link
+       works whichever way they wrote it. */
+    patch.storeWhatsapp = input.store.whatsapp.replace(/\D/g, "");
+  }
+  if (input.store?.seoTitle !== undefined) patch.seoTitle = input.store.seoTitle;
+  if (input.store?.seoDescription !== undefined) {
+    patch.seoDescription = input.store.seoDescription;
+  }
 
   if (input.tracking?.pixelId !== undefined) patch.metaPixelId = input.tracking.pixelId;
   if (input.tracking?.testEventCode !== undefined) {
@@ -370,6 +430,15 @@ export async function updateSettings(input: UpdateSettingsInput): Promise<Settin
   if (telegram?.botToken !== undefined) patch.telegramBotToken = telegram.botToken ?? "";
   if (telegram?.chatId !== undefined) patch.telegramChatId = telegram.chatId;
   if (telegram?.enabled !== undefined) patch.telegramEnabled = telegram.enabled;
+  if (telegram?.allowedUserIds !== undefined) {
+    /* Stored normalised — the form allows spaces around the commas, and the
+       membership check compares exact strings. */
+    patch.telegramAllowedUserIds = telegram.allowedUserIds
+      .split(",")
+      .map((id) => id.trim())
+      .filter((id) => id !== "")
+      .join(",");
+  }
 
   const gsheets = input.integrations?.googleSheets;
   if (gsheets?.credentials !== undefined) {
@@ -536,5 +605,91 @@ export async function removeLogo(): Promise<SettingsDto> {
   }
 
   log.info("Store logo removed");
+  return toSettingsDto(updated);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Favicon                                                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A favicon is displayed at 16–32px, so the useful source is small by nature.
+ *
+ * The 48px logo floor would already reject a legitimate 32×32 icon, and the
+ * 200px product floor rejects every favicon ever made. 16 is the smallest size
+ * a browser asks for, so anything at or above it is usable.
+ */
+const MIN_FAVICON_DIMENSION = 16;
+
+export async function setFavicon(file: {
+  buffer: Buffer;
+  originalname: string;
+}): Promise<SettingsDto> {
+  const existing = await getSettings();
+
+  const optimized = await optimizeImage(file.buffer, {
+    label: file.originalname,
+    minDimension: MIN_FAVICON_DIMENSION,
+    kind: "Tab icons",
+  });
+
+  const stored = await getStorage().put({
+    folder: "branding",
+    buffer: optimized.buffer,
+    mimeType: optimized.mimeType,
+    originalName: file.originalname,
+  });
+
+  const rows = await getDb()
+    .update(storeSettings)
+    .set({ storeFaviconKey: stored.key, updatedAt: sql`now()` })
+    .where(eq(storeSettings.id, 1))
+    .returning();
+
+  const updated = rows[0];
+  if (!updated) {
+    /* Nothing points at the new file, so leave no orphan behind. */
+    await getStorage().delete(stored.key).catch(() => undefined);
+    throw new NotFoundError("Store settings row is missing.");
+  }
+
+  /* Only once the new key is committed — deleting first would leave the shop
+     with no icon at all if the update then failed. */
+  if (existing.storeFaviconKey && existing.storeFaviconKey !== stored.key) {
+    await getStorage()
+      .delete(existing.storeFaviconKey)
+      .catch((error: unknown) => {
+        log.error(
+          { err: error, key: existing.storeFaviconKey },
+          "Failed to delete replaced favicon",
+        );
+      });
+  }
+
+  log.info({ key: stored.key }, "Store favicon updated");
+  return toSettingsDto(updated);
+}
+
+export async function removeFavicon(): Promise<SettingsDto> {
+  const existing = await getSettings();
+
+  const rows = await getDb()
+    .update(storeSettings)
+    .set({ storeFaviconKey: null, updatedAt: sql`now()` })
+    .where(eq(storeSettings.id, 1))
+    .returning();
+
+  const updated = rows[0];
+  if (!updated) throw new NotFoundError("Store settings row is missing.");
+
+  if (existing.storeFaviconKey) {
+    await getStorage()
+      .delete(existing.storeFaviconKey)
+      .catch((error: unknown) => {
+        log.error({ err: error, key: existing.storeFaviconKey }, "Failed to delete favicon");
+      });
+  }
+
+  log.info("Store favicon removed");
   return toSettingsDto(updated);
 }

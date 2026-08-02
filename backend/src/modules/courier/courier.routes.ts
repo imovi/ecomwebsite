@@ -1,5 +1,6 @@
 import { Router, type RequestHandler } from "express";
 import { z } from "zod";
+import { config } from "../../config/index.js";
 import { authenticate, requireRole } from "../../middleware/authenticate.js";
 import { validate, validated } from "../../middleware/validate.js";
 import { sendSuccess } from "../../core/response.js";
@@ -47,8 +48,38 @@ const status: RequestHandler = async (_req, res) => {
       storeIdConfigured: settings.courierStoreId.trim() !== "",
       enabled: settings.courierEnabled,
       openShipments: await service.openCount(),
+      /* State only, never the secret — the panel needs to know whether the
+         webhook is armed, not what the token is. */
+      webhookConfigured: settings.courierWebhookToken !== "",
+      /**
+       * Built here, from the API's own configured public address.
+       *
+       * The panel cannot work this out: the browser only knows the storefront's
+       * origin, and the API answers on a different host. Guessing at it from
+       * the page URL produced `https://api.localhost:3000` in development and
+       * would have been a plausible-looking wrong address in any deployment
+       * that does not follow the `api.` prefix convention — pasted into the
+       * courier's panel, that fails silently as a webhook that never arrives.
+       */
+      webhookUrl: `${config.server.apiUrl}/api/v1/webhooks/courier/steadfast`,
     },
   });
+};
+
+/**
+ * Generates a fresh webhook secret and returns it once.
+ *
+ * `admin` and above rather than the `manager` floor this router uses: rotating
+ * it silently breaks delivery updates until someone re-pastes it into the
+ * courier's panel, which is a commercial setting rather than order-desk work.
+ */
+const rotateWebhookToken: RequestHandler = async (_req, res) => {
+  sendSuccess(res, { token: await service.rotateWebhookToken() });
+};
+
+const clearWebhookToken: RequestHandler = async (_req, res) => {
+  await service.clearWebhookToken();
+  sendSuccess(res, { cleared: true });
 };
 
 /**
@@ -92,6 +123,8 @@ const syncAll: RequestHandler = async (_req, res) => {
 
 courierAdminRouter.get("/status", status);
 courierAdminRouter.post("/test", test);
+courierAdminRouter.post("/webhook-token", requireRole("admin"), rotateWebhookToken);
+courierAdminRouter.delete("/webhook-token", requireRole("admin"), clearWebhookToken);
 courierAdminRouter.post("/sync", syncAll);
 courierAdminRouter.get("/order/:id", validate({ params: orderIdParam }), forOrder);
 courierAdminRouter.post("/order/:id/send", validate({ params: orderIdParam }), send);

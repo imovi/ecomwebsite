@@ -119,10 +119,15 @@ gng.com.bd {
 }
 
 api.gng.com.bd {
-    # Only the uploads path is public. Everything else on the API is reached
+    # Only these two paths are public. Everything else on the API is reached
     # through the storefront server, so exposing it here would widen the attack
     # surface for no benefit.
     handle /uploads/* {
+        reverse_proxy 127.0.0.1:4000
+    }
+    # The courier's delivery webhook — see section 7. It must be reachable from
+    # their servers; a bearer secret set in the panel is what guards it.
+    handle /api/v1/webhooks/* {
         reverse_proxy 127.0.0.1:4000
     }
     handle {
@@ -205,6 +210,39 @@ for a reason — that is recorded permanently and cannot be edited, by design).
 
 Three things worth setting up before the first ad runs. All of them live in the
 admin panel; none of them need a `.env` edit or a redeploy.
+
+### Instant delivery updates — `/admin/settings`
+
+Optional, and worth ten minutes. Without it the shop asks the courier for each
+parcel's status every ten minutes; with it the courier tells you the moment a
+parcel is delivered.
+
+That matters beyond speed: **the profit report counts revenue from the moment an
+order is marked delivered**, so polling means "what did I earn today" is answered
+with up to ten minutes of it still missing.
+
+In **Settings → Instant delivery updates**:
+
+1. Press **Generate token** and copy it — it is shown once.
+2. In the Steadfast panel open **Webhook Integration** (More → Webhook).
+3. Paste the **Callback Url** shown in the panel, and the token into **Auth
+   Token (Bearer)**. Save there.
+
+The callback URL must be reachable over https, which needs the
+`/api/v1/webhooks/*` block in the Caddyfile from section 4 — without it the
+courier gets a 404 and nothing arrives.
+
+**No token means the webhook is closed**, not open: the endpoint refuses every
+call until one is generated. It has to be that way round — this is the one public
+route that can mark an order delivered, and a forged one would book revenue for a
+parcel nobody received.
+
+The ten-minute check keeps running either way. A webhook is a delivery nobody
+retries forever, so if the courier gives up while the server is restarting, the
+poll is what stops that parcel sitting on its way for good.
+
+**Done when:** the panel shows a saved token, and the next real delivery moves the
+order within seconds rather than minutes.
 
 ### Telegram order alerts — `/admin/integrations`
 
@@ -408,7 +446,7 @@ verified in Facebook, and the test event code is empty.
 
 ## 10. Google
 
-Also under **Admin → Tracking**, in the Google section. Independent of the
+Also under **Admin → Marketing**, in the Google section. Independent of the
 Facebook switch — you can run one, the other, or both.
 
 ### Connect Tag Manager
@@ -467,7 +505,7 @@ A short pre-flight. Each item is something that will cost you money if wrong.
 - [ ] `TRUST_PROXY_HOPS` matches your actual proxy count — too low and every
       visitor shares one rate-limit bucket, so one bot can lock out real
       customers
-- [ ] Admin → Tracking shows "Facebook: connected and sending"
+- [ ] Admin → Marketing shows "Facebook: connected and sending"
 - [ ] If you use Google: "Google: Tag Manager loading", and your container has
       **no** Meta pixel tag in it (that would double-count every event)
 - [ ] Test event code is **empty** — with it set, your ads get no optimisation

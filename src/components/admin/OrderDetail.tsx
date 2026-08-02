@@ -2,9 +2,10 @@
 
 import { useCallback, useState } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { adminApi, AdminApiError } from "@/lib/admin/client";
 import { useLoad } from "@/lib/admin/use-load";
-import { formatTaka, formatDateTime } from "@/lib/utils";
+import { cn, formatTaka, formatDateTime } from "@/lib/utils";
 import { copy } from "@/lib/copy";
 import { toast } from "@/lib/stores/toast-store";
 import type { ApiOrderDetail, ApiOrderStatus } from "@/lib/api/types";
@@ -25,6 +26,7 @@ import { Input, Textarea } from "@/components/ui/Field";
  * their edit silently replayed onto newer data.
  */
 export function OrderDetail({ identifier }: { identifier: string }) {
+  const router = useRouter();
   const [order, setOrder] = useState<ApiOrderDetail | null>(null);
   const [shipment, setShipment] = useState<Shipment | null>(null);
   const [loading, setLoading] = useState(true);
@@ -121,6 +123,34 @@ export function OrderDetail({ identifier }: { identifier: string }) {
             size="sm"
           >
             Invoice
+          </Button>
+          {/* Deliberately NOT beside the status buttons. Deleting is a tidying
+              action — a test order, a duplicate — and putting it in the flow of
+              working an order is how the wrong one gets removed. */}
+          <Button
+            variant="ghost"
+            size="sm"
+            loading={busy}
+            onClick={() => {
+              if (
+                !window.confirm(
+                  `Move ${order.orderNumber} to the trash? It is kept for 30 days and left out ` +
+                    `of every count and profit figure until then.\n\n` +
+                    `Stock is NOT returned — cancel the order instead if that is what you want.`,
+                )
+              ) {
+                return;
+              }
+
+              void (async () => {
+                if (await mutate(() => adminApi.delete(`admin/orders/${order.id}`), "Moved to trash")) {
+                  router.push("/admin/orders");
+                }
+              })();
+            }}
+          >
+            <Icon name="trash" size={15} />
+            Delete
           </Button>
         </div>
       }
@@ -294,6 +324,125 @@ const SHIPMENT_LABELS: Record<string, string> = {
 };
 
 /**
+ * The stages a parcel walks through, in order.
+ *
+ * `returned`, `cancelled` and `unknown` are deliberately absent: they are not
+ * points on this line but departures from it, so they are rendered as their own
+ * end state rather than being wedged into a sequence they do not belong to.
+ */
+const SHIPMENT_STAGES = [
+  "pending",
+  "picked_up",
+  "in_transit",
+  "out_for_delivery",
+  "delivered",
+] as const;
+
+/**
+ * Where the parcel has got to, stage by stage.
+ *
+ * Collapsed by default behind a small toggle: the headline status answers the
+ * question most of the time, and this screen is already long. Someone on the
+ * phone to a customer who asks "so where is it exactly" opens it.
+ */
+function ShipmentStages({ shipment }: { shipment: Shipment }) {
+  const [open, setOpen] = useState(false);
+
+  const currentIndex = SHIPMENT_STAGES.indexOf(
+    shipment.status as (typeof SHIPMENT_STAGES)[number],
+  );
+  /* Off the happy path — returned, cancelled or a status we could not map. */
+  const derailed = currentIndex === -1;
+
+  return (
+    <div className="flex flex-col gap-3">
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        aria-expanded={open}
+        className="flex w-fit items-center gap-1.5 text-caption font-medium text-ink-soft transition-colors hover:text-ink"
+      >
+        <Icon
+          name="chevronDown"
+          size={15}
+          className={cn("transition-transform", open && "rotate-180")}
+        />
+        {open ? "Hide parcel stages" : "Show parcel stages"}
+      </button>
+
+      {open &&
+        (derailed ? (
+          <div className="flex items-center gap-2.5 rounded-sm bg-sale-soft px-3 py-2.5">
+            <Icon name="alert" size={16} className="shrink-0 text-sale" />
+            <p className="text-caption font-medium text-sale">
+              {SHIPMENT_LABELS[shipment.status] ?? shipment.status}
+              {shipment.courierStatus && (
+                <span className="mt-0.5 block font-normal text-muted">
+                  Courier says: {shipment.courierStatus}
+                </span>
+              )}
+            </p>
+          </div>
+        ) : (
+          <ol className="flex flex-col rounded-sm bg-surface px-3 py-3">
+            {SHIPMENT_STAGES.map((stage, i) => {
+              const done = i <= currentIndex;
+              const isCurrent = i === currentIndex;
+              const isLast = i === SHIPMENT_STAGES.length - 1;
+
+              return (
+                <li key={stage} className="flex gap-3">
+                  <div className="flex flex-col items-center">
+                    <span
+                      className={cn(
+                        "flex size-5 shrink-0 items-center justify-center rounded-full border",
+                        done
+                          ? "border-positive bg-positive text-white"
+                          : "border-line bg-white text-line",
+                      )}
+                    >
+                      {done && <Icon name="check" size={11} strokeWidth={2.6} />}
+                    </span>
+                    {!isLast && (
+                      <span
+                        className={cn(
+                          "w-px flex-1",
+                          i < currentIndex ? "bg-positive" : "bg-line",
+                        )}
+                      />
+                    )}
+                  </div>
+
+                  <p
+                    className={cn(
+                      "pb-4 text-caption",
+                      isLast && "pb-0",
+                      isCurrent
+                        ? "font-semibold text-ink"
+                        : done
+                          ? "text-ink-soft"
+                          : "text-muted",
+                    )}
+                  >
+                    {SHIPMENT_LABELS[stage]}
+                    {/* The courier's own wording, against the stage it produced
+                        — "they told me partial_delivered" is a real call. */}
+                    {isCurrent && shipment.courierStatus && (
+                      <span className="mt-0.5 block text-micro font-normal text-muted">
+                        Courier says: {shipment.courierStatus}
+                      </span>
+                    )}
+                  </p>
+                </li>
+              );
+            })}
+          </ol>
+        ))}
+    </div>
+  );
+}
+
+/**
  * Hand-off and tracking for one order.
  *
  * Before it is sent this is a single button; after, it is a status line. The
@@ -373,11 +522,7 @@ function CourierPanel({
           </Button>
         </div>
 
-        {/* The courier's own wording, kept visible for a support call —
-            "they told me partial_delivered" is a real conversation. */}
-        {shipment.courierStatus && (
-          <p className="text-micro text-muted">Courier says: {shipment.courierStatus}</p>
-        )}
+        <ShipmentStages shipment={shipment} />
 
         {mismatch && (
           <p className="flex items-start gap-2 rounded-sm bg-warn-soft px-3 py-2 text-caption text-warn">

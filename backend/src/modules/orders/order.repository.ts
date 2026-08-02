@@ -1,4 +1,17 @@
-import { and, asc, desc, eq, gte, inArray, lte, or, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import { getDb, type DatabaseExecutor } from "../../db/client.js";
 import { orders, type NewOrderRow, type OrderRow } from "../../db/schema/orders.js";
 import { orderItems, type NewOrderItemRow, type OrderItemRow } from "../../db/schema/order-items.js";
@@ -23,10 +36,19 @@ import type { DeliveryZone, OrderStatus, PaymentMethod } from "../../db/schema/o
  * `nextval` is atomic and lock-free. Computing `max(order_number) + 1` would
  * race two concurrent checkouts into the same number, and the unique index
  * would then fail one of them at random.
+ *
+ * The prefix comes from settings and is passed in rather than read here: the
+ * caller is already inside a transaction that has loaded them, and a second read
+ * would be a wasted round trip on the busiest path in the API. Only the counter
+ * guarantees uniqueness, so changing the prefix cannot collide with anything
+ * already issued.
  */
-export async function nextOrderNumber(executor: DatabaseExecutor = getDb()): Promise<string> {
+export async function nextOrderNumber(
+  prefix = "GNG-",
+  executor: DatabaseExecutor = getDb(),
+): Promise<string> {
   const result = await executor.execute<{ order_number: string }>(
-    sql`select 'GNG-' || nextval('order_number_seq') as order_number`,
+    sql`select ${prefix} || nextval('order_number_seq') as order_number`,
   );
 
   const value = result.rows[0]?.order_number;
@@ -257,14 +279,24 @@ export interface OrderDetail {
  * rather than three sequential queries.
  */
 export async function findOrderDetail(
-  identifier: { id?: string; orderNumber?: string },
+  identifier: {
+    id?: string;
+    orderNumber?: string;
+    /**
+     * Reads a trashed order too. Off by default so an order in the trash reads
+     * as gone everywhere — only the trash screen and restore ask for it.
+     */
+    includeDeleted?: boolean;
+  },
   executor: DatabaseExecutor = getDb(),
 ): Promise<OrderDetail | undefined> {
   const db = executor as ReturnType<typeof getDb>;
 
-  const predicate = identifier.id
+  const match = identifier.id
     ? eq(orders.id, identifier.id)
     : sql`upper(${orders.orderNumber}) = ${(identifier.orderNumber ?? "").trim().toUpperCase()}`;
+
+  const predicate = identifier.includeDeleted ? match : and(match, isNull(orders.deletedAt));
 
   const row = await db.query.orders.findFirst({
     where: predicate,
@@ -295,6 +327,15 @@ export interface OrderFilters {
   dateTo?: Date;
   minTotal?: number;
   maxTotal?: number;
+  /**
+   * Which side of the trash to read. Defaults to live orders only.
+   *
+   * A default of "live" rather than "all" is deliberate: every caller that
+   * forgets to think about it gets the safe answer, and a deleted order
+   * reappearing in a count or a report would be worse than one missing from the
+   * trash screen.
+   */
+  deleted?: "live" | "trashed";
 }
 
 export type OrderSort = "newest" | "oldest" | "total_desc" | "total_asc";
@@ -341,6 +382,12 @@ function buildSearchPredicate(term: string): SQL | undefined {
 
 function buildWhere(filters: OrderFilters): SQL | undefined {
   const conditions: (SQL | undefined)[] = [];
+
+  /* First, and unconditional. Every other filter narrows within one side of the
+     trash — there is no query in this system that legitimately mixes them. */
+  conditions.push(
+    filters.deleted === "trashed" ? isNotNull(orders.deletedAt) : isNull(orders.deletedAt),
+  );
 
   if (filters.search) conditions.push(buildSearchPredicate(filters.search));
   if (filters.status?.length) conditions.push(inArray(orders.status, filters.status));
@@ -404,14 +451,23 @@ export async function listOrders(
  * would be eight queries on every page load.
  */
 export async function countOrdersByStatus(
+  range: { dateFrom?: Date; dateTo?: Date } = {},
   executor: DatabaseExecutor = getDb(),
 ): Promise<Record<string, number>> {
+  /* Filtered on `created_at`, the same column and the same semantics the order
+     list uses — so the tiles and the list below them can never disagree about
+     which orders a chosen range contains. */
+  const conditions: SQL[] = [isNull(orders.deletedAt)];
+  if (range.dateFrom) conditions.push(gte(orders.createdAt, range.dateFrom));
+  if (range.dateTo) conditions.push(lte(orders.createdAt, range.dateTo));
+
   const rows = await executor
     .select({
       status: orders.status,
       total: sql<number>`count(*)`.mapWith(Number),
     })
     .from(orders)
+    .where(and(...conditions))
     .groupBy(orders.status);
 
   return Object.fromEntries(rows.map((row) => [row.status, row.total]));

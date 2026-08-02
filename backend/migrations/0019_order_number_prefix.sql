@@ -1,0 +1,16 @@
+-- The order-number prefix, moved into settings.
+--
+-- `GNG-` was hardcoded in the SQL that allocates a number, so a shop trading
+-- under a different name had order numbers carrying somebody else's initials on
+-- every invoice — and changing it meant a code edit and a deploy.
+--
+-- ONLY NEW ORDERS
+-- Nothing here rewrites a number already issued. That number is printed on
+-- invoices, read out over the phone and typed into the courier's panel; an order
+-- that silently changed identity would break all three at once. Old orders keep
+-- their old prefix and stay findable, because search matches anywhere in the
+-- number rather than anchoring to a known prefix.
+--
+-- The counter itself is `order_number_seq` and is untouched, so numbers remain
+-- unique across as many prefix changes as a shop cares to make.
+alter table "store_settings" add column if not exists "order_number_prefix" text not null default 'GNG-';

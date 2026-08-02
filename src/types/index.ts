@@ -233,4 +233,10 @@ export interface StoreSettings {
   logoHeight?: number | undefined;
   /** Shop name, used as the logo's alt text and the wordmark itself. */
   storeName?: string | undefined;
+  /** Uploaded browser-tab icon. Undefined falls back to the bundled one. */
+  faviconUrl?: string | undefined;
+  /** Page title override. Undefined uses `<store name> — <tagline>`. */
+  seoTitle?: string | undefined;
+  /** Meta description override. Undefined uses the built-in sentence. */
+  seoDescription?: string | undefined;
 }

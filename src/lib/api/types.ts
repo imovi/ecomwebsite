@@ -112,6 +112,15 @@ export interface ApiProductListItem {
    * entirely for the storefront, so this is optional rather than nullable-only.
    */
   costPrice?: number | null;
+  /**
+   * What THIS product costs to ship and to box. Admin responses only.
+   *
+   * Null means "use the shop default", which is a different state from 0 — zero
+   * would claim the item ships free.
+   */
+  courierCostInsideDhaka?: number | null;
+  courierCostOutsideDhaka?: number | null;
+  packagingCost?: number | null;
   createdAt: string;
 }
 
@@ -283,6 +292,8 @@ export interface ApiOrderListItem {
   itemCount: number;
   totalQuantity: number;
   createdAt: string;
+  /** When it was moved to the trash. Null on every live order. */
+  deletedAt: string | null;
 }
 
 export interface ApiOrderEvent {
@@ -314,6 +325,8 @@ export interface ApiStoreSettings {
     outsideDhaka: number;
     freeDeliveryThreshold: number;
   };
+  /** What every NEW order number starts with. Existing orders keep theirs. */
+  orderNumberPrefix: string;
   ordering: {
     minimumOrderValue: number;
     maxQuantityPerItem: number;
@@ -341,6 +354,9 @@ export interface ApiStoreSettings {
     storeId: string;
     baseUrl: string;
     enabled: boolean;
+    /** Webhook secret state only — the value is never returned. */
+    hasWebhookToken: boolean;
+    webhookTokenHint: string;
   };
   store: {
     name: string;
@@ -348,10 +364,17 @@ export interface ApiStoreSettings {
     email: string;
     address: string;
     invoiceFooter: string;
-    /** Resolved URL of the uploaded logo. Null means "use the wordmark". */
+    /** Digits with country code. Empty hides the floating WhatsApp button. */
+    whatsapp: string;
+    /** Empty means "use the built-in title/description". */
+    seoTitle: string;
+    seoDescription: string;
+    /** Resolved URL of the uploaded logo. Null means the header shows nothing. */
     logoUrl: string | null;
     logoWidth: number | null;
     logoHeight: number | null;
+    /** Browser-tab icon. Null means "use the bundled favicon". */
+    faviconUrl: string | null;
   };
   /**
    * Meta / Facebook tracking.
@@ -382,6 +405,12 @@ export interface ApiStoreSettings {
       botTokenHint: string;
       chatId: string;
       enabled: boolean;
+      /**
+       * Who may press the bot's buttons, comma separated. Not a secret — these
+       * are public Telegram user ids — so unlike the token it is returned.
+       * Empty means everyone in the configured chat.
+       */
+      allowedUserIds: string;
     };
     googleSheets: {
       hasCredentials: boolean;

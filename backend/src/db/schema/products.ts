@@ -118,6 +118,22 @@ export const products = pgTable(
     costPrice: integer("cost_price"),
 
     /**
+     * What THIS product costs to ship and to box, overriding the shop defaults.
+     *
+     * Null means "use the shop figure", so nothing changes until a product is
+     * given its own. They exist because one shop-wide courier cost flatters a
+     * phone case and hides that a laptop barely earns.
+     *
+     * A courier bills per PARCEL, so these are not summed: a parcel costs the
+     * highest override among the products inside it. See the profit service,
+     * which also splits that parcel cost back across the lines by revenue share
+     * so the per-product rows still add up to the order total.
+     */
+    courierCostInsideDhaka: integer("courier_cost_inside_dhaka"),
+    courierCostOutsideDhaka: integer("courier_cost_outside_dhaka"),
+    packagingCost: integer("packaging_cost"),
+
+    /**
      * Derived, never written.
      *
      * A stored percentage silently goes stale the first time someone edits a

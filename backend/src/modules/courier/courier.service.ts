@@ -1,3 +1,4 @@
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import { and, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { getDb } from "../../db/client.js";
 import {
@@ -8,6 +9,7 @@ import {
   type ShipmentStatus,
 } from "../../db/schema/courier-shipments.js";
 import { orders } from "../../db/schema/orders.js";
+import { storeSettings } from "../../db/schema/store-settings.js";
 import { orderItems } from "../../db/schema/order-items.js";
 import type { StoreSettingsRow } from "../../db/schema/store-settings.js";
 import { BadRequestError, ConflictError, NotFoundError } from "../../core/errors.js";
@@ -17,7 +19,8 @@ import * as orderService from "../orders/order.service.js";
 import { SYSTEM_ACTOR, type Actor } from "../orders/order-event.repository.js";
 import { createSteadfastAdapter } from "./steadfast.adapter.js";
 import { createPathaoAdapter } from "./pathao.adapter.js";
-import { CourierError, type CourierProviderAdapter } from "./provider.js";
+import { CourierError, mapStatus, type CourierProviderAdapter } from "./provider.js";
+import { notifyParcel } from "../integrations/telegram.service.js";
 
 /**
  * Courier hand-off.
@@ -350,6 +353,23 @@ export async function syncShipment(shipmentId: string): Promise<ShipmentDto> {
     return toDto(failed[0]!);
   }
 
+  return applyStatus(shipment, status);
+}
+
+/**
+ * Writes a status onto a shipment and carries the order along with it.
+ *
+ * Shared by the poll and the webhook. They differ only in how the status was
+ * learned — one asked, the other was told — and everything after that has to be
+ * identical, or the same parcel would land in a different state depending on
+ * which route happened to see it first.
+ */
+async function applyStatus(
+  shipment: CourierShipmentRow,
+  status: { raw: string; mapped: ShipmentStatus },
+): Promise<ShipmentDto> {
+  const db = getDb();
+
   const updated = await db
     .update(courierShipments)
     .set({
@@ -359,7 +379,7 @@ export async function syncShipment(shipmentId: string): Promise<ShipmentDto> {
       lastSyncedAt: new Date(),
       updatedAt: sql`now()`,
     })
-    .where(eq(courierShipments.id, shipmentId))
+    .where(eq(courierShipments.id, shipment.id))
     .returning();
 
   const next = updated[0]!;
@@ -403,10 +423,50 @@ export async function syncShipment(shipmentId: string): Promise<ShipmentDto> {
           "Courier status could not be applied to the order",
         );
       }
+
+      /* Told, not asked: the parcel reaching its end state is the moment the
+         shop's money is settled either way, and it happens with nobody looking
+         at the panel. Failures are swallowed — a Telegram outage must never
+         undo a delivery that really happened. */
+      if (target === "delivered" || target === "returned") {
+        void notifyParcelOutcome(shipment.orderId, target, status.raw);
+      }
     }
   }
 
   return toDto(next);
+}
+
+/** Announces a settled parcel. Never throws — see the call site. */
+async function notifyParcelOutcome(
+  orderId: string,
+  status: "delivered" | "returned",
+  courierStatus: string,
+): Promise<void> {
+  try {
+    const rows = await getDb()
+      .select({
+        orderNumber: orders.orderNumber,
+        customerName: orders.customerName,
+        grandTotal: orders.grandTotal,
+      })
+      .from(orders)
+      .where(eq(orders.id, orderId))
+      .limit(1);
+
+    const order = rows[0];
+    if (!order) return;
+
+    await notifyParcel({
+      orderNumber: order.orderNumber,
+      customerName: order.customerName,
+      status,
+      courierStatus,
+      grandTotal: order.grandTotal,
+    });
+  } catch (error) {
+    log.warn({ err: error, orderId }, "Parcel outcome alert not sent");
+  }
 }
 
 /**
@@ -474,6 +534,173 @@ export async function findShipmentForCustomer(orderId: string): Promise<{
     .limit(1);
 
   return rows[0] ?? null;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Webhook                                                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Rotates the secret the courier presents when calling our webhook.
+ *
+ * Returned in full exactly once, because that is the moment it gets pasted into
+ * the courier's panel. Afterwards only a masked hint is ever shown — the same
+ * rule every other credential here follows.
+ */
+export async function rotateWebhookToken(): Promise<string> {
+  /* 32 bytes: this is a bearer secret on a public endpoint, so it has to be
+     long enough that guessing is not a strategy. base64url keeps it safe to
+     paste into a form field that may not escape anything. */
+  const token = randomBytes(32).toString("base64url");
+
+  await getDb()
+    .update(storeSettings)
+    .set({ courierWebhookToken: token, updatedAt: sql`now()` })
+    .where(eq(storeSettings.id, 1));
+
+  log.info("Courier webhook token rotated");
+  return token;
+}
+
+export async function clearWebhookToken(): Promise<void> {
+  await getDb()
+    .update(storeSettings)
+    .set({ courierWebhookToken: "", updatedAt: sql`now()` })
+    .where(eq(storeSettings.id, 1));
+
+  log.info("Courier webhook token cleared — the webhook is now closed");
+}
+
+/**
+ * Checks the bearer secret a webhook call presented.
+ *
+ * Constant-time, so the endpoint cannot be used as an oracle that leaks the
+ * token one character at a time by measuring how long the comparison took.
+ *
+ * A blank stored token is always a refusal. Comparing "" to "" would mean that
+ * switching the webhook off silently opened it to anyone who sent no
+ * credential at all — the exact opposite of what turning it off means.
+ */
+export async function verifyWebhookToken(presented: string | null): Promise<boolean> {
+  const settings = await getSettings();
+  const expected = settings.courierWebhookToken;
+
+  if (expected === "" || !presented) return false;
+
+  const a = Buffer.from(presented);
+  const b = Buffer.from(expected);
+  /* timingSafeEqual throws on a length mismatch, which would itself leak the
+     length — so a differing length is answered with a comparison of equal
+     buffers against each other and a plain false. */
+  if (a.length !== b.length) {
+    timingSafeEqual(b, b);
+    return false;
+  }
+
+  return timingSafeEqual(a, b);
+}
+
+/** What the courier POSTs. Both notification types share the first fields. */
+export interface CourierWebhookPayload {
+  notification_type: string;
+  consignment_id: number;
+  invoice?: string | undefined;
+  status?: string | undefined;
+  tracking_message?: string | undefined;
+  cod_amount?: number | undefined;
+  delivery_charge?: number | undefined;
+  updated_at?: string | undefined;
+}
+
+export type WebhookOutcome =
+  | { handled: true; detail: string }
+  | { handled: false; reason: string };
+
+/**
+ * Applies one webhook call.
+ *
+ * The parcel is found by consignment id, falling back to the invoice — which is
+ * our order number. Steadfast's own panel lets a parcel be created by hand, and
+ * one of those has an invoice we recognise but a consignment id we have never
+ * stored; matching on both means such a parcel still lands on the right order
+ * instead of being discarded as unknown.
+ *
+ * Never throws for an unrecognised parcel. A webhook that answers non-2xx gets
+ * retried, and retrying forever for a consignment that will never exist here is
+ * noise in both systems — so an unknown parcel is reported as handled-and-
+ * ignored, and logged.
+ */
+export async function handleWebhook(
+  payload: CourierWebhookPayload,
+): Promise<WebhookOutcome> {
+  const consignmentId = String(payload.consignment_id);
+
+  const rows = await getDb()
+    .select()
+    .from(courierShipments)
+    .where(
+      payload.invoice
+        ? or(
+            eq(courierShipments.consignmentId, consignmentId),
+            /* The invoice we send is the order number, so this is a join back
+               through the order rather than a second key on the shipment. */
+            inArray(
+              courierShipments.orderId,
+              getDb()
+                .select({ id: orders.id })
+                .from(orders)
+                .where(eq(orders.orderNumber, payload.invoice)),
+            ),
+          )
+        : eq(courierShipments.consignmentId, consignmentId),
+    )
+    .limit(1);
+
+  const shipment = rows[0];
+  if (!shipment) {
+    log.warn(
+      { consignmentId, invoice: payload.invoice, type: payload.notification_type },
+      "Courier webhook for an unknown parcel — ignored",
+    );
+    return { handled: false, reason: "Invalid consignment ID." };
+  }
+
+  /**
+   * A tracking update carries no delivery status, only a sentence about where
+   * the parcel is. Recording it as the courier's wording keeps the order page
+   * current without letting free text decide an order's status — "arrived at
+   * sorting centre" must never be mapped into something that books revenue.
+   */
+  if (payload.notification_type === "tracking_update") {
+    const message = payload.tracking_message?.trim() ?? "";
+    if (message === "") return { handled: true, detail: "Empty tracking message ignored." };
+
+    await getDb()
+      .update(courierShipments)
+      .set({ courierStatus: message, lastSyncedAt: new Date(), updatedAt: sql`now()` })
+      .where(eq(courierShipments.id, shipment.id));
+
+    return { handled: true, detail: "Tracking message recorded." };
+  }
+
+  if (payload.notification_type === "delivery_status") {
+    const raw = payload.status?.trim() ?? "";
+    if (raw === "") return { handled: false, reason: "Missing status." };
+
+    /* The same mapper the poll uses, so `Delivered` from a webhook and
+       `delivered` from a status read cannot land differently. */
+    await applyStatus(shipment, { raw, mapped: mapStatus(raw) });
+
+    return { handled: true, detail: `Status "${raw}" applied.` };
+  }
+
+  /* A type we have never seen is accepted and ignored rather than refused: the
+     courier adding a third notification must not turn into a retry storm. */
+  log.warn(
+    { type: payload.notification_type, consignmentId },
+    "Courier webhook of an unrecognised type — ignored",
+  );
+  return { handled: true, detail: "Notification type ignored." };
 }
 
 /** Shipments still in flight, for the admin overview. */

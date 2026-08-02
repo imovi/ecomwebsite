@@ -79,14 +79,49 @@ export function createSteadfastAdapter(config: SteadfastConfig): CourierProvider
       );
     }
 
-    const body = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+    /* Read as text first, then attempt JSON.
+       Steadfast does not always answer in JSON: a refusal can arrive as a bare
+       sentence like `Account is not active!` with a 401. Parsing straight to
+       JSON discarded that sentence and left the panel saying "unreadable
+       response (401)" — which reads like an outage and hides the one thing the
+       owner needed to know. */
+    const rawText = await response.text();
 
-    if (!body) {
-      throw new CourierError(`Steadfast returned an unreadable response (${response.status}).`);
+    let body: Record<string, unknown> | null = null;
+    try {
+      const parsed: unknown = JSON.parse(rawText);
+      body = typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : null;
+    } catch {
+      body = null;
     }
 
+    /* Whatever the courier said, in whichever shape it said it. HTML is
+       excluded — an error page's markup is noise, not a message. */
+    const courierMessage =
+      typeof body?.message === "string" && body.message.trim() !== ""
+        ? body.message.trim()
+        : !rawText.trimStart().startsWith("<") && rawText.trim() !== "" && rawText.length <= 200
+          ? rawText.trim()
+          : "";
+
     if (response.status === 401 || response.status === 403) {
-      throw new CourierError("Steadfast rejected the API key and secret. Check both in Settings.");
+      /* A 401 here is NOT always a bad key pair — an account that authenticates
+         fine for reads can still be barred from creating parcels, and telling
+         the owner to re-check credentials that are correct sends them in
+         circles. So the courier's own words lead when there are any. */
+      throw new CourierError(
+        courierMessage
+          ? `Steadfast refused: ${courierMessage}. If the key pair is right, this is your Steadfast account rather than the settings here — contact them to activate it.`
+          : "Steadfast rejected the API key and secret. Check both in Settings.",
+      );
+    }
+
+    if (!body) {
+      throw new CourierError(
+        courierMessage
+          ? `Steadfast refused: ${courierMessage}`
+          : `Steadfast returned an unreadable response (${response.status}).`,
+      );
     }
 
     /* The sharp edge: 200 with an error status inside. */

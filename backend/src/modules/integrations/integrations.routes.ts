@@ -60,6 +60,19 @@ const status: RequestHandler = async (_req, res) => {
         chatConfigured: settings.telegramChatId.trim() !== "",
         enabled: settings.telegramEnabled,
         chatId: settings.telegramChatId,
+        /**
+         * The interactive half: buttons and commands.
+         *
+         * Reported separately from `enabled` because they fail independently —
+         * alerts can be arriving perfectly while the buttons do nothing, and
+         * that is exactly the state somebody needs to be told about.
+         */
+        botEnabled: settings.telegramWebhookSecret !== "",
+        allowedUserIds: settings.telegramAllowedUserIds,
+        /* What Telegram itself believes. A URL it cannot reach shows up here
+           as a pending backlog and an error string, which is the only place
+           that failure is visible at all. */
+        webhook: settings.telegramBotToken.trim() === "" ? null : await telegram.webhookInfo(settings),
       },
       googleSheets: {
         ready: sheetsProblem === null,
@@ -104,7 +117,26 @@ const testSheets: RequestHandler = async (_req, res) => {
   sendSuccess(res, { result: await sheets.sendTestRow() });
 };
 
+/**
+ * Turns the interactive bot on: mints a secret, tells Telegram where to send
+ * updates, and stores the secret so incoming ones can be checked.
+ *
+ * Both halves have to succeed. Storing a secret Telegram was never told about
+ * would leave an endpoint that refuses every real update; telling Telegram a
+ * secret we did not store would do the same in reverse. So Telegram is asked
+ * first and the secret is only written once it accepted.
+ */
+const enableBot: RequestHandler = async (_req, res) => {
+  sendSuccess(res, { result: await telegram.enableBot() });
+};
+
+const disableBot: RequestHandler = async (_req, res) => {
+  sendSuccess(res, { result: await telegram.disableBot() });
+};
+
 integrationsAdminRouter.get("/status", status);
 integrationsAdminRouter.post("/telegram/test", diagnosticRateLimit, testTelegram);
 integrationsAdminRouter.post("/telegram/find-chats", diagnosticRateLimit, findChats);
+integrationsAdminRouter.post("/telegram/bot/enable", diagnosticRateLimit, enableBot);
+integrationsAdminRouter.post("/telegram/bot/disable", diagnosticRateLimit, disableBot);
 integrationsAdminRouter.post("/sheets/test", diagnosticRateLimit, testSheets);

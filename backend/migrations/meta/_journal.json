@@ -99,6 +99,48 @@
       "when": 1785436092218,
       "tag": "0013_courier",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1785436152218,
+      "tag": "0014_store_favicon",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1785436212218,
+      "tag": "0015_courier_webhook",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1785436272218,
+      "tag": "0016_telegram_bot",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1785436332218,
+      "tag": "0017_contact_and_seo",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1785436392218,
+      "tag": "0018_product_costs_and_trash",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1785436452218,
+      "tag": "0019_order_number_prefix",
+      "breakpoints": true
     }
   ]
 }

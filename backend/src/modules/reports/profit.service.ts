@@ -1,10 +1,15 @@
-import { and, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, lte, sql, type SQL } from "drizzle-orm";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { getDb } from "../../db/client.js";
 import { orders } from "../../db/schema/orders.js";
 import { orderItems } from "../../db/schema/order-items.js";
+/* Aliased: the report body already has a local `products` — the per-product
+   rows it is building — and shadowing the table would silently break the join. */
+import { products as productsTable } from "../../db/schema/products.js";
 import type { StoreSettingsRow } from "../../db/schema/store-settings.js";
 import { getSettings } from "../settings/settings.service.js";
 import { amountWithin, findForRange } from "./expense.service.js";
+import * as productAdSpendService from "./product-ad-spend.service.js";
 
 /**
  * Profit and loss.
@@ -49,6 +54,24 @@ export const REPORT_UTC_OFFSET_MINUTES = 6 * 60;
 export function shopDate(at: Date = new Date()): string {
   const shifted = new Date(at.getTime() + REPORT_UTC_OFFSET_MINUTES * 60_000);
   return shifted.toISOString().slice(0, 10);
+}
+
+/**
+ * The shop's calendar day for a stored timestamp, in SQL.
+ *
+ * `at time zone 'UTC'` was the obvious thing to write and it was wrong: the
+ * ranges above are resolved in Dhaka, so comparing them against a UTC date put
+ * everything between midnight and 6am Dhaka into the previous day's report. A
+ * parcel delivered at 1am read as yesterday's income — on the one screen the
+ * shop is judged by, and only for the hours somebody is most likely to be
+ * checking last night's takings.
+ *
+ * Named rather than repeated: three columns are dated this way, and one of them
+ * being fixed alone would be worse than none, because the totals would stop
+ * adding up between sections of the same report.
+ */
+function shopDay(column: SQL | AnyPgColumn): SQL {
+  return sql`(${column} at time zone 'Asia/Dhaka')::date`;
 }
 
 function addDays(isoDate: string, days: number): string {
@@ -115,9 +138,19 @@ export interface ProductProfitDto {
   /** Revenue from lines whose cost was never recorded. */
   revenueWithUnknownCost: number;
   unitsWithUnknownCost: number;
-  /** Share of ad spend by revenue. An estimate — see the file header. */
+  /** Share of the shop-wide ad line by revenue. An estimate — see the header. */
   estimatedAdSpend: number;
-  /** Gross profit less the estimated ad share. */
+  /**
+   * Boost money recorded against this product. A fact, not a share-out, and
+   * reported separately so a reader can tell the two apart at a glance.
+   */
+  recordedAdSpend: number;
+  /**
+   * This product's share of the parcels it travelled in — courier plus boxing.
+   * Exact per order, split across the products inside by revenue.
+   */
+  parcelCost: number;
+  /** Gross profit less shipping, boxing, recorded boosts and the ad share. */
   estimatedNetProfit: number;
   /** Null when nothing about this product's cost is known. */
   marginPercent: number | null;
@@ -142,6 +175,14 @@ export interface ProfitReportDto {
     returns: { count: number; cost: number };
 
     expenses: { total: number; byCategory: Record<string, number> };
+
+    /**
+     * Boosts recorded against individual products.
+     *
+     * Its own line, not part of `expenses`: everything else under advertising
+     * is a shop-wide figure shared out by revenue, and this one is measured.
+     */
+    productBoosts: number;
 
     netProfit: number;
     /**
@@ -203,11 +244,12 @@ async function realisedOrders(range: DateRange) {
     .from(orders)
     .where(
       and(
+        isNull(orders.deletedAt),
         eq(orders.status, "delivered"),
         /* Dated by delivery, not placement: an order placed in March and
            delivered in April is April's income. */
-        gte(sql`(${orders.deliveredAt} at time zone 'UTC')::date`, sql`${range.from}::date`),
-        lte(sql`(${orders.deliveredAt} at time zone 'UTC')::date`, sql`${range.to}::date`),
+        gte(shopDay(orders.deliveredAt), sql`${range.from}::date`),
+        lte(shopDay(orders.deliveredAt), sql`${range.to}::date`),
       ),
     );
 
@@ -224,6 +266,27 @@ interface LineAggregate {
   revenueWithUnknownCost: number;
   linesWithCost: number;
   linesWithoutCost: number;
+}
+
+/**
+ * The same lines, ungrouped and carrying their order id.
+ *
+ * Needed because a parcel's shipping cost belongs to an ORDER, and splitting it
+ * across products requires knowing which order each line came from — which the
+ * grouped aggregate above has already thrown away.
+ */
+async function rawLinesFor(orderIds: string[]) {
+  if (orderIds.length === 0) return [];
+
+  return getDb()
+    .select({
+      orderId: orderItems.orderId,
+      productId: orderItems.productId,
+      productName: orderItems.productName,
+      revenue: orderItems.lineTotal,
+    })
+    .from(orderItems)
+    .where(inArray(orderItems.orderId, orderIds));
 }
 
 async function linesFor(orderIds: string[]): Promise<LineAggregate[]> {
@@ -272,6 +335,115 @@ function courierCostOf(
     : settings.courierCostOutsideDhaka;
 }
 
+/* -------------------------------------------------------------------------- */
+/* Per-parcel costs                                                           */
+/* -------------------------------------------------------------------------- */
+
+interface ParcelCost {
+  orderId: string;
+  courier: number;
+  packaging: number;
+}
+
+/**
+ * What each delivered parcel actually cost to ship and to box.
+ *
+ * A courier bills per PARCEL, so per-product overrides cannot be summed: an
+ * order holding a laptop and a cable is one box, and adding both overrides
+ * together would invent a cost nobody was charged. The rule is the HIGHEST
+ * override among the products inside, falling back to the shop's zone figure —
+ * the honest reading of "this bulky item makes the parcel cost more".
+ *
+ * Products with no override contribute nothing to the maximum, so a shop can
+ * set them on the few items that need it and leave the rest alone.
+ */
+async function parcelCostsFor(
+  orders: { orderId: string; deliveryZone: "inside_dhaka" | "outside_dhaka" }[],
+  settings: StoreSettingsRow,
+): Promise<Map<string, ParcelCost>> {
+  const byOrder = new Map<string, ParcelCost>();
+  for (const order of orders) {
+    byOrder.set(order.orderId, {
+      orderId: order.orderId,
+      courier: courierCostOf(order.deliveryZone, settings),
+      packaging: settings.packagingCostPerOrder,
+    });
+  }
+
+  if (orders.length === 0) return byOrder;
+
+  const overrides = await getDb()
+    .select({
+      orderId: orderItems.orderId,
+      inside: productsTable.courierCostInsideDhaka,
+      outside: productsTable.courierCostOutsideDhaka,
+      packaging: productsTable.packagingCost,
+    })
+    .from(orderItems)
+    .innerJoin(productsTable, eq(orderItems.productId, productsTable.id))
+    .where(inArray(orderItems.orderId, orders.map((order) => order.orderId)));
+
+  const zoneOf = new Map(orders.map((order) => [order.orderId, order.deliveryZone]));
+
+  for (const row of overrides) {
+    const parcel = byOrder.get(row.orderId);
+    if (!parcel) continue;
+
+    const zone = zoneOf.get(row.orderId);
+    const courierOverride = zone === "inside_dhaka" ? row.inside : row.outside;
+
+    if (courierOverride !== null) {
+      parcel.courier = Math.max(parcel.courier, courierOverride);
+    }
+    if (row.packaging !== null) {
+      parcel.packaging = Math.max(parcel.packaging, row.packaging);
+    }
+  }
+
+  return byOrder;
+}
+
+/**
+ * Splits each parcel's shipping and boxing back across the products inside it,
+ * by share of that order's revenue.
+ *
+ * Without this the per-product table and the shop totals would disagree: the
+ * totals would carry the real parcel costs while the product rows carried none,
+ * and the difference would look like a bug in whichever number was read second.
+ */
+function attributeParcelCosts(
+  lines: { orderId: string; productId: string | null; productName: string; revenue: number }[],
+  parcels: Map<string, ParcelCost>,
+): Map<string, number> {
+  const revenueByOrder = new Map<string, number>();
+  for (const line of lines) {
+    revenueByOrder.set(line.orderId, (revenueByOrder.get(line.orderId) ?? 0) + line.revenue);
+  }
+
+  const byProduct = new Map<string, number>();
+
+  for (const line of lines) {
+    const parcel = parcels.get(line.orderId);
+    if (!parcel) continue;
+
+    const orderRevenue = revenueByOrder.get(line.orderId) ?? 0;
+    /* A zero-revenue order — every line free — splits evenly rather than
+       dividing by zero and dropping the cost entirely. */
+    const share =
+      orderRevenue > 0
+        ? line.revenue / orderRevenue
+        : 1 / Math.max(1, lines.filter((other) => other.orderId === line.orderId).length);
+
+    const key = line.productId ?? `name:${line.productName}`;
+    byProduct.set(
+      key,
+      (byProduct.get(key) ?? 0) + (parcel.courier + parcel.packaging) * share,
+    );
+  }
+
+  return byProduct;
+}
+
 export async function profitReport(
   range: DateRange,
   options: { preset?: RangePreset | undefined } = {},
@@ -301,11 +473,21 @@ export async function profitReport(
   );
 
   const deliveryCharged = delivered.reduce((sum, order) => sum + order.deliveryCharge, 0);
-  const courierPaid = delivered.reduce(
-    (sum, order) => sum + courierCostOf(order.deliveryZone, settings),
-    0,
-  );
-  const packaging = delivered.length * settings.packagingCostPerOrder;
+
+  /* Per parcel, honouring any per-product overrides — see `parcelCostsFor`. A
+     shop with no overrides gets exactly the old figures. */
+  const parcels = await parcelCostsFor(delivered, settings);
+  const courierPaid = [...parcels.values()].reduce((sum, parcel) => sum + parcel.courier, 0);
+  const packaging = [...parcels.values()].reduce((sum, parcel) => sum + parcel.packaging, 0);
+
+  /* The same parcel costs, split back across the products inside each order, so
+     the per-product table and these totals cannot disagree. */
+  const rawLines = await rawLinesFor(delivered.map((order) => order.orderId));
+  const parcelCostByProduct = attributeParcelCosts(rawLines, parcels);
+
+  /* Boosts recorded against a specific product: a fact, not a share-out. */
+  const recordedBoosts = await productAdSpendService.totalsForRange(range);
+  const boostTotal = [...recordedBoosts.values()].reduce((sum, amount) => sum + amount, 0);
 
   /* Returns and cancellations, counted on the day they happened. */
   const [returned] = await db
@@ -316,9 +498,10 @@ export async function profitReport(
     .from(orders)
     .where(
       and(
+        isNull(orders.deletedAt),
         eq(orders.status, "returned"),
-        gte(sql`(${orders.returnedAt} at time zone 'UTC')::date`, sql`${range.from}::date`),
-        lte(sql`(${orders.returnedAt} at time zone 'UTC')::date`, sql`${range.to}::date`),
+        gte(shopDay(orders.returnedAt), sql`${range.from}::date`),
+        lte(shopDay(orders.returnedAt), sql`${range.to}::date`),
       ),
     );
 
@@ -330,9 +513,10 @@ export async function profitReport(
     .from(orders)
     .where(
       and(
+        isNull(orders.deletedAt),
         eq(orders.status, "cancelled"),
-        gte(sql`(${orders.cancelledAt} at time zone 'UTC')::date`, sql`${range.from}::date`),
-        lte(sql`(${orders.cancelledAt} at time zone 'UTC')::date`, sql`${range.to}::date`),
+        gte(shopDay(orders.cancelledAt), sql`${range.from}::date`),
+        lte(shopDay(orders.cancelledAt), sql`${range.to}::date`),
       ),
     );
 
@@ -348,12 +532,22 @@ export async function profitReport(
       subtotal: sql<number>`coalesce(sum(${orders.subtotal}), 0)`.mapWith(Number),
     })
     .from(orders)
-    .where(inArray(orders.status, ["pending", "confirmed", "processing", "packed", "shipped"]));
+    .where(
+      and(
+        isNull(orders.deletedAt),
+        inArray(orders.status, ["pending", "confirmed", "processing", "packed", "shipped"]),
+      ),
+    );
 
   const openIds = await db
     .select({ id: orders.id })
     .from(orders)
-    .where(inArray(orders.status, ["pending", "confirmed", "processing", "packed", "shipped"]));
+    .where(
+      and(
+        isNull(orders.deletedAt),
+        inArray(orders.status, ["pending", "confirmed", "processing", "packed", "shipped"]),
+      ),
+    );
 
   const openLines = await linesFor(openIds.map((row) => row.id));
   const expectedGrossProfit = openLines.reduce(
@@ -373,14 +567,29 @@ export async function profitReport(
   const adSpend = byCategory.ads ?? 0;
 
   const grossProfit = revenue - costOfGoods - revenueWithUnknownCost;
+  /* Boosts sit alongside the ledger rather than inside it: the ledger's `ads`
+     line is shop-wide campaigns, a boost is money aimed at one product. Adding
+     both is correct as long as the same taka is not written in both places,
+     which is what the panel warns about where a boost is entered. */
   const netProfit =
-    grossProfit + (deliveryCharged - courierPaid) - packaging - returnCost - expenseTotal;
+    grossProfit +
+    (deliveryCharged - courierPaid) -
+    packaging -
+    returnCost -
+    expenseTotal -
+    boostTotal;
 
-  /* Per product, with ads shared out by revenue. */
+  /* Per product: shipping and boxing attributed exactly, boosts taken as
+     recorded, and only the shop-wide ad line still shared out by revenue. */
   const products: ProductProfitDto[] = lines
     .map((line) => {
       const share = revenue > 0 ? line.revenue / revenue : 0;
       const estimatedAdSpend = Math.round(adSpend * share);
+
+      const key = line.productId ?? `name:${line.productName}`;
+      const recordedAdSpend = line.productId ? (recordedBoosts.get(line.productId) ?? 0) : 0;
+      const parcelCost = Math.round(parcelCostByProduct.get(key) ?? 0);
+
       const lineGross = line.revenue - line.cost - line.revenueWithUnknownCost;
 
       return {
@@ -393,7 +602,9 @@ export async function profitReport(
         revenueWithUnknownCost: line.revenueWithUnknownCost,
         unitsWithUnknownCost: line.unitsWithUnknownCost,
         estimatedAdSpend,
-        estimatedNetProfit: lineGross - estimatedAdSpend,
+        recordedAdSpend,
+        parcelCost,
+        estimatedNetProfit: lineGross - estimatedAdSpend - recordedAdSpend - parcelCost,
         /* Only over the revenue whose cost is actually known — a margin that
            silently includes uncosted sales is the flattering kind. */
         marginPercent:
@@ -424,6 +635,10 @@ export async function profitReport(
       packaging,
       returns: { count: returnCount, cost: returnCost },
       expenses: { total: expenseTotal, byCategory },
+      /* Reported on its own line rather than folded into `expenses`, because
+         this is the one advertising figure that is measured rather than
+         inferred — and the difference is the whole point of recording it. */
+      productBoosts: boostTotal,
       netProfit,
       marginPercent: revenue > 0 ? Math.round((netProfit / revenue) * 100) : null,
     },

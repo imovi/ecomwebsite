@@ -78,6 +78,13 @@ export interface ProductListItemDto {
   isVisible?: boolean;
   /** Admin listings only — see the note on the variant DTO. */
   costPrice?: number | null;
+  /**
+   * Per-product shipping and boxing overrides. Admin only, and null means
+   * "use the shop default" rather than "free".
+   */
+  courierCostInsideDhaka?: number | null;
+  courierCostOutsideDhaka?: number | null;
+  packagingCost?: number | null;
   createdAt: string;
 }
 
@@ -196,6 +203,9 @@ export function toListItemDto(
     dto.status = product.status;
     dto.isVisible = product.isVisible;
     dto.costPrice = product.costPrice;
+    dto.courierCostInsideDhaka = product.courierCostInsideDhaka;
+    dto.courierCostOutsideDhaka = product.courierCostOutsideDhaka;
+    dto.packagingCost = product.packagingCost;
   }
 
   return dto;
@@ -243,6 +253,9 @@ export function toProductDto(
     dto.status = product.status;
     dto.isVisible = product.isVisible;
     dto.costPrice = product.costPrice;
+    dto.courierCostInsideDhaka = product.courierCostInsideDhaka;
+    dto.courierCostOutsideDhaka = product.courierCostOutsideDhaka;
+    dto.packagingCost = product.packagingCost;
 
     if (options.metrics) {
       dto.metrics = {

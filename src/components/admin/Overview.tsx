@@ -8,7 +8,18 @@ import { formatTaka, formatDateTime } from "@/lib/utils";
 import { copy } from "@/lib/copy";
 import type { ApiOrderListItem, ApiOrderStatus, ApiProductListItem } from "@/lib/api/types";
 import { AdminShell } from "./AdminShell";
-import { AsyncState, Card, CardHeader, Stat } from "./ui";
+import {
+  AsyncState,
+  Card,
+  CardHeader,
+  DateRangeFilter,
+  resolveDateRange,
+  shopDayEnd,
+  shopDayStart,
+  Stat,
+  type DateRange,
+  type DateRangePreset,
+} from "./ui";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 
@@ -28,13 +39,30 @@ export function Overview() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  /* All time by default: the tiles are the first thing read on opening the
+     panel, and a pending order from three days ago disappearing from "Needs a
+     call" because today's window excludes it is the one failure this screen
+     must not have. */
+  const [preset, setPreset] = useState<DateRangePreset>("all");
+  const [custom, setCustom] = useState<{ from: string; to: string } | null>(null);
+
+  const range: DateRange = custom
+    ? { dateFrom: shopDayStart(custom.from), dateTo: shopDayEnd(custom.to) }
+    : resolveDateRange(preset);
+
+  const { dateFrom, dateTo } = range;
+
   const load = useCallback(async () => {
     try {
       /* Four independent reads — in parallel, since the slowest one sets the
          time to first paint. */
       const [statusCounts, orders, products, draftProducts] = await Promise.all([
-        adminApi.get<{ counts: Record<string, number> }>("admin/orders/status-counts"),
-        adminApi.list<ApiOrderListItem>(`admin/orders${qs({ perPage: 8 })}`),
+        adminApi.get<{ counts: Record<string, number> }>(
+          `admin/orders/status-counts${qs({ dateFrom, dateTo })}`,
+        ),
+        /* The same window as the tiles: a list headed by counts it does not
+           match reads as a bug in both. */
+        adminApi.list<ApiOrderListItem>(`admin/orders${qs({ dateFrom, dateTo, perPage: 8 })}`),
         adminApi.list<ApiProductListItem>(`admin/products${qs({ perPage: 100, status: "active" })}`),
         adminApi.list<ApiProductListItem>(`admin/products${qs({ perPage: 1, status: "draft" })}`),
       ]);
@@ -51,13 +79,23 @@ export function Overview() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [dateFrom, dateTo]);
 
   useLoad(load);
 
   return (
     <AdminShell title="Overview">
       <div className="flex flex-col gap-4">
+        <DateRangeFilter
+          preset={preset}
+          custom={custom}
+          onPreset={(value) => {
+            setCustom(null);
+            setPreset(value);
+          }}
+          onCustom={setCustom}
+        />
+
         <AsyncState loading={loading} error={error} onRetry={() => {
             setLoading(true);
             void load();

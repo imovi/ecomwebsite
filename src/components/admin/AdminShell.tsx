@@ -18,12 +18,11 @@ import { Icon } from "@/components/ui/Icon";
 const NAV = [
   { href: "/admin", label: "Overview", icon: "grid" },
   { href: "/admin/orders", label: "Orders", icon: "package" },
-  { href: "/admin/incomplete", label: "Incomplete", icon: "phone" },
   { href: "/admin/profit", label: "Profit", icon: "cash" },
   { href: "/admin/products", label: "Products", icon: "mobile" },
   { href: "/admin/categories", label: "Categories", icon: "grid" },
   { href: "/admin/branding", label: "Branding", icon: "camera" },
-  { href: "/admin/marketing", label: "Tracking", icon: "alert" },
+  { href: "/admin/marketing", label: "Marketing", icon: "alert" },
   { href: "/admin/integrations", label: "Alerts", icon: "phone" },
   { href: "/admin/team", label: "Team", icon: "shield" },
   { href: "/admin/settings", label: "Settings", icon: "refresh" },
@@ -40,9 +39,16 @@ export function AdminShell({ title, action, children }: AdminShellProps) {
   const pathname = usePathname();
 
   /* `/admin` must not light up for `/admin/orders`, so the root is matched
-     exactly while every other entry matches its subtree. */
-  const isActive = (href: string) =>
-    href === "/admin" ? pathname === "/admin" : pathname.startsWith(href);
+     exactly while every other entry matches its subtree. Incomplete checkouts
+     live at their own route but are a tab inside Orders, so that route lights
+     up the Orders entry rather than nothing. */
+  const isActive = (href: string) => {
+    if (href === "/admin") return pathname === "/admin";
+    if (href === "/admin/orders") {
+      return pathname.startsWith("/admin/orders") || pathname.startsWith("/admin/incomplete");
+    }
+    return pathname.startsWith(href);
+  };
 
   return (
     <div className="min-h-dvh bg-surface">

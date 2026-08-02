@@ -272,6 +272,43 @@ export async function getCurrentAdmin(adminId: string): Promise<AdminDto> {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Self-service password change                                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Lets any signed-in admin — any role, not just an owner — change their own
+ * password.
+ *
+ * Requires the current password rather than trusting the access token alone:
+ * a hijacked session should not be enough to lock the real owner out by
+ * changing their credential out from under them. Every session is revoked
+ * afterwards, including this one, the same way an administrator-driven reset
+ * already works — the client re-authenticates with the new password.
+ */
+export async function changePassword(
+  adminId: string,
+  input: { currentPassword: string; newPassword: string },
+): Promise<void> {
+  const admin = await findAdminById(adminId);
+  if (!admin) {
+    throw new UnauthorizedError("Account no longer exists.", ErrorCode.UNAUTHORIZED);
+  }
+
+  const matches = await verifyPassword(admin.passwordHash, input.currentPassword);
+  if (!matches) {
+    throw new UnauthorizedError("Current password is incorrect.", ErrorCode.INVALID_CREDENTIALS);
+  }
+
+  await updatePasswordHash(admin.id, await hashPassword(input.newPassword), {
+    markPasswordChanged: true,
+  });
+
+  await revokeAllForAdmin(admin.id, "password changed by the account holder");
+
+  log.info({ adminId: admin.id }, "Admin changed their own password");
+}
+
+/* -------------------------------------------------------------------------- */
 /* Internals                                                                  */
 /* -------------------------------------------------------------------------- */
 

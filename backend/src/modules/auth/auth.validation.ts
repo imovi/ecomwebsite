@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { emailSchema, loginPasswordSchema } from "../../lib/validation/schemas.js";
+import { emailSchema, loginPasswordSchema, passwordSchema } from "../../lib/validation/schemas.js";
 
 /**
  * Auth request contracts.
@@ -40,3 +40,20 @@ export const logoutSchema = z
   .strict();
 
 export type LogoutInput = z.infer<typeof logoutSchema>;
+
+/**
+ * Self-service password change.
+ *
+ * `currentPassword` uses the presence-only login schema rather than the full
+ * policy — a legacy password that predates a policy tightening must still be
+ * accepted for verification. `newPassword` uses the full policy, same as
+ * creating or resetting an account.
+ */
+export const changePasswordSchema = z
+  .object({
+    currentPassword: loginPasswordSchema,
+    newPassword: passwordSchema,
+  })
+  .strict();
+
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;

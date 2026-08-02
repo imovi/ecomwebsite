@@ -27,6 +27,7 @@ import {
   abandonedPublicRouter,
 } from "../modules/orders/abandoned.routes.js";
 import { courierAdminRouter } from "../modules/courier/courier.routes.js";
+import { webhookRouter } from "../modules/courier/webhook.routes.js";
 import { marketingAdminRouter } from "../modules/marketing/marketing.routes.js";
 import { settingsAdminRouter } from "../modules/settings/settings.routes.js";
 
@@ -109,6 +110,12 @@ v1Router.use("/admin/abandoned", abandonedAdminRouter);
    Handing parcels over and reading their status back. `manager` and above:
    this is the order desk's job, right after the confirmation call. */
 v1Router.use("/admin/courier", courierAdminRouter);
+
+/* Inbound from the courier itself — public, and the only unauthenticated route
+   here that can move an order. Guarded by a bearer secret set in the panel; see
+   webhook.routes.ts for why it answers in the courier's response shape rather
+   than this API's envelope. */
+v1Router.use("/webhooks", webhookRouter);
 
 v1Router.use("/admin/expenses", expensesAdminRouter);
 

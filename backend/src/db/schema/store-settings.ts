@@ -40,12 +40,48 @@ export const storeSettings = pgTable(
     /** Cap on units of any single line, to blunt joke orders on a COD store. */
     maxQuantityPerItem: integer("max_quantity_per_item").notNull().default(10),
 
+    /**
+     * What every new order number starts with — `GNG-` gives `GNG-10042`.
+     *
+     * Only NEW orders. Changing it never rewrites one already placed: the
+     * number is printed on invoices, read out over the phone and typed into the
+     * courier's panel, so an order that silently changed identity would break
+     * every one of those at once.
+     *
+     * The counter behind it is a Postgres sequence and keeps running across a
+     * change, so numbers stay unique whatever the prefix has been.
+     */
+    orderNumberPrefix: text("order_number_prefix").notNull().default("GNG-"),
+
     /* --- Store identity, used on invoices -------------------------------- */
     storeName: text("store_name").notNull().default("gng"),
     storePhone: text("store_phone").notNull().default(""),
     storeEmail: text("store_email").notNull().default(""),
     storeAddress: text("store_address").notNull().default(""),
     invoiceFooter: text("invoice_footer").notNull().default(""),
+
+    /**
+     * The number behind the floating WhatsApp button, digits only with the
+     * country code — `8801712345678`.
+     *
+     * Lived in `NEXT_PUBLIC_WHATSAPP_NUMBER` before this, which meant changing
+     * the shop's contact number was a rebuild: `NEXT_PUBLIC_*` is inlined into
+     * the client bundle at build time, so a restart alone would not pick it up.
+     * A phone number is not a deploy.
+     */
+    storeWhatsapp: text("store_whatsapp").notNull().default(""),
+
+    /**
+     * Browser-tab title and the `<title>` search engines index.
+     *
+     * Empty falls back to `<store name> — <tagline>`, which is what every page
+     * showed before this existed. Set it when the shop wants the words search
+     * results lead with to be its own choice rather than a template.
+     */
+    seoTitle: text("seo_title").notNull().default(""),
+
+    /** The sentence under the title in search results. Empty uses the built-in. */
+    seoDescription: text("seo_description").notNull().default(""),
 
     /**
      * Storage key for the shop's logo. Null means "use the wordmark".
@@ -62,6 +98,17 @@ export const storeSettings = pgTable(
      */
     storeLogoWidth: integer("store_logo_width"),
     storeLogoHeight: integer("store_logo_height"),
+
+    /**
+     * Storage key for the browser-tab icon. Null falls back to the bundled
+     * `favicon.ico`.
+     *
+     * Kept separate from the logo rather than derived from it: a wordmark
+     * scaled down to 32px is an unreadable smudge, and the tab icon is the
+     * shop's mark at the size a customer actually sees it in a crowded row of
+     * tabs. The two are different pictures for different jobs.
+     */
+    storeFaviconKey: text("store_favicon_key"),
 
     /* --- Meta / Facebook tracking ---------------------------------------
        Stored here rather than in environment variables so the shop owner can
@@ -134,6 +181,30 @@ export const storeSettings = pgTable(
 
     telegramEnabled: boolean("telegram_enabled").notNull().default(false),
 
+    /**
+     * Shared secret Telegram echoes back on every update it delivers. A SECRET.
+     *
+     * The bot's webhook is a public URL that can confirm and cancel orders, and
+     * the URL is not hard to guess. Telegram sends this in
+     * `X-Telegram-Bot-Api-Secret-Token`, which is the only thing distinguishing
+     * a real update from anyone who found the address.
+     *
+     * Empty means the bot is send-only: the endpoint refuses every update, which
+     * is the correct reading of "interactive mode off". Never treat blank as
+     * "no check needed".
+     */
+    telegramWebhookSecret: text("telegram_webhook_secret").notNull().default(""),
+
+    /**
+     * Telegram user ids allowed to press the buttons, comma-separated.
+     *
+     * Empty means "anyone in the configured chat", which is the sane default for
+     * a private staff group — the chat membership IS the access list. It matters
+     * when the chat is a large group: without it, every member can confirm and
+     * cancel orders.
+     */
+    telegramAllowedUserIds: text("telegram_allowed_user_ids").notNull().default(""),
+
     /* --- Google Sheets export --------------------------------------------
        One row appended per order, so the shop can filter, share and reconcile
        in a tool it already knows. Deliberately one-way: the sheet is a report,
@@ -195,6 +266,17 @@ export const storeSettings = pgTable(
     courierBaseUrl: text("courier_base_url").notNull().default(""),
 
     courierEnabled: boolean("courier_enabled").notNull().default(false),
+
+    /**
+     * Shared secret the courier presents when it calls our webhook. A SECRET.
+     *
+     * This is the only thing standing between the internet and an endpoint that
+     * marks orders delivered: a forged `delivered` would book revenue for a
+     * parcel nobody received and quietly corrupt the profit report. Empty means
+     * the webhook is closed — an unauthenticated caller is never trusted, and a
+     * blank stored token must not match a blank presented one.
+     */
+    courierWebhookToken: text("courier_webhook_token").notNull().default(""),
 
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().default(sql`now()`),
   },

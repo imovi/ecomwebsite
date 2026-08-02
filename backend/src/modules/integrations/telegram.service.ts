@@ -1,7 +1,10 @@
+import { randomBytes } from "node:crypto";
+import { eq, sql } from "drizzle-orm";
 import { createLogger } from "../../core/logger.js";
 import { config } from "../../config/index.js";
+import { getDb } from "../../db/client.js";
 import { getSettings } from "../settings/settings.service.js";
-import type { StoreSettingsRow } from "../../db/schema/store-settings.js";
+import { storeSettings, type StoreSettingsRow } from "../../db/schema/store-settings.js";
 import type { OrderStatus } from "../../db/schema/order-enums.js";
 
 /**
@@ -12,11 +15,17 @@ import type { OrderStatus } from "../../db/schema/order-enums.js";
  * shopper who has moved on. There is no email or SMS transport in this system by
  * design, so a Telegram push is the cheapest way to close that gap.
  *
- * Deliberately send-only. A bot that accepts commands needs a public webhook,
- * a signature check on every update, and an authorisation model of its own —
- * a meaningful attack surface for the shop's order data. The message instead
- * carries everything needed to act (customer, phone, items, total, address) and
- * a link straight to the order in the admin panel.
+ * Every message carries what is needed to act — customer, phone, items, total,
+ * address — plus a link to the order, so the alert is useful on its own even
+ * when the interactive half is switched off.
+ *
+ * INTERACTIVE MODE
+ * The bot also accepts button taps and a handful of commands, which needs a
+ * public webhook that can change orders. That is guarded three ways, and all
+ * three have to hold: Telegram's own secret header, the chat id matching the
+ * one configured here, and — optionally — an allow-list of user ids. See
+ * `telegram-bot.service.ts`, which owns everything inbound; this file stays
+ * responsible for what goes out.
  */
 
 const log = createLogger("telegram");
@@ -28,7 +37,11 @@ const TIMEOUT_MS = 6000;
 
 export type TelegramConfig = Pick<
   StoreSettingsRow,
-  "telegramBotToken" | "telegramChatId" | "telegramEnabled"
+  | "telegramBotToken"
+  | "telegramChatId"
+  | "telegramEnabled"
+  | "telegramWebhookSecret"
+  | "telegramAllowedUserIds"
 >;
 
 export type TelegramProblem = "disabled" | "missing_token" | "missing_chat";
@@ -59,7 +72,19 @@ function escapeHtml(value: string): string {
     .replace(/>/g, "&gt;");
 }
 
-async function callTelegram(
+/**
+ * One button on a message.
+ *
+ * `callback_data` is capped at 64 bytes by Telegram and is echoed back verbatim
+ * when tapped, so it carries an action and an id and nothing else — never a
+ * secret, since anyone who can read the message can read it.
+ */
+export interface InlineButton {
+  text: string;
+  callbackData: string;
+}
+
+export async function callTelegram(
   token: string,
   method: string,
   payload: Record<string, unknown>,
@@ -93,7 +118,7 @@ async function callTelegram(
 async function send(
   settings: TelegramConfig,
   text: string,
-  options: { skipEnabledCheck?: boolean } = {},
+  options: { skipEnabledCheck?: boolean; buttons?: InlineButton[][] } = {},
 ): Promise<SendOutcome> {
   const problem = configProblem(settings);
 
@@ -119,6 +144,15 @@ async function send(
       /* Order alerts carry a link to the admin panel; a link preview card for it
          would be a login page screenshot on every message. */
       link_preview_options: { is_disabled: true },
+      ...(options.buttons
+        ? {
+            reply_markup: {
+              inline_keyboard: options.buttons.map((row) =>
+                row.map((button) => ({ text: button.text, callback_data: button.callbackData })),
+              ),
+            },
+          }
+        : {}),
     });
 
     if (!result.ok) {
@@ -131,6 +165,240 @@ async function send(
     const reason = error instanceof Error ? error.message : "Network error";
     log.error({ err: error }, "Telegram message not delivered");
     return { sent: false, reason };
+  }
+}
+
+/**
+ * Sends to a specific chat, bypassing the configured destination.
+ *
+ * Used only to answer a command in the chat it was typed in. Everything the bot
+ * says on its own initiative still goes to the configured chat.
+ */
+export async function sendToChat(
+  settings: TelegramConfig,
+  chatId: string,
+  text: string,
+  buttons?: InlineButton[][],
+): Promise<SendOutcome> {
+  if (settings.telegramBotToken.trim() === "") {
+    return { sent: false, reason: "No bot token is configured." };
+  }
+
+  try {
+    const result = await callTelegram(settings.telegramBotToken, "sendMessage", {
+      chat_id: chatId,
+      text,
+      parse_mode: "HTML",
+      link_preview_options: { is_disabled: true },
+      ...(buttons
+        ? {
+            reply_markup: {
+              inline_keyboard: buttons.map((row) =>
+                row.map((button) => ({ text: button.text, callback_data: button.callbackData })),
+              ),
+            },
+          }
+        : {}),
+    });
+
+    return result.ok
+      ? { sent: true }
+      : { sent: false, reason: result.description ?? "Telegram rejected the message." };
+  } catch (error) {
+    return { sent: false, reason: error instanceof Error ? error.message : "Network error" };
+  }
+}
+
+/**
+ * Replaces a message's buttons after one is pressed.
+ *
+ * Without this a Confirm button stays tappable forever, and the second tap gets
+ * an error about an order that is already confirmed — which reads as the bot
+ * being broken rather than the work already being done.
+ */
+export async function editMessageButtons(
+  settings: TelegramConfig,
+  chatId: string,
+  messageId: number,
+  buttons: InlineButton[][],
+): Promise<void> {
+  try {
+    await callTelegram(settings.telegramBotToken, "editMessageReplyMarkup", {
+      chat_id: chatId,
+      message_id: messageId,
+      reply_markup: {
+        inline_keyboard: buttons.map((row) =>
+          row.map((button) => ({ text: button.text, callback_data: button.callbackData })),
+        ),
+      },
+    });
+  } catch (error) {
+    /* Cosmetic. The action itself already succeeded, and failing here must not
+       turn a confirmed order into an error the operator sees. */
+    log.warn({ err: error }, "Could not update the message buttons");
+  }
+}
+
+/**
+ * Answers a button tap.
+ *
+ * Telegram shows a spinner on the button until this is called, so it has to
+ * happen on every path including failures — an unanswered tap looks like the
+ * bot hung.
+ */
+export async function answerCallback(
+  settings: TelegramConfig,
+  callbackId: string,
+  text: string,
+  isAlert = false,
+): Promise<void> {
+  try {
+    await callTelegram(settings.telegramBotToken, "answerCallbackQuery", {
+      callback_query_id: callbackId,
+      text: text.slice(0, 200),
+      show_alert: isAlert,
+    });
+  } catch (error) {
+    log.warn({ err: error }, "Could not answer the callback query");
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Webhook registration                                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Points Telegram at our webhook and hands it the secret to echo back.
+ *
+ * `allowed_updates` is narrowed to what the bot actually handles. The default
+ * is every update type, which would mean this shop's server being woken for
+ * every edited message and poll answer in a busy staff group.
+ */
+export async function registerWebhook(
+  settings: TelegramConfig,
+  url: string,
+  secret: string,
+): Promise<{ ok: boolean; reason?: string }> {
+  try {
+    const result = await callTelegram(settings.telegramBotToken, "setWebhook", {
+      url,
+      secret_token: secret,
+      allowed_updates: ["message", "callback_query"],
+      /* Anything queued while the bot was send-only is stale by definition. */
+      drop_pending_updates: true,
+    });
+
+    return result.ok
+      ? { ok: true }
+      : { ok: false, reason: result.description ?? "Telegram refused the webhook." };
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : "Network error" };
+  }
+}
+
+export async function removeWebhook(
+  settings: TelegramConfig,
+): Promise<{ ok: boolean; reason?: string }> {
+  try {
+    const result = await callTelegram(settings.telegramBotToken, "deleteWebhook", {
+      drop_pending_updates: true,
+    });
+    return result.ok
+      ? { ok: true }
+      : { ok: false, reason: result.description ?? "Telegram refused." };
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : "Network error" };
+  }
+}
+
+/**
+ * Turns the interactive bot on.
+ *
+ * Telegram is told first and the secret is only stored once it accepted. The
+ * other order leaves the two sides disagreeing about what the secret is, and
+ * every real update would then be refused by our own check — a bot that looks
+ * connected and silently ignores every tap.
+ */
+export async function enableBot(): Promise<{ ok: boolean; detail: string }> {
+  const settings = await getSettings();
+
+  if (settings.telegramBotToken.trim() === "") {
+    return { ok: false, detail: "Add the bot token first." };
+  }
+  if (settings.telegramChatId.trim() === "") {
+    return { ok: false, detail: "Choose the chat first — the bot only answers there." };
+  }
+
+  const secret = randomBytes(32).toString("base64url");
+  const url = `${config.server.apiUrl}/api/v1/webhooks/telegram`;
+
+  const registered = await registerWebhook(settings, url, secret);
+  if (!registered.ok) {
+    return {
+      ok: false,
+      detail:
+        registered.reason ??
+        "Telegram refused the webhook. The address must be reachable over https.",
+    };
+  }
+
+  await getDb()
+    .update(storeSettings)
+    .set({ telegramWebhookSecret: secret, updatedAt: sql`now()` })
+    .where(eq(storeSettings.id, 1));
+
+  log.info({ url }, "Telegram bot enabled");
+  return { ok: true, detail: "Buttons and commands are on." };
+}
+
+/**
+ * Turns it off.
+ *
+ * The stored secret is cleared even if Telegram could not be reached: a blank
+ * secret makes our endpoint refuse everything, so the bot is genuinely off from
+ * this side regardless of what Telegram still believes.
+ */
+export async function disableBot(): Promise<{ ok: boolean; detail: string }> {
+  const settings = await getSettings();
+
+  const removed = await removeWebhook(settings);
+
+  await getDb()
+    .update(storeSettings)
+    .set({ telegramWebhookSecret: "", updatedAt: sql`now()` })
+    .where(eq(storeSettings.id, 1));
+
+  log.info("Telegram bot disabled");
+
+  return removed.ok
+    ? { ok: true, detail: "Buttons and commands are off." }
+    : {
+        ok: true,
+        detail: `Turned off here. Telegram said: ${removed.reason ?? "unreachable"}.`,
+      };
+}
+
+/** What Telegram believes about our webhook — the first thing to check. */
+export async function webhookInfo(
+  settings: TelegramConfig,
+): Promise<{ url: string; pendingUpdates: number; lastError: string } | null> {
+  try {
+    const result = await callTelegram(settings.telegramBotToken, "getWebhookInfo", {});
+    if (!result.ok) return null;
+
+    const info = result.result as {
+      url?: string;
+      pending_update_count?: number;
+      last_error_message?: string;
+    };
+
+    return {
+      url: info.url ?? "",
+      pendingUpdates: info.pending_update_count ?? 0,
+      lastError: info.last_error_message ?? "",
+    };
+  } catch {
+    return null;
   }
 }
 
@@ -186,12 +454,142 @@ function orderMessage(order: OrderAlert): string {
   ].join("\n");
 }
 
+/**
+ * The buttons on a new-order alert.
+ *
+ * Only offered when the bot can actually receive the tap. A button that does
+ * nothing is worse than no button: it reads as the shop being broken at the
+ * exact moment somebody is trying to work quickly.
+ *
+ * The order NUMBER rather than its uuid, because `callback_data` is capped at
+ * 64 bytes and the number is what a human reads back over the phone anyway.
+ */
+export function orderButtons(orderNumber: string): InlineButton[][] {
+  return [
+    [
+      { text: "✅ Confirm", callbackData: `c:${orderNumber}` },
+      { text: "❌ Cancel", callbackData: `x:${orderNumber}` },
+    ],
+  ];
+}
+
 export async function notifyNewOrder(
   order: OrderAlert,
   settings?: TelegramConfig,
 ): Promise<SendOutcome> {
   const resolved = settings ?? (await getSettings());
-  return send(resolved, orderMessage(order));
+
+  /* Interactive mode off means send-only, so no buttons — see orderButtons. */
+  const interactive = resolved.telegramWebhookSecret.trim() !== "";
+
+  return send(resolved, orderMessage(order), {
+    ...(interactive ? { buttons: orderButtons(order.orderNumber) } : {}),
+  });
+}
+
+/* -------------------------------------------------------------------------- */
+/* Courier, leads and the daily summary                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A parcel reached its end state.
+ *
+ * Only the two outcomes that change what the shop owes or is owed. A push for
+ * every scan at every depot would bury the new-order alert, which is the one
+ * message somebody is genuinely waiting on.
+ */
+export async function notifyParcel(
+  input: {
+    orderNumber: string;
+    customerName: string;
+    status: "delivered" | "returned";
+    courierStatus: string;
+    grandTotal: number;
+  },
+  settings?: TelegramConfig,
+): Promise<SendOutcome> {
+  const resolved = settings ?? (await getSettings());
+
+  const delivered = input.status === "delivered";
+  const text = [
+    `${delivered ? "📦" : "↩️"} <b>${escapeHtml(input.orderNumber)} — ${
+      delivered ? "Delivered" : "Returned"
+    }</b>`,
+    "",
+    `${escapeHtml(input.customerName)} · ${taka(input.grandTotal)}`,
+    delivered
+      ? "Collected by the courier. It now counts in your profit figures."
+      : "The parcel came back. Its cost is counted as a loss.",
+    "",
+    `<i>Courier said: ${escapeHtml(input.courierStatus)}</i>`,
+  ].join("\n");
+
+  return send(resolved, text);
+}
+
+/**
+ * Somebody left a phone number and did not finish.
+ *
+ * The highest-value message in this file after the order alert: they already
+ * chose a product, so a call usually turns it into a sale.
+ */
+export async function notifyAbandonedCheckout(
+  input: {
+    phone: string;
+    customerName: string | null;
+    itemSummary: string;
+    value: number;
+  },
+  settings?: TelegramConfig,
+): Promise<SendOutcome> {
+  const resolved = settings ?? (await getSettings());
+
+  const text = [
+    "🕐 <b>Someone left without finishing</b>",
+    "",
+    input.customerName ? `<b>${escapeHtml(input.customerName)}</b>` : "<i>No name given</i>",
+    `📞 <a href="tel:${escapeHtml(input.phone)}">${escapeHtml(input.phone)}</a>`,
+    "",
+    escapeHtml(input.itemSummary),
+    `Worth about ${taka(input.value)}`,
+    "",
+    "<i>They picked a product and stopped. A call usually finishes it.</i>",
+  ].join("\n");
+
+  return send(resolved, text);
+}
+
+export interface DailySummary {
+  day: string;
+  ordersPlaced: number;
+  delivered: number;
+  revenue: number;
+  pending: number;
+  cancelled: number;
+  returned: number;
+}
+
+/** One message a day: what happened, and what still needs a call. */
+export async function notifyDailySummary(
+  summary: DailySummary,
+  settings?: TelegramConfig,
+): Promise<SendOutcome> {
+  const resolved = settings ?? (await getSettings());
+
+  const text = [
+    `📊 <b>${escapeHtml(summary.day)}</b>`,
+    "",
+    `New orders: <b>${summary.ordersPlaced}</b>`,
+    `Delivered: <b>${summary.delivered}</b> — ${taka(summary.revenue)}`,
+    ...(summary.cancelled > 0 ? [`Cancelled: ${summary.cancelled}`] : []),
+    ...(summary.returned > 0 ? [`Returned: ${summary.returned}`] : []),
+    "",
+    summary.pending > 0
+      ? `⚠️ <b>${summary.pending}</b> still waiting for a call.`
+      : "✅ Nothing waiting for a call.",
+  ].join("\n");
+
+  return send(resolved, text);
 }
 
 const STATUS_LABEL: Record<OrderStatus, string> = {

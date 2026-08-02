@@ -1,7 +1,8 @@
 "use client";
 
-import { useId } from "react";
+import { useId, useState } from "react";
 import { cn } from "@/lib/utils";
+import { Icon } from "@/components/ui/Icon";
 
 const controlBase =
   "w-full bg-white border rounded-sm px-3.5 text-body text-ink placeholder:text-muted " +
@@ -69,8 +70,12 @@ export function Input({
   required,
   className,
   wrapperClassName,
+  type,
   ...rest
 }: InputProps) {
+  const [visible, setVisible] = useState(false);
+  const isPassword = type === "password";
+
   return (
     <FieldShell
       label={label}
@@ -79,21 +84,49 @@ export function Input({
       required={required}
       className={wrapperClassName}
     >
-      {({ id, describedBy, invalid }) => (
-        <input
-          id={id}
-          required={required}
-          aria-describedby={describedBy}
-          aria-invalid={invalid || undefined}
-          className={cn(
-            controlBase,
-            "h-12",
-            invalid ? "border-sale" : "border-line",
-            className,
-          )}
-          {...rest}
-        />
-      )}
+      {({ id, describedBy, invalid }) =>
+        isPassword ? (
+          <div className="relative">
+            <input
+              id={id}
+              type={visible ? "text" : "password"}
+              required={required}
+              aria-describedby={describedBy}
+              aria-invalid={invalid || undefined}
+              className={cn(
+                controlBase,
+                "h-12 pr-11",
+                invalid ? "border-sale" : "border-line",
+                className,
+              )}
+              {...rest}
+            />
+            <button
+              type="button"
+              onClick={() => setVisible((current) => !current)}
+              aria-label={visible ? "Hide password" : "Show password"}
+              className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-muted transition-colors hover:text-ink"
+            >
+              <Icon name={visible ? "eyeOff" : "eye"} size={18} />
+            </button>
+          </div>
+        ) : (
+          <input
+            id={id}
+            type={type}
+            required={required}
+            aria-describedby={describedBy}
+            aria-invalid={invalid || undefined}
+            className={cn(
+              controlBase,
+              "h-12",
+              invalid ? "border-sale" : "border-line",
+              className,
+            )}
+            {...rest}
+          />
+        )
+      }
     </FieldShell>
   );
 }

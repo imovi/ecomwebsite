@@ -64,6 +64,8 @@ export interface OrderListItemDto {
   itemCount: number;
   totalQuantity: number;
   createdAt: string;
+  /** When it was moved to the trash. Null on every live order. */
+  deletedAt: string | null;
 }
 
 export interface OrderDto extends OrderListItemDto {
@@ -164,6 +166,9 @@ function listFields(row: OrderRow): OrderListItemDto {
     itemCount: row.itemCount,
     totalQuantity: row.totalQuantity,
     createdAt: row.createdAt.toISOString(),
+    /* Null for every live order. The trash screen reads it to work out how
+       many days are left before the purge takes it. */
+    deletedAt: row.deletedAt?.toISOString() ?? null,
   };
 }
 

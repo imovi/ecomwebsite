@@ -55,6 +55,8 @@ interface ProductProfit {
   grossProfit: number;
   revenueWithUnknownCost: number;
   estimatedAdSpend: number;
+  recordedAdSpend: number;
+  parcelCost: number;
   estimatedNetProfit: number;
   marginPercent: number | null;
 }
@@ -72,6 +74,7 @@ interface ProfitReport {
     packaging: number;
     returns: { count: number; cost: number };
     expenses: { total: number; byCategory: Record<string, number> };
+    productBoosts: number;
     netProfit: number;
     marginPercent: number | null;
   };
@@ -888,9 +891,79 @@ describe("profit report — per product", () => {
       `allocated ${allocated} of ${spend}`,
     );
 
+    /* A product's net is its gross less everything attributed to it: the share
+       of the shop-wide ad line, any boost recorded against it specifically, and
+       its share of the parcels it travelled in. */
     for (const product of r.products) {
-      assert.equal(product.estimatedNetProfit, product.grossProfit - product.estimatedAdSpend);
+      assert.equal(
+        product.estimatedNetProfit,
+        product.grossProfit -
+          product.estimatedAdSpend -
+          product.recordedAdSpend -
+          product.parcelCost,
+      );
     }
+  });
+
+  it("charges a product's own courier and packaging when one is set", async () => {
+    await api(ctx.baseUrl, `/api/v1/admin/products/${costedProductId}`, {
+      method: "PATCH",
+      accessToken: adminToken,
+      body: { courierCostInsideDhaka: 500, packagingCost: 90 },
+    });
+
+    const orderNumber = await placeOrder([{ productId: costedProductId, quantity: 1 }]);
+    await moveTo(orderNumber, "delivered");
+
+    const r = await report("?preset=lifetime");
+
+    /* The override replaces the shop default for the parcel it is in, so the
+       shop-level courier total has to reflect it too — a per-product figure the
+       totals ignored would be a number that contradicts itself. */
+    assert.ok(
+      r.realised.courierPaid >= 500,
+      `courier ${r.realised.courierPaid} should include the 500 override`,
+    );
+
+    const line = r.products.find((p) => p.productId === costedProductId);
+    assert.ok(line, "the costed product should appear");
+    assert.ok(line.parcelCost > 0, "its parcel cost should be attributed back to it");
+
+    /* Put back, so the assertions in the tests after this one still describe a
+       shop running on its default figures. */
+    await api(ctx.baseUrl, `/api/v1/admin/products/${costedProductId}`, {
+      method: "PATCH",
+      accessToken: adminToken,
+      body: { courierCostInsideDhaka: null, packagingCost: null },
+    });
+  });
+
+  it("counts a recorded boost exactly, instead of sharing it out", async () => {
+    await api(ctx.baseUrl, "/api/v1/admin/reports/boosts", {
+      method: "PUT",
+      accessToken: adminToken,
+      body: { productId: costedProductId, spentOn: "2026-06-15", amount: 750 },
+    });
+
+    const r = await report("?preset=lifetime");
+
+    assert.equal(r.realised.productBoosts, 750);
+
+    const line = r.products.find((p) => p.productId === costedProductId);
+    assert.ok(line, "the boosted product should appear");
+    assert.equal(line.recordedAdSpend, 750);
+
+    /* Recording the same product and day again corrects the figure — a daily
+       budget is entered by hand and fixed often, and a second entry that
+       doubled it would quietly overstate every cost after it. */
+    await api(ctx.baseUrl, "/api/v1/admin/reports/boosts", {
+      method: "PUT",
+      accessToken: adminToken,
+      body: { productId: costedProductId, spentOn: "2026-06-15", amount: 200 },
+    });
+
+    const after = await report("?preset=lifetime");
+    assert.equal(after.realised.productBoosts, 200);
   });
 
   it("keeps a product's history under the name it was sold as", async () => {

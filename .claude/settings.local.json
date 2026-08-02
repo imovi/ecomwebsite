@@ -3,7 +3,13 @@
     "allow": [
       "Bash(npm -v)",
       "Bash(git --version)",
-      "Bash(npx --yes create-next-app@latest . --typescript --tailwind --eslint --app --src-dir --import-alias \"@/*\" --no-turbopack --use-npm --yes)"
+      "Bash(npx --yes create-next-app@latest . --typescript --tailwind --eslint --app --src-dir --import-alias \"@/*\" --no-turbopack --use-npm --yes)",
+      "Bash(npm run *)",
+      "Bash(tee /c/Users/User/AppData/Local/Temp/claude/D--gng/88a2035d-3720-4c64-bcba-95e80f42c5d1/scratchpad/backend-verify.log)",
+      "Bash(tee /c/Users/User/AppData/Local/Temp/claude/D--gng/88a2035d-3720-4c64-bcba-95e80f42c5d1/scratchpad/frontend-build.log)",
+      "Bash(npx eslint *)",
+      "Bash(tee /c/Users/User/AppData/Local/Temp/claude/D--gng/88a2035d-3720-4c64-bcba-95e80f42c5d1/scratchpad/frontend-lint.log)",
+      "Bash(tail -n 60 \"/c/Users/User/AppData/Local/Temp/claude/D--gng/88a2035d-3720-4c64-bcba-95e80f42c5d1/scratchpad/backend-verify.log\")"
     ]
   }
 }

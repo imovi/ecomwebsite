@@ -3,6 +3,7 @@ import Link from "next/link";
 import { getCategories } from "@/lib/data/catalog";
 import { getSettings } from "@/lib/data/settings";
 import { copy } from "@/lib/copy";
+import { cn } from "@/lib/utils";
 import { Container } from "@/components/ui/Layout";
 import { Icon } from "@/components/ui/Icon";
 import { CartButton } from "./CartButton";
@@ -35,7 +36,14 @@ export async function Header() {
         <div className="flex h-14 items-center gap-3 border-b border-line">
           <Link
             href="/"
-            className="flex shrink-0 items-center"
+            className={cn(
+              "flex shrink-0 items-center",
+              /* With no logo the link would collapse to zero width and the
+                 header would lose its route home entirely. A small invisible
+                 target keeps the top-left corner clickable — which is where
+                 people reach for "home" by habit — without drawing anything. */
+              !settings.logoUrl && "size-10",
+            )}
             aria-label={`${shopName} — ${copy.nav.home}`}
           >
             {settings.logoUrl ? (
@@ -59,9 +67,15 @@ export async function Header() {
                 className="h-auto max-h-10 w-auto max-w-[180px] object-contain object-left"
               />
             ) : (
-              <span className="text-[1.375rem] font-semibold tracking-[-0.04em] text-ink">
-                {shopName}
-              </span>
+              /* No logo means NO logo. This used to fall back to the shop name
+                 as a wordmark, which read as "the logo would not delete" to
+                 anyone who had just removed one.
+
+                 The name is kept for screen readers and stays the link's
+                 accessible label, so the header still has a working route home
+                 — the link is simply given a tap target rather than a visible
+                 mark, since a zero-width link cannot be clicked. */
+              <span className="sr-only">{shopName}</span>
             )}
           </Link>
 

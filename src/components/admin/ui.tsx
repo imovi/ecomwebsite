@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { Icon } from "@/components/ui/Icon";
 import { Skeleton } from "@/components/ui/Layout";
@@ -186,6 +188,236 @@ export function Stat({
       >
         {value}
       </p>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Date range                                                                 */
+/* -------------------------------------------------------------------------- */
+
+export type DateRangePreset = "today" | "yesterday" | "last7" | "last30" | "all";
+
+/** What a chosen range resolves to. Both absent means "everything". */
+export interface DateRange {
+  dateFrom?: string;
+  dateTo?: string;
+}
+
+const RANGE_PRESETS: { value: DateRangePreset; label: string }[] = [
+  { value: "today", label: "Today" },
+  { value: "yesterday", label: "Yesterday" },
+  { value: "last7", label: "Last 7 days" },
+  { value: "last30", label: "Last 30 days" },
+  { value: "all", label: "All time" },
+];
+
+/**
+ * The shop's timezone, as a fixed offset.
+ *
+ * Bangladesh has one zone and no daylight saving, so an offset is exact rather
+ * than an approximation of a real tz database lookup.
+ */
+const SHOP_UTC_OFFSET = "+06:00";
+const SHOP_OFFSET_MS = 6 * 60 * 60_000;
+
+/**
+ * Today in Dhaka, as `YYYY-MM-DD`.
+ *
+ * The shop, its customers and its couriers are all in one timezone, so a "day"
+ * here means a Dhaka day. Using the browser's local date would put an owner
+ * checking the panel from abroad on a different day to their own orders.
+ */
+function shopToday(): Date {
+  return new Date(Date.now() + SHOP_OFFSET_MS);
+}
+
+function isoDay(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function shiftDays(date: Date, days: number): Date {
+  return new Date(date.getTime() + days * 24 * 60 * 60_000);
+}
+
+/**
+ * A Dhaka day's boundaries, as instants the API can compare against.
+ *
+ * Sent with the offset rather than as bare `YYYY-MM-DD`, because the API reads
+ * a bare date as UTC. A Dhaka day starts at 18:00 UTC the day before, so
+ * "Today" would silently drop every order placed between midnight and 6am —
+ * and on a shop that takes evening orders that is a real slice of the day,
+ * missing with no indication anything was left out.
+ */
+export function shopDayStart(day: string): string {
+  return `${day}T00:00:00${SHOP_UTC_OFFSET}`;
+}
+
+export function shopDayEnd(day: string): string {
+  return `${day}T23:59:59.999${SHOP_UTC_OFFSET}`;
+}
+
+/**
+ * Turns a preset into the two instants the API takes.
+ *
+ * Exported because the caller needs the resolved range for its own query, and
+ * because a preset resolved in two places would eventually be resolved two
+ * different ways.
+ */
+export function resolveDateRange(preset: DateRangePreset): DateRange {
+  const today = shopToday();
+
+  const span = (fromDay: string, toDay: string): DateRange => ({
+    dateFrom: shopDayStart(fromDay),
+    dateTo: shopDayEnd(toDay),
+  });
+
+  switch (preset) {
+    case "today":
+      return span(isoDay(today), isoDay(today));
+    case "yesterday": {
+      const yesterday = isoDay(shiftDays(today, -1));
+      return span(yesterday, yesterday);
+    }
+    /* Inclusive of today, so "last 7 days" is this day plus the six before it
+       — which is what someone means when they ask for a week. */
+    case "last7":
+      return span(isoDay(shiftDays(today, -6)), isoDay(today));
+    case "last30":
+      return span(isoDay(shiftDays(today, -29)), isoDay(today));
+    case "all":
+      return {};
+  }
+}
+
+/**
+ * Range picker shared by the overview and the order queue.
+ *
+ * One control in both places, so "Today" cannot come to mean two different
+ * windows on two screens that are read one after the other.
+ */
+export function DateRangeFilter({
+  preset,
+  custom,
+  className,
+  onPreset,
+  onCustom,
+}: {
+  preset: DateRangePreset;
+  custom: { from: string; to: string } | null;
+  className?: string;
+  onPreset: (value: DateRangePreset) => void;
+  onCustom: (range: { from: string; to: string }) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [from, setFrom] = useState(custom?.from ?? isoDay(shopToday()));
+  const [to, setTo] = useState(custom?.to ?? isoDay(shopToday()));
+
+  return (
+    <div className={cn("flex flex-col gap-2", className)}>
+      <div className="-mx-4 flex gap-1.5 overflow-x-auto px-4 lg:mx-0 lg:px-0">
+        {RANGE_PRESETS.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              onPreset(option.value);
+            }}
+            className={cn(
+              "shrink-0 rounded-full border px-3.5 py-1.5 text-caption font-medium transition-colors",
+              !custom && preset === option.value
+                ? "border-ink bg-ink text-white"
+                : "border-line bg-white text-muted hover:text-ink",
+            )}
+          >
+            {option.label}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          className={cn(
+            "shrink-0 rounded-full border px-3.5 py-1.5 text-caption font-medium transition-colors",
+            custom
+              ? "border-ink bg-ink text-white"
+              : "border-line bg-white text-muted hover:text-ink",
+          )}
+        >
+          {custom ? `${custom.from} → ${custom.to}` : "Custom"}
+        </button>
+      </div>
+
+      {open && (
+        <div className="flex flex-wrap items-end gap-3 rounded-md border border-line bg-white p-4">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-caption font-medium text-ink-soft">From</span>
+            <input
+              type="date"
+              value={from}
+              onChange={(event) => setFrom(event.target.value)}
+              className="h-10 w-[160px] rounded-sm border border-line bg-white px-3 text-caption text-ink outline-none focus:border-ink"
+            />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-caption font-medium text-ink-soft">To</span>
+            <input
+              type="date"
+              value={to}
+              onChange={(event) => setTo(event.target.value)}
+              className="h-10 w-[160px] rounded-sm border border-line bg-white px-3 text-caption text-ink outline-none focus:border-ink"
+            />
+          </label>
+          <button
+            type="button"
+            disabled={from > to}
+            onClick={() => {
+              setOpen(false);
+              onCustom({ from, to });
+            }}
+            className="h-10 rounded-sm bg-ink px-4 text-caption font-medium text-white disabled:opacity-40"
+          >
+            Show
+          </button>
+          {from > to && (
+            <p className="text-caption text-sale">The start date is after the end date.</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Orders / Incomplete section switcher.
+ *
+ * Incomplete checkouts are a call list scoped to orders, not a separate area of
+ * the shop — so it lives one route down from Orders and is presented as a tab
+ * rather than its own sidebar entry.
+ */
+export function OrderTabs({ active }: { active: "orders" | "incomplete" | "trash" }) {
+  const tabs = [
+    { key: "orders" as const, href: "/admin/orders", label: "Orders" },
+    { key: "incomplete" as const, href: "/admin/incomplete", label: "Incomplete" },
+    { key: "trash" as const, href: "/admin/orders/trash", label: "Trash" },
+  ];
+
+  return (
+    <div className="mb-4 flex gap-4 border-b border-line">
+      {tabs.map((tab) => (
+        <Link
+          key={tab.key}
+          href={tab.href}
+          className={cn(
+            "border-b-2 pb-2.5 text-caption font-medium transition-colors",
+            active === tab.key
+              ? "border-ink text-ink"
+              : "border-transparent text-muted hover:text-ink",
+          )}
+        >
+          {tab.label}
+        </Link>
+      ))}
     </div>
   );
 }

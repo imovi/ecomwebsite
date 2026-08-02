@@ -5,7 +5,12 @@ import { UnauthorizedError } from "../../core/errors.js";
 import { ErrorCode } from "../../core/http-status.js";
 import { validated } from "../../middleware/validate.js";
 import * as authService from "./auth.service.js";
-import type { LoginInput, LogoutInput, RefreshInput } from "./auth.validation.js";
+import type {
+  ChangePasswordInput,
+  LoginInput,
+  LogoutInput,
+  RefreshInput,
+} from "./auth.validation.js";
 
 /**
  * Auth HTTP layer.
@@ -142,4 +147,22 @@ export const me: RequestHandler = async (req, res) => {
 
   const admin = await authService.getCurrentAdmin(req.auth.adminId);
   sendSuccess(res, { admin });
+};
+
+/**
+ * POST /api/v1/auth/change-password
+ *
+ * Any authenticated role, not just an owner — this changes only the caller's
+ * own credential. Revokes every session including this one, so the refresh
+ * cookie is worthless from here on; the client signs in again with the new
+ * password.
+ */
+export const changePassword: RequestHandler = async (req, res) => {
+  if (!req.auth) throw new UnauthorizedError();
+  const { body } = validated<ChangePasswordInput>(req);
+
+  await authService.changePassword(req.auth.adminId, body);
+  clearRefreshCookie(res);
+
+  sendSuccess(res, { message: "Password changed. Please sign in again." });
 };

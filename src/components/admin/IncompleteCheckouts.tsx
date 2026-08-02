@@ -7,7 +7,7 @@ import { toast } from "@/lib/stores/toast-store";
 import { formatTaka } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { AdminShell } from "./AdminShell";
-import { AsyncState, Card, ErrorBanner, PageBody } from "./ui";
+import { AsyncState, Card, ErrorBanner, OrderTabs, PageBody } from "./ui";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Input } from "@/components/ui/Field";
@@ -110,7 +110,7 @@ export function IncompleteCheckouts() {
 
   return (
     <AdminShell
-      title="Incomplete"
+      title="Orders"
       action={
         <label className="flex items-center gap-2 text-caption text-muted">
           <input
@@ -125,6 +125,8 @@ export function IncompleteCheckouts() {
         </label>
       }
     >
+      <OrderTabs active="incomplete" />
+
       <PageBody columns={false}>
         <ErrorBanner message={actionError} />
 

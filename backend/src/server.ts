@@ -7,6 +7,10 @@ import { initStorage } from "./lib/storage/index.js";
 import { registerMetaTracking } from "./modules/marketing/meta.subscriber.js";
 import { registerOrderIntegrations } from "./modules/integrations/integrations.subscriber.js";
 import { startCourierSync, stopCourierSync } from "./modules/courier/courier.sync.js";
+import {
+  startTelegramScheduler,
+  stopTelegramScheduler,
+} from "./modules/integrations/telegram.scheduler.js";
 
 /**
  * Process bootstrap and lifecycle.
@@ -33,6 +37,10 @@ async function start(): Promise<void> {
   /* Polls the courier for parcel statuses. Timer is unref'd, so it never holds
      a deploy open. */
   startCourierSync();
+
+  /* Late alerts for abandoned checkouts, and the daily summary. Same unref'd
+     timer discipline as the courier sync. */
+  startTelegramScheduler();
 
   const app = createApp();
 
@@ -72,6 +80,7 @@ async function shutdown(signal: string): Promise<void> {
   /* Stop polling before the database closes, so a sync in flight cannot query
      a connection that is being torn down. */
   stopCourierSync();
+  stopTelegramScheduler();
 
   const forceExit = setTimeout(() => {
     logger.error("Graceful shutdown timed out — forcing exit");

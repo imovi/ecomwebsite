@@ -44,7 +44,12 @@ interface ProductProfit {
   grossProfit: number;
   revenueWithUnknownCost: number;
   unitsWithUnknownCost: number;
+  /** Share of the shop-wide ad line, by revenue. An estimate. */
   estimatedAdSpend: number;
+  /** Boosts recorded against this product. Measured, not inferred. */
+  recordedAdSpend: number;
+  /** Its share of the parcels it travelled in — courier plus boxing. */
+  parcelCost: number;
   estimatedNetProfit: number;
   marginPercent: number | null;
 }
@@ -62,6 +67,8 @@ interface ProfitReport {
     packaging: number;
     returns: { count: number; cost: number };
     expenses: { total: number; byCategory: Record<string, number> };
+    /** Boosts recorded per product. Its own line — see the profit service. */
+    productBoosts: number;
     netProfit: number;
     marginPercent: number | null;
   };
@@ -225,6 +232,7 @@ export function ProfitDashboard() {
               </div>
               {settings && <CostSettingsCard settings={settings} busy={busy} onSave={run} />}
               <AdSpendEntry busy={busy} onSave={run} />
+              <ProductBoostEntry products={products} busy={busy} onSave={run} />
               <BuyingPrices products={products} busy={busy} onSave={run} />
               <ExpenseLedger expenses={expenses} busy={busy} onRun={run} />
               <div className="2xl:col-span-2">
@@ -407,6 +415,21 @@ function Breakdown({ report }: { report: ProfitReport }) {
       amount,
       deduct: true,
     })),
+    /* Its own line rather than folded into the ads category above: this is the
+       one advertising figure that was measured per product rather than shared
+       out, and hiding that distinction is what the feature exists to avoid.
+       Omitted entirely when nothing was recorded, so it does not add an empty
+       row to every quiet week. */
+    ...(r.productBoosts > 0
+      ? [
+          {
+            label: "Product boosts",
+            amount: r.productBoosts,
+            hint: "Recorded per product, not shared out",
+            deduct: true,
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -493,6 +516,114 @@ function InFlightAndLeaked({ report }: { report: ProfitReport }) {
  * page to mean anything, so it gets the shortest possible path: type, save.
  * Saving the same day twice corrects it rather than adding to it.
  */
+/**
+ * A day's boost budget for one product.
+ *
+ * The difference between this and the ads line beside it is the whole reason it
+ * exists: the ledger's figure is shop-wide and gets split across products by
+ * share of revenue, which is an inference — and its worst case is a product
+ * selling BECAUSE it is boosted, which then gets charged in proportion to the
+ * sales the boost created. A number entered here is measured, and the report
+ * uses it directly for that product.
+ */
+function ProductBoostEntry({
+  products,
+  busy,
+  onSave,
+}: {
+  products: ApiProductListItem[];
+  busy: boolean;
+  onSave: (action: () => Promise<unknown>, message: string) => Promise<void>;
+}) {
+  const [productId, setProductId] = useState("");
+  const [date, setDate] = useState(shopToday());
+  const [amount, setAmount] = useState("");
+  const [note, setNote] = useState("");
+
+  const canSave = productId !== "" && amount.trim() !== "" && Number(amount) >= 0;
+
+  return (
+    <Card>
+      <CardHeader
+        title="Boost spend, per product"
+        hint="What you spent boosting one product on one day. Exact, unlike the shared-out ads figure."
+      />
+      <div className="flex flex-col gap-4 p-4">
+        <Select
+          label="Product"
+          value={productId}
+          onChange={(event) => setProductId(event.target.value)}
+        >
+          <option value="">Choose a product…</option>
+          {products.map((product) => (
+            <option key={product.id} value={product.id}>
+              {product.name}
+            </option>
+          ))}
+        </Select>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Input
+            label="Day"
+            type="date"
+            value={date}
+            onChange={(event) => setDate(event.target.value)}
+          />
+          <Input
+            label="Amount (৳)"
+            type="number"
+            inputMode="numeric"
+            min={0}
+            step={1}
+            value={amount}
+            onChange={(event) => setAmount(event.target.value)}
+          />
+        </div>
+
+        <Input
+          label="Note (optional)"
+          value={note}
+          onChange={(event) => setNote(event.target.value)}
+          placeholder="Facebook boost"
+        />
+
+        <Button
+          variant="primary"
+          size="sm"
+          className="self-start"
+          loading={busy}
+          disabled={!canSave}
+          onClick={() =>
+            void onSave(
+              () =>
+                adminApi.put("admin/reports/boosts", {
+                  productId,
+                  spentOn: date,
+                  amount: Number(amount),
+                  ...(note.trim() ? { note: note.trim() } : {}),
+                }),
+              "Boost recorded",
+            ).then(() => {
+              setAmount("");
+              setNote("");
+            })
+          }
+        >
+          Save boost
+        </Button>
+
+        {/* The one way to get this wrong, said where the mistake would be made
+            rather than in a help page nobody opens. */}
+        <p className="rounded-sm bg-warn-soft px-3 py-2 text-micro text-warn">
+          Record a boost here <b>or</b> in the general ads expense — not both, or the same taka
+          is counted twice. Entering the same product and day again corrects the figure rather
+          than adding to it.
+        </p>
+      </div>
+    </Card>
+  );
+}
+
 function AdSpendEntry({
   busy,
   onSave,
@@ -953,7 +1084,9 @@ function ProductTable({ report }: { report: ProfitReport }) {
                 <th className="pb-2 text-right font-medium">Sold</th>
                 <th className="pb-2 text-right font-medium">Sales</th>
                 <th className="pb-2 text-right font-medium">Cost</th>
-                <th className="pb-2 text-right font-medium">Ads</th>
+                <th className="pb-2 text-right font-medium">Ship + box</th>
+                <th className="pb-2 text-right font-medium">Boost</th>
+                <th className="pb-2 text-right font-medium">Ad share</th>
                 <th className="pb-2 text-right font-medium">Profit</th>
                 <th className="pb-2 text-right font-medium">Margin</th>
               </tr>
@@ -973,6 +1106,13 @@ function ProductTable({ report }: { report: ProfitReport }) {
                   </td>
                   <td className="tnum py-2.5 text-right text-muted">
                     {formatTaka(product.cost)}
+                  </td>
+                  <td className="tnum py-2.5 text-right text-muted">
+                    {formatTaka(product.parcelCost)}
+                  </td>
+                  {/* Measured, so it reads darker than the estimate beside it. */}
+                  <td className="tnum py-2.5 text-right text-ink-soft">
+                    {product.recordedAdSpend > 0 ? formatTaka(product.recordedAdSpend) : "—"}
                   </td>
                   <td className="tnum py-2.5 text-right text-muted">
                     {formatTaka(product.estimatedAdSpend)}

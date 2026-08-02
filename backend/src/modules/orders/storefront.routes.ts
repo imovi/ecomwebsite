@@ -144,6 +144,18 @@ const publicSettings: RequestHandler = async (_req, res) => {
         logoUrl: settings.storeLogoKey ? getStorage().url(settings.storeLogoKey) : null,
         logoWidth: settings.storeLogoWidth,
         logoHeight: settings.storeLogoHeight,
+        /* The browser-tab icon. Public by nature — it is requested by every
+           browser that opens the shop. */
+        faviconUrl: settings.storeFaviconKey
+          ? getStorage().url(settings.storeFaviconKey)
+          : null,
+        /* The number behind the floating WhatsApp button — a link target the
+           shop publishes on purpose. */
+        whatsapp: settings.storeWhatsapp,
+        /* Page title and description. Empty means the storefront uses its
+           built-in wording, so this never blanks a tab. */
+        seoTitle: settings.seoTitle,
+        seoDescription: settings.seoDescription,
       },
       /**
        * Browser-side tracking configuration.

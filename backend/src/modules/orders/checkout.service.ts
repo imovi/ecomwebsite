@@ -424,7 +424,7 @@ export async function placeOrder(
 
     const order = await insertOrder(
       {
-        orderNumber: await nextOrderNumber(tx),
+        orderNumber: await nextOrderNumber(settings.orderNumberPrefix, tx),
         customerName: input.customerName,
         phone: input.phone,
         address: input.address,

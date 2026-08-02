@@ -147,7 +147,7 @@ export function MarketingForm() {
   }
 
   return (
-    <AdminShell title="Tracking">
+    <AdminShell title="Marketing">
       <PageBody>
         <AsyncState
           loading={loading}

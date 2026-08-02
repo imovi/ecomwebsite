@@ -1,7 +1,13 @@
-import { eq } from "drizzle-orm";
+import { and, eq, isNotNull, lt, sql } from "drizzle-orm";
 import { getDb, type DatabaseExecutor } from "../../db/client.js";
+import { orders } from "../../db/schema/orders.js";
 import { productVariants, type ProductVariantRow } from "../../db/schema/product-variants.js";
-import { ConflictError, NotFoundError, ValidationError } from "../../core/errors.js";
+import {
+  BadRequestError,
+  ConflictError,
+  NotFoundError,
+  ValidationError,
+} from "../../core/errors.js";
 import { ErrorCode } from "../../core/http-status.js";
 import { createLogger } from "../../core/logger.js";
 import { orderEvents as orderEventBus } from "../../lib/events/order-events.js";
@@ -170,18 +176,142 @@ export async function list(options: {
   };
 }
 
-export async function statusCounts(): Promise<Record<string, number>> {
-  return countOrdersByStatus();
+export async function statusCounts(
+  range: { dateFrom?: Date; dateTo?: Date } = {},
+): Promise<Record<string, number>> {
+  return countOrdersByStatus(range);
 }
 
 /** Detail by uuid or order number, in one round trip. */
-export async function getByIdentifier(identifier: string): Promise<OrderDto> {
-  const detail = await findOrderDetail(
-    UUID_PATTERN.test(identifier) ? { id: identifier } : { orderNumber: identifier },
-  );
+export async function getByIdentifier(
+  identifier: string,
+  options: { includeDeleted?: boolean } = {},
+): Promise<OrderDto> {
+  const key = UUID_PATTERN.test(identifier) ? { id: identifier } : { orderNumber: identifier };
+
+  const detail = await findOrderDetail({
+    ...key,
+    ...(options.includeDeleted ? { includeDeleted: true } : {}),
+  });
 
   if (!detail) throw new NotFoundError("Order not found.");
   return toOrderDto(detail.order, detail.items, detail.events);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Trash                                                                      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Moves an order to the trash.
+ *
+ * A soft delete on purpose. The order is the record of money owed or collected
+ * and carries an audit trail that exists so history cannot be quietly rewritten;
+ * removing the row would also restate every profit figure it appeared in, with
+ * nothing on screen to say why the totals changed.
+ *
+ * Stock is deliberately NOT returned. Deleting is a tidying action — clearing a
+ * test order or a duplicate — and a delete that silently moved stock would be a
+ * second, invisible consequence. An order whose stock should come back is
+ * CANCELLED, which does exactly that and records a reason.
+ */
+export async function moveToTrash(orderId: string, actor: Actor): Promise<void> {
+  const order = await requireOrder(orderId);
+
+  if (order.deletedAt) return;
+
+  await getDb()
+    .update(orders)
+    .set({
+      deletedAt: sql`now()`,
+      deletedBy: actor.adminId ?? null,
+      updatedAt: sql`now()`,
+    })
+    .where(eq(orders.id, orderId));
+
+  /* Recorded on the order itself, so a restored order shows why it vanished. */
+  await recordEvent({
+    orderId,
+    type: "note_added",
+    note: `Moved to trash by ${actor.name}`,
+    actor,
+  });
+}
+
+export async function restoreFromTrash(orderId: string, actor: Actor): Promise<void> {
+  const rows = await getDb()
+    .select({ id: orders.id, deletedAt: orders.deletedAt })
+    .from(orders)
+    .where(eq(orders.id, orderId))
+    .limit(1);
+
+  const order = rows[0];
+  if (!order) throw new NotFoundError("Order not found.");
+  if (!order.deletedAt) return;
+
+  await getDb()
+    .update(orders)
+    .set({ deletedAt: null, deletedBy: null, updatedAt: sql`now()` })
+    .where(eq(orders.id, orderId));
+
+  await recordEvent({
+    orderId,
+    type: "note_added",
+    note: `Restored from trash by ${actor.name}`,
+    actor,
+  });
+}
+
+/**
+ * Removes an order for good.
+ *
+ * The only path in this system that destroys an order, which is why it is
+ * separate from the delete button rather than a confirmation on it: the trash
+ * screen is the one place somebody is already looking at what they are about to
+ * lose.
+ */
+export async function purgeFromTrash(orderId: string): Promise<void> {
+  const rows = await getDb()
+    .select({ id: orders.id, deletedAt: orders.deletedAt })
+    .from(orders)
+    .where(eq(orders.id, orderId))
+    .limit(1);
+
+  const order = rows[0];
+  if (!order) throw new NotFoundError("Order not found.");
+  if (!order.deletedAt) {
+    /* Refusing rather than deleting: reaching here with a live order means a
+       caller got its ids crossed, and the safe answer is to do nothing. */
+    throw new BadRequestError("That order is not in the trash.");
+  }
+
+  /* Items and events cascade from the order's own foreign keys. */
+  await getDb().delete(orders).where(eq(orders.id, orderId));
+}
+
+/** How long a deleted order is kept before the sweep takes it. */
+export const TRASH_RETENTION_DAYS = 30;
+
+/**
+ * Empties anything that has sat in the trash past the retention window.
+ *
+ * Runs on a timer. Bounded per pass so a large clear-out cannot hold a
+ * connection for minutes; whatever is left is taken on the next one.
+ */
+export async function purgeExpiredTrash(): Promise<number> {
+  const cutoff = new Date(Date.now() - TRASH_RETENTION_DAYS * 24 * 60 * 60_000);
+
+  const expired = await getDb()
+    .select({ id: orders.id })
+    .from(orders)
+    .where(and(isNotNull(orders.deletedAt), lt(orders.deletedAt, cutoff)))
+    .limit(200);
+
+  for (const row of expired) {
+    await getDb().delete(orders).where(eq(orders.id, row.id));
+  }
+
+  return expired.length;
 }
 
 /**

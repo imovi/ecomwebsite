@@ -1,0 +1,18 @@
+-- Browser-tab icon, uploadable from the branding screen.
+--
+-- WHY NOT REUSE THE LOGO
+-- A wordmark is wide and detailed; scaled into a 32px square it becomes an
+-- unreadable smudge, which is exactly the size a customer sees it at in a row
+-- of a dozen open tabs. The tab icon is a different picture doing a different
+-- job, so it gets its own column rather than being derived from the logo.
+--
+-- A KEY, NOT A URL
+-- Same reasoning as `store_logo_key`: the bucket layout is an implementation
+-- detail, and a stored URL breaks the day the storage driver or the public
+-- hostname changes.
+--
+-- No width/height columns, unlike the logo. The header has to reserve a box of
+-- the right shape for a logo of unknown proportions; a favicon is always
+-- rendered into a fixed square by the browser, so its real size tells the
+-- storefront nothing it can act on.
+alter table "store_settings" add column if not exists "store_favicon_key" text;

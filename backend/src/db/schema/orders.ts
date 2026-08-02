@@ -9,6 +9,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import { admins } from "./admins.js";
 import { deliveryZoneEnum, orderStatusEnum, paymentMethodEnum } from "./order-enums.js";
 
 /**
@@ -96,6 +97,21 @@ export const orders = pgTable(
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
     returnedAt: timestamp("returned_at", { withTimezone: true }),
+
+    /**
+     * Moved to the trash. Null is a live order.
+     *
+     * A soft delete, because an order is the record of money owed or collected
+     * and it carries an audit trail that exists so nobody can quietly rewrite
+     * history. Removing the row outright would also silently restate every
+     * profit figure that order ever appeared in.
+     *
+     * Every list, count and report filters on `deleted_at is null`. Thirty days
+     * later a sweep purges it for real — long enough to notice a mistake, short
+     * enough that the trash does not become a second database.
+     */
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    deletedBy: uuid("deleted_by").references(() => admins.id, { onDelete: "set null" }),
 
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().default(sql`now()`),

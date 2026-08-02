@@ -36,6 +36,10 @@ interface ApiPublicSettings {
       logoUrl?: string | null;
       logoWidth?: number | null;
       logoHeight?: number | null;
+      faviconUrl?: string | null;
+      whatsapp?: string | null;
+      seoTitle?: string | null;
+      seoDescription?: string | null;
     };
   };
 }
@@ -60,13 +64,23 @@ export async function getSettings(): Promise<StoreSettings> {
     deliveryInsideDhaka: data.settings.delivery.insideDhaka,
     deliveryOutsideDhaka: data.settings.delivery.outsideDhaka,
     freeDeliveryThreshold: data.settings.delivery.freeDeliveryThreshold,
-    /* Contact channels are storefront config, not catalogue data — WhatsApp in
-       particular is a link target the API has no opinion about. */
-    whatsappNumber: process.env.NEXT_PUBLIC_WHATSAPP_NUMBER ?? "",
+    /* Settings first, the build-time env only as a fallback. It used to be the
+       other way round, which made changing the shop's WhatsApp number a rebuild:
+       `NEXT_PUBLIC_*` is inlined into the client bundle, so a restart would not
+       pick up a new value. The env var stays as the fallback so an existing
+       deployment keeps working until the number is entered in the panel. */
+    whatsappNumber: data.settings.store.whatsapp || FALLBACK.whatsappNumber,
     hotline: data.settings.store.phone || FALLBACK.hotline,
     ...(data.settings.store.logoUrl ? { logoUrl: data.settings.store.logoUrl } : {}),
     ...(data.settings.store.logoWidth ? { logoWidth: data.settings.store.logoWidth } : {}),
     ...(data.settings.store.logoHeight ? { logoHeight: data.settings.store.logoHeight } : {}),
     ...(data.settings.store.name ? { storeName: data.settings.store.name } : {}),
+    ...(data.settings.store.faviconUrl
+      ? { faviconUrl: data.settings.store.faviconUrl }
+      : {}),
+    ...(data.settings.store.seoTitle ? { seoTitle: data.settings.store.seoTitle } : {}),
+    ...(data.settings.store.seoDescription
+      ? { seoDescription: data.settings.store.seoDescription }
+      : {}),
   };
 }

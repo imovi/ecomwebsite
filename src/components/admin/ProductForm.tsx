@@ -47,6 +47,9 @@ interface FormState {
   price: string;
   oldPrice: string;
   costPrice: string;
+  courierCostInsideDhaka: string;
+  courierCostOutsideDhaka: string;
+  packagingCost: string;
   stockQuantity: string;
   lowStockThreshold: string;
   status: "draft" | "active" | "archived";
@@ -68,12 +71,25 @@ const EMPTY: FormState = {
   price: "",
   oldPrice: "",
   costPrice: "",
+  courierCostInsideDhaka: "",
+  courierCostOutsideDhaka: "",
+  packagingCost: "",
   stockQuantity: "0",
   lowStockThreshold: "5",
   status: "draft",
   isVisible: true,
   specifications: [],
 };
+
+/**
+ * An optional money field as text.
+ *
+ * Blank for both null and undefined, which are the same thing to a form: "not
+ * set". Keeping them distinct here would put the string "null" in an input.
+ */
+function optionalNumber(value: number | null | undefined): string {
+  return value === null || value === undefined ? "" : String(value);
+}
 
 function fromProduct(product: ApiProduct): FormState {
   return {
@@ -93,6 +109,9 @@ function fromProduct(product: ApiProduct): FormState {
       product.costPrice === null || product.costPrice === undefined
         ? ""
         : String(product.costPrice),
+    courierCostInsideDhaka: optionalNumber(product.courierCostInsideDhaka),
+    courierCostOutsideDhaka: optionalNumber(product.courierCostOutsideDhaka),
+    packagingCost: optionalNumber(product.packagingCost),
     stockQuantity: String(product.stockQuantity),
     lowStockThreshold: String(product.lowStockThreshold),
     status: product.status ?? "draft",
@@ -190,6 +209,12 @@ export function ProductForm({ productId }: { productId?: string }) {
       /* Null, not 0, when left blank: "not recorded" and "free" are different
          facts, and the profit report treats them differently. */
       costPrice: form.costPrice.trim() === "" ? null : Number(form.costPrice),
+      /* Same rule: blank is "use the shop default", not "ships free". */
+      courierCostInsideDhaka:
+        form.courierCostInsideDhaka.trim() === "" ? null : Number(form.courierCostInsideDhaka),
+      courierCostOutsideDhaka:
+        form.courierCostOutsideDhaka.trim() === "" ? null : Number(form.courierCostOutsideDhaka),
+      packagingCost: form.packagingCost.trim() === "" ? null : Number(form.packagingCost),
       stockQuantity: Number(form.stockQuantity),
       lowStockThreshold: Number(form.lowStockThreshold),
       status: form.status,
@@ -449,6 +474,39 @@ export function ProductForm({ productId }: { productId?: string }) {
                 onChange={(event) => set("costPrice", event.target.value)}
                 hint="What you pay for one. Never shown to customers — it is what makes the profit page work."
                 error={fieldErrors.costPrice}
+              />
+              <Input
+                label="Courier cost, inside Dhaka (৳)"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                step={1}
+                value={form.courierCostInsideDhaka}
+                onChange={(event) => set("courierCostInsideDhaka", event.target.value)}
+                hint="Only if this item costs more to ship than usual. Blank uses the shop figure from Settings."
+                error={fieldErrors.courierCostInsideDhaka}
+              />
+              <Input
+                label="Courier cost, outside Dhaka (৳)"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                step={1}
+                value={form.courierCostOutsideDhaka}
+                onChange={(event) => set("courierCostOutsideDhaka", event.target.value)}
+                hint="Blank uses the shop figure."
+                error={fieldErrors.courierCostOutsideDhaka}
+              />
+              <Input
+                label="Packaging cost (৳)"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                step={1}
+                value={form.packagingCost}
+                onChange={(event) => set("packagingCost", event.target.value)}
+                hint="A bigger box for a bigger item. Blank uses the shop figure."
+                error={fieldErrors.packagingCost}
               />
               <Input
                 label="Stock quantity"

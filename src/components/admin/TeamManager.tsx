@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
+import { logoutAction } from "@/lib/admin/actions";
 import { adminApi, AdminApiError } from "@/lib/admin/client";
 import { useLoad } from "@/lib/admin/use-load";
 import { toast } from "@/lib/stores/toast-store";
@@ -246,6 +247,8 @@ export function TeamManager() {
           </ul>
         </AsyncState>
 
+        <ChangePasswordCard className="2xl:col-span-2" />
+
         <Card>
           <CardHeader title="What each role can do" />
           <ul className="flex flex-col divide-y divide-line">
@@ -343,19 +346,29 @@ function AddMemberForm({
   busy: boolean;
   className?: string;
   onCancel: () => void;
-  onCreate: (payload: { email: string; name: string; role: Role }) => Promise<void>;
+  onCreate: (payload: {
+    email: string;
+    name: string;
+    role: Role;
+    password?: string;
+  }) => Promise<void>;
 }) {
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [role, setRole] = useState<Role>("manager");
+  const [password, setPassword] = useState("");
 
   const selected = ROLES.find((r) => r.value === role);
+  /* Blank is valid — it means "generate one". Typed-in-anyway is held to the
+     same 12-character floor the API enforces, so a rejection never comes as a
+     surprise after pressing Create. */
+  const passwordTooShort = password.length > 0 && password.length < 12;
 
   return (
     <Card className={className}>
       <CardHeader
         title="Add someone to the team"
-        hint="They get a generated password, shown once after you save. There is no invitation email — pass it to them yourself."
+        hint="Set a password yourself, or leave it blank for a generated one — shown once after you save either way. There is no invitation email — pass it to them yourself."
       />
       <div className="flex flex-col gap-4 p-4">
         <div className="grid gap-4 sm:grid-cols-2">
@@ -388,14 +401,29 @@ function AddMemberForm({
           ))}
         </Select>
 
+        <Input
+          label="Password"
+          type="password"
+          autoComplete="new-password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          error={passwordTooShort ? "Use at least 12 characters, or leave it blank." : undefined}
+          hint="Optional. At least 12 characters if you set one."
+        />
+
         <div className="flex gap-2">
           <Button
             variant="primary"
             size="sm"
             loading={busy}
-            disabled={name.trim() === "" || email.trim() === ""}
+            disabled={name.trim() === "" || email.trim() === "" || passwordTooShort}
             onClick={() =>
-              void onCreate({ email: email.trim(), name: name.trim(), role })
+              void onCreate({
+                email: email.trim(),
+                name: name.trim(),
+                role,
+                password: password.trim() || undefined,
+              })
             }
           >
             Create account
@@ -404,6 +432,109 @@ function AddMemberForm({
             Cancel
           </Button>
         </div>
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * Self-service password change.
+ *
+ * Open to every role, not just an owner — visible here regardless of whether
+ * the team list above loaded, since a Staff or Manager account cannot see
+ * that list at all but still needs a way to change their own password.
+ *
+ * Ends the session on success: the API revokes every refresh token for the
+ * account, so signing out here (rather than leaving the tab in a half-valid
+ * state until the access token's own 15-minute clock runs out) is the honest
+ * result to show.
+ */
+function ChangePasswordCard({ className }: { className?: string }) {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const logoutFormRef = useRef<HTMLFormElement>(null);
+
+  const mismatch = confirmPassword.length > 0 && newPassword !== confirmPassword;
+
+  async function submit() {
+    if (newPassword !== confirmPassword) {
+      setError("The new passwords do not match.");
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+    try {
+      await adminApi.post("auth/change-password", { currentPassword, newPassword });
+    } catch (caught) {
+      setError(
+        caught instanceof AdminApiError ? caught.message : "Could not change your password.",
+      );
+      setBusy(false);
+      return;
+    }
+
+    toast("Password changed. Signing you out — sign in again with the new one.");
+    /* The same form-submit mechanism the sidebar's own Sign out button uses,
+       so this takes the identical, already-proven path to a clean session. */
+    logoutFormRef.current?.requestSubmit();
+  }
+
+  return (
+    <Card className={className}>
+      <CardHeader
+        title="Change your password"
+        hint="Your own account, any role. You'll be signed out afterwards and need to sign in again with the new one."
+      />
+      <div className="flex flex-col gap-4 p-4">
+        <Input
+          label="Current password"
+          type="password"
+          autoComplete="current-password"
+          value={currentPassword}
+          onChange={(event) => setCurrentPassword(event.target.value)}
+        />
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Input
+            label="New password"
+            type="password"
+            autoComplete="new-password"
+            value={newPassword}
+            onChange={(event) => setNewPassword(event.target.value)}
+            hint="At least 12 characters, with an uppercase letter, a lowercase letter and a number."
+          />
+          <Input
+            label="Confirm new password"
+            type="password"
+            autoComplete="new-password"
+            value={confirmPassword}
+            onChange={(event) => setConfirmPassword(event.target.value)}
+            error={mismatch ? "Does not match." : undefined}
+          />
+        </div>
+
+        <ErrorBanner message={error} />
+
+        <Button
+          variant="primary"
+          size="sm"
+          className="self-start"
+          loading={busy}
+          disabled={
+            currentPassword.length === 0 || newPassword.length < 12 || confirmPassword.length === 0
+          }
+          onClick={() => void submit()}
+        >
+          Change password
+        </Button>
+
+        {/* Hidden: submitted programmatically on success, reusing the exact
+            server action the visible Sign out button in the sidebar uses. */}
+        <form ref={logoutFormRef} action={logoutAction} className="hidden" />
       </div>
     </Card>
   );

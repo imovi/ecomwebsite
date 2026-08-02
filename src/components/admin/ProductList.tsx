@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { adminApi, AdminApiError, qs } from "@/lib/admin/client";
+import { downloadCsv, toCsv } from "@/lib/admin/csv";
 import { formatTaka } from "@/lib/utils";
 import type { ApiProductListItem } from "@/lib/api/types";
 import { AdminShell } from "./AdminShell";
@@ -32,6 +33,10 @@ export function ProductList() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /* Ids rather than indexes: the list reloads under the selection whenever the
+     filter or the search changes, and an index would then point at a different
+     product without anything looking wrong. */
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -44,6 +49,9 @@ export function ProductList() {
       );
       setProducts(items);
       setTotal(pagination?.total ?? items.length);
+      /* Dropped on every reload. Keeping a tick against a product the current
+         filter no longer shows means exporting rows nobody can see. */
+      setSelected(new Set());
     } catch (caught) {
       setError(caught instanceof AdminApiError ? caught.message : "Could not load products.");
     } finally {
@@ -58,6 +66,63 @@ export function ProductList() {
     const timer = setTimeout(() => void load(), search ? 300 : 0);
     return () => clearTimeout(timer);
   }, [load, search]);
+
+  const allShownSelected = products.length > 0 && products.every((p) => selected.has(p.id));
+
+  function toggleOne(id: string) {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    setSelected(allShownSelected ? new Set() : new Set(products.map((p) => p.id)));
+  }
+
+  /**
+   * Exports what is selected — or everything shown when nothing is ticked.
+   *
+   * "Nothing ticked means all" rather than a disabled button: the common case is
+   * wanting the whole filtered list, and making that require ticking ten boxes
+   * first would be busywork.
+   */
+  function exportCsv() {
+    const rows = selected.size > 0 ? products.filter((p) => selected.has(p.id)) : products;
+    if (rows.length === 0) return;
+
+    downloadCsv(
+      "gng-products",
+      toCsv(
+        [
+          "SKU",
+          "Name",
+          "Brand",
+          "Category",
+          "Price",
+          "Old price",
+          "Buying price",
+          "Stock",
+          "Status",
+          "Visible",
+        ],
+        rows.map((product) => [
+          product.sku,
+          product.name,
+          product.brand ?? "",
+          product.category?.name ?? "",
+          product.price,
+          product.oldPrice ?? "",
+          product.costPrice ?? "",
+          product.stockQuantity,
+          product.status ?? "",
+          product.isVisible === false ? "no" : "yes",
+        ]),
+      ),
+    );
+  }
 
   return (
     <AdminShell
@@ -97,7 +162,27 @@ export function ProductList() {
         />
 
         <span className="tnum text-caption text-muted">{total} total</span>
+
+        <Button variant="secondary" size="sm" onClick={exportCsv} disabled={products.length === 0}>
+          <Icon name="package" size={15} />
+          {selected.size > 0 ? `Export ${selected.size}` : "Export all"}
+        </Button>
       </div>
+
+      {selected.size > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-3 rounded-sm bg-surface px-3 py-2.5">
+          <span className="text-caption font-medium text-ink">
+            {selected.size} selected
+          </span>
+          <button
+            type="button"
+            onClick={() => setSelected(new Set())}
+            className="text-caption text-muted underline hover:text-ink"
+          >
+            Clear
+          </button>
+        </div>
+      )}
 
       <AsyncState
         loading={loading}
@@ -115,6 +200,15 @@ export function ProductList() {
             <table className="w-full border-collapse text-left">
               <thead>
                 <tr className="border-b border-line bg-surface text-micro uppercase tracking-wide text-muted">
+                  <th className="w-10 px-3 py-2.5">
+                    <input
+                      type="checkbox"
+                      checked={allShownSelected}
+                      onChange={toggleAll}
+                      aria-label="Select all shown"
+                      className="size-4 accent-[var(--color-ink)]"
+                    />
+                  </th>
                   <th className="px-3 py-2.5 font-medium">Product</th>
                   <th className="px-3 py-2.5 font-medium">Price</th>
                   <th className="px-3 py-2.5 font-medium">Stock</th>
@@ -124,6 +218,15 @@ export function ProductList() {
               <tbody>
                 {products.map((product) => (
                   <tr key={product.id} className="border-b border-line last:border-0">
+                    <td className="px-3 py-2.5">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(product.id)}
+                        onChange={() => toggleOne(product.id)}
+                        aria-label={`Select ${product.name}`}
+                        className="size-4 accent-[var(--color-ink)]"
+                      />
+                    </td>
                     <td className="px-3 py-2.5">
                       <Link
                         href={`/admin/products/${product.id}`}

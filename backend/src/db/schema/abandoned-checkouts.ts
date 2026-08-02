@@ -84,6 +84,17 @@ export const abandonedCheckouts = pgTable(
     /** The warmest lead is the one who just closed the tab. */
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().default(sql`now()`),
 
+    /**
+     * When the Telegram alert for this lead went out. Null means "not yet".
+     *
+     * A column rather than firing on insert, for two reasons. The row is created
+     * the moment a phone number is typed, so an immediate alert would announce
+     * that someone left while they are still filling in their address. And the
+     * row is rewritten on every keystroke batch, so anything derived from
+     * `updated_at` would re-alert the same person repeatedly.
+     */
+    alertedAt: timestamp("alerted_at", { withTimezone: true }),
+
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().default(sql`now()`),
   },

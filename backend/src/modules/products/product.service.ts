@@ -270,6 +270,10 @@ export async function create(input: CreateProductInput): Promise<ProductDto> {
         price: input.price,
         oldPrice: input.oldPrice ?? null,
         costPrice: input.costPrice ?? null,
+        /* Null is "use the shop default", not "free" — see the schema. */
+        courierCostInsideDhaka: input.courierCostInsideDhaka ?? null,
+        courierCostOutsideDhaka: input.courierCostOutsideDhaka ?? null,
+        packagingCost: input.packagingCost ?? null,
         stockQuantity,
         stockStatus: deriveStockStatus(stockQuantity, input.stockStatus),
         lowStockThreshold: input.lowStockThreshold,
@@ -345,6 +349,15 @@ export async function update(id: string, input: UpdateProductInput): Promise<Pro
     ...(input.price !== undefined ? { price: input.price } : {}),
     ...(input.oldPrice !== undefined ? { oldPrice: input.oldPrice ?? null } : {}),
     ...(input.costPrice !== undefined ? { costPrice: input.costPrice ?? null } : {}),
+    ...(input.courierCostInsideDhaka !== undefined
+      ? { courierCostInsideDhaka: input.courierCostInsideDhaka ?? null }
+      : {}),
+    ...(input.courierCostOutsideDhaka !== undefined
+      ? { courierCostOutsideDhaka: input.courierCostOutsideDhaka ?? null }
+      : {}),
+    ...(input.packagingCost !== undefined
+      ? { packagingCost: input.packagingCost ?? null }
+      : {}),
     ...(input.stockQuantity !== undefined ? { stockQuantity: input.stockQuantity } : {}),
     ...(input.lowStockThreshold !== undefined
       ? { lowStockThreshold: input.lowStockThreshold }

@@ -27,10 +27,9 @@ gng.com.bd {
 }
 
 api.gng.com.bd {
-	# ONLY the uploads path is public — that is how product photos reach a
-	# customer's browser. Every other API route is called server-to-server by the
-	# storefront over the private Docker network, so exposing them here would
-	# widen the attack surface for no benefit.
+	# TWO paths are public, and nothing else. Every other API route is called
+	# server-to-server by the storefront over the private Docker network, so
+	# exposing them here would widen the attack surface for no benefit.
 	handle /uploads/* {
 		reverse_proxy 127.0.0.1:4000
 
@@ -39,6 +38,24 @@ api.gng.com.bd {
 			# image does, so they can be cached hard.
 			Cache-Control "public, max-age=31536000, immutable"
 			X-Content-Type-Options "nosniff"
+		}
+	}
+
+	# The courier's delivery-status webhook. It has to be reachable from their
+	# servers, so it cannot live on the private network like the rest of the API.
+	#
+	# It is safe to expose because it is narrow by construction: a bearer secret
+	# generated in the panel guards it, a blank secret refuses everything, and the
+	# only thing it can do is move a parcel this shop already handed over. Leave
+	# it out and delivery updates fall back to the ten-minute poll — slower, but
+	# nothing breaks.
+	handle /api/v1/webhooks/* {
+		reverse_proxy 127.0.0.1:4000
+
+		header {
+			# Never cached and never indexed: this is an inbound machine endpoint.
+			Cache-Control "no-store"
+			X-Robots-Tag "noindex"
 		}
 	}
 

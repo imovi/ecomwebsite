@@ -35,6 +35,18 @@ const costPriceField = z
   .min(0, "Buying price cannot be negative.")
   .max(100_000_000, "Buying price is unrealistically high.");
 
+/**
+ * What THIS product costs to ship and to box, overriding the shop defaults.
+ *
+ * Nullish everywhere, and `null` means "go back to the shop figure" — a
+ * meaningfully different state from 0, which would claim the item ships free.
+ */
+const perProductCostField = z
+  .number()
+  .int("Must be a whole number of taka.")
+  .min(0, "Cannot be negative.")
+  .max(1_000_000, "That is unrealistically high.");
+
 const slugField = z
   .string()
   .trim()
@@ -172,6 +184,11 @@ export const createProductSchema = z
     oldPrice: priceField.nullish(),
     costPrice: costPriceField.nullish(),
 
+    /* Per-product shipping and boxing. Omitted uses the shop defaults. */
+    courierCostInsideDhaka: perProductCostField.nullish(),
+    courierCostOutsideDhaka: perProductCostField.nullish(),
+    packagingCost: perProductCostField.nullish(),
+
     stockQuantity: z.number().int().min(0).max(1_000_000).default(0),
     lowStockThreshold: z.number().int().min(0).max(10_000).default(5),
     /** Only the manual states are settable; in/out of stock is derived. */
@@ -224,6 +241,10 @@ export const updateProductSchema = z
     price: priceField.optional(),
     oldPrice: priceField.nullish(),
     costPrice: costPriceField.nullish(),
+
+    courierCostInsideDhaka: perProductCostField.nullish(),
+    courierCostOutsideDhaka: perProductCostField.nullish(),
+    packagingCost: perProductCostField.nullish(),
 
     stockQuantity: z.number().int().min(0).max(1_000_000).optional(),
     lowStockThreshold: z.number().int().min(0).max(10_000).optional(),

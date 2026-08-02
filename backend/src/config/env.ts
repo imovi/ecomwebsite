@@ -53,6 +53,21 @@ export const envSchema = z
     TRUST_PROXY_HOPS: integer(0, 0, 10),
 
     /**
+     * Declares that nothing proxies this API — its port is published directly.
+     *
+     * `TRUST_PROXY_HOPS` must match reality, and the config cannot see what is
+     * in front of it, so the production guard assumes the documented shape: a
+     * reverse proxy. That assumption is wrong when the API is reachable on its
+     * own published port, and there the correct value is 0.
+     *
+     * Raising it to 1 to satisfy the guard would be actively harmful, not
+     * merely untidy: Express would then trust an `X-Forwarded-For` header that
+     * any caller can write, so anyone could spoof an address and walk straight
+     * past the rate limits protecting login and checkout.
+     */
+    NO_REVERSE_PROXY: booleanish(false),
+
+    /**
      * Public origin of the storefront.
      *
      * Used as the `event_source_url` on conversion events — Meta compares it
@@ -174,11 +189,23 @@ export const envSchema = z
       path: ["COOKIE_SECURE"],
     },
   )
-  .refine((env) => env.NODE_ENV !== "production" || env.TRUST_PROXY_HOPS > 0, {
-    message:
-      "TRUST_PROXY_HOPS must be > 0 in production, otherwise every client " +
-      "appears to share the proxy's IP and rate limiting collapses",
-    path: ["TRUST_PROXY_HOPS"],
+  .refine(
+    (env) =>
+      env.NODE_ENV !== "production" || env.TRUST_PROXY_HOPS > 0 || env.NO_REVERSE_PROXY,
+    {
+      message:
+        "TRUST_PROXY_HOPS must be > 0 in production, otherwise every client " +
+        "appears to share the proxy's IP and rate limiting collapses. " +
+        "If nothing proxies this API, set NO_REVERSE_PROXY=true instead of raising the hops.",
+      path: ["TRUST_PROXY_HOPS"],
+    },
+  )
+  /* The two are contradictory: hops only mean something when a proxy is there
+     to add the header. Left unchecked, one of them is silently ignored and
+     which one depends on reading the middleware. */
+  .refine((env) => !env.NO_REVERSE_PROXY || env.TRUST_PROXY_HOPS === 0, {
+    message: "NO_REVERSE_PROXY=true requires TRUST_PROXY_HOPS=0",
+    path: ["NO_REVERSE_PROXY"],
   })
   .refine((env) => env.NODE_ENV !== "production" || !env.LOG_PRETTY, {
     message: "LOG_PRETTY must be false in production",

@@ -61,6 +61,9 @@ services:
       # The storefront and the reverse proxy both sit in front of this service.
       # Must be > 0 in production or rate limiting sees one IP for every visitor.
       TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
+      # Only when the API's port is published straight to the internet — see
+      # .env.deploy.example.
+      NO_REVERSE_PROXY: ${NO_REVERSE_PROXY:-false}
 
       LOG_LEVEL: ${LOG_LEVEL:-info}
       LOG_PRETTY: "false"

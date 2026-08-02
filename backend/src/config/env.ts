@@ -88,6 +88,23 @@ export const envSchema = z
     COOKIE_DOMAIN: z.string().optional(),
     COOKIE_SECURE: booleanish(false),
 
+    /**
+     * Lets `COOKIE_SECURE=false` through in production. A DELIBERATE downgrade.
+     *
+     * There is one honest reason to want it: the shop is being brought up on a
+     * bare IP before a domain is pointed at it, and Let's Encrypt will not issue
+     * a certificate for an IP — so there is no HTTPS to be secure over. A Secure
+     * cookie is never sent back on a plain-HTTP request, so without this the
+     * admin login appears to succeed and then bounces straight back to the
+     * sign-in page with nothing on screen explaining why.
+     *
+     * It is a separate variable rather than a relaxed rule because the guard is
+     * right: a session cookie travelling in clear text can be read by anyone on
+     * the path. Making it opt-in means nobody arrives here by accident, and the
+     * server says so loudly on every boot.
+     */
+    ALLOW_INSECURE_COOKIES: booleanish(false),
+
     // --- Rate limiting ---------------------------------------------------
     RATE_LIMIT_WINDOW_MINUTES: integer(15, 1),
     RATE_LIMIT_MAX: integer(300, 1),
@@ -147,10 +164,16 @@ export const envSchema = z
     message: "DATABASE_DRIVER=pglite is a development-only driver",
     path: ["DATABASE_DRIVER"],
   })
-  .refine((env) => env.NODE_ENV !== "production" || env.COOKIE_SECURE, {
-    message: "COOKIE_SECURE must be true in production",
-    path: ["COOKIE_SECURE"],
-  })
+  .refine(
+    (env) =>
+      env.NODE_ENV !== "production" || env.COOKIE_SECURE || env.ALLOW_INSECURE_COOKIES,
+    {
+      message:
+        "COOKIE_SECURE must be true in production. " +
+        "Set ALLOW_INSECURE_COOKIES=true only while testing on a bare IP with no certificate.",
+      path: ["COOKIE_SECURE"],
+    },
+  )
   .refine((env) => env.NODE_ENV !== "production" || env.TRUST_PROXY_HOPS > 0, {
     message:
       "TRUST_PROXY_HOPS must be > 0 in production, otherwise every client " +

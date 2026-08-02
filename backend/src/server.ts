@@ -42,6 +42,17 @@ async function start(): Promise<void> {
      timer discipline as the courier sync. */
   startTelegramScheduler();
 
+  /* Said on every boot, not once at setup. An insecure-cookie deployment is
+     meant to be a short bridge until a domain and a certificate exist, and the
+     way that turns permanent is nobody being reminded it is still on. */
+  if (config.isProduction && !config.auth.cookie.secure) {
+    logger.warn(
+      "COOKIE_SECURE is off in production — session cookies travel in clear text. " +
+        "Only acceptable while testing on a bare IP. Turn it on the moment a domain and " +
+        "certificate are in place.",
+    );
+  }
+
   const app = createApp();
 
   server = app.listen(config.server.port, () => {

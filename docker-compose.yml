@@ -114,6 +114,9 @@ services:
       # Server-side calls take the internal address; the browser never uses it.
       API_URL: http://api:4000
       NEXT_PUBLIC_SITE_URL: ${SITE_URL}
+      # The panel's own session cookies. Needed alongside the API's flag while
+      # the shop runs on a bare IP — see .env.deploy.example.
+      ALLOW_INSECURE_COOKIES: ${ALLOW_INSECURE_COOKIES:-false}
       # Meta tracking is deliberately absent: the pixel id and Conversions API
       # token live in the database and are set from /admin/marketing, so changing
       # them needs neither a rebuild nor a restart.

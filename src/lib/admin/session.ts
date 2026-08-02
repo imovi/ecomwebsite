@@ -35,7 +35,20 @@ const API_REFRESH_COOKIE = "gng_refresh_token";
 
 const cookieOptions = {
   httpOnly: true,
-  secure: isProduction,
+  /**
+   * Off only when the deployment has explicitly said it has no HTTPS.
+   *
+   * These are the panel's OWN session cookies, separate from the refresh cookie
+   * the API sets — so the API's flag alone does not cover them. Without this,
+   * signing in over plain HTTP appears to succeed, the browser silently drops
+   * every Secure cookie, and the next request bounces back to the login page
+   * with nothing on screen explaining why.
+   *
+   * Read from the server environment, never `NEXT_PUBLIC_*`: this file runs
+   * server-side only, and a public build-time flag would bake the weaker
+   * setting into the bundle for every future deployment of that image.
+   */
+  secure: isProduction && process.env.ALLOW_INSECURE_COOKIES !== "true",
   sameSite: "lax" as const,
   path: "/",
 };

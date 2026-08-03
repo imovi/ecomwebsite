@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { adminApi, AdminApiError } from "@/lib/admin/client";
 import { useLoad } from "@/lib/admin/use-load";
@@ -32,6 +32,12 @@ interface SpecRow {
   label: string;
   value: string;
 }
+
+/* The origin never changes for the life of the page, so there is nothing to
+   subscribe to. Both live at module scope because `useSyncExternalStore`
+   re-subscribes whenever the callback identity changes. */
+const subscribeToNothing = () => () => {};
+const readOrigin = () => window.location.origin;
 
 interface FormState {
   name: string;
@@ -148,6 +154,26 @@ export function ProductForm({ productId }: { productId?: string }) {
   /* Create mode only: photos picked before the product row exists. */
   const [staged, setStaged] = useState<StagedImage[]>([]);
   const [uploadNote, setUploadNote] = useState<string | null>(null);
+
+  /**
+   * Whether the link has been written by hand.
+   *
+   * A saved product's link is always its own — nothing here rewrites it — so
+   * this only decides whether a new product's link keeps following the name
+   * being typed above it.
+   */
+  const [slugTouched, setSlugTouched] = useState(false);
+
+  /**
+   * Origin for the link preview.
+   *
+   * The panel and the shop are the same app on the same domain, so this is the
+   * address a customer will really see — read from the browser rather than from
+   * a build-time variable that would bake one deployment's domain into the
+   * image. Blank on the server, so the markup matches on hydration and fills in
+   * immediately after.
+   */
+  const origin = useSyncExternalStore(subscribeToNothing, readOrigin, () => "");
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((current) => ({ ...current, [key]: value }));
@@ -369,9 +395,10 @@ export function ProductForm({ productId }: { productId?: string }) {
                 value={form.name}
                 onChange={(event) => {
                   set("name", event.target.value);
-                  /* Auto-slug while creating; never touch an existing slug,
-                     since changing it breaks live links and ad destinations. */
-                  if (!isEdit) set("slug", slugify(event.target.value));
+                  /* The link follows the name until someone writes their own,
+                     and never touches a saved product's link on its own — a
+                     rename must not silently move a page people already have. */
+                  if (!isEdit && !slugTouched) set("slug", slugify(event.target.value));
                 }}
                 error={fieldErrors.name}
                 required
@@ -401,22 +428,61 @@ export function ProductForm({ productId }: { productId?: string }) {
                 </Select>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
+              <Input
+                label="SKU"
+                value={form.sku}
+                onChange={(event) => set("sku", event.target.value)}
+                hint="Your own stock code. Must be unique."
+                error={fieldErrors.sku}
+                required
+              />
+
+              {/* Its own row rather than sharing one with the SKU: a link built
+                  from a long product name does not fit in half a line, and this
+                  field is only useful if you can read what it will produce. */}
+              <div>
                 <Input
-                  label="SKU"
-                  value={form.sku}
-                  onChange={(event) => set("sku", event.target.value)}
-                  hint="Your own stock code. Must be unique."
-                  error={fieldErrors.sku}
-                  required
-                />
-                <Input
-                  label="URL slug"
+                  label="Product link"
                   value={form.slug}
-                  onChange={(event) => set("slug", slugify(event.target.value))}
-                  hint={isEdit ? "Changing this breaks existing links." : "Filled from the name."}
+                  onChange={(event) => {
+                    /* Typed by hand from here on. Without this the name field
+                       would keep overwriting a shortened link on the next
+                       keystroke, which looked like the edit had not saved. */
+                    setSlugTouched(true);
+                    set("slug", slugify(event.target.value));
+                  }}
+                  hint={
+                    isEdit
+                      ? "Anyone who already has the old link will get a “page not found”, so change it before you advertise the product rather than after."
+                      : "Made from the name. Shorten it if you like — a long name makes a long link."
+                  }
                   error={fieldErrors.slug}
                 />
+
+                <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <p className="break-all text-micro text-muted">
+                    {origin}/product/
+                    <span className="font-medium text-ink">
+                      {form.slug || slugify(form.name) || "…"}
+                    </span>
+                  </p>
+
+                  {/* Only offered when it would actually change something —
+                      a button that does nothing is a button you learn to
+                      distrust. */}
+                  {form.name.trim() !== "" && form.slug !== slugify(form.name) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSlugTouched(false);
+                        set("slug", slugify(form.name));
+                      }}
+                      className="text-micro font-medium text-ink underline underline-offset-2"
+                    >
+                      Use the product name
+                    </button>
+                  )}
+                </div>
               </div>
 
               <Input

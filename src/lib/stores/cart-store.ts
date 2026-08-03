@@ -17,12 +17,33 @@ import type { CartLine } from "@/types";
  * 2. Buy Now writes to a SEPARATE slice, never to `items`. If it merged into
  *    the cart, backing out of checkout would silently leave the product behind
  *    in the customer's cart — a classic source of accidental double orders.
+ *
+ * 3. That slice is SAVED, not merely held in memory. It used to live only in
+ *    memory, on the reasoning that it belongs to one checkout attempt rather
+ *    than to the customer's saved state — true as far as it goes, but it made
+ *    reloading the checkout page empty it. On a phone that is not an edge case:
+ *    switching to another app to copy an address is enough for the browser to
+ *    drop the tab and reload it on return, and the customer came back to "Your
+ *    cart is empty" with the product they were buying gone. The contact details
+ *    beside it were already saved for exactly this reason; the thing being
+ *    bought was not.
  */
+
+/**
+ * How long a saved Buy Now stays valid.
+ *
+ * Long enough to survive a reload, a phone call, or sleeping on it; short
+ * enough that an abandoned express checkout does not reappear on a visit weeks
+ * later attached to a product they have forgotten choosing.
+ */
+const BUY_NOW_TTL_MS = 24 * 60 * 60 * 1000;
 
 interface CartState {
   items: CartLine[];
-  /** Ephemeral single-line "buy this one thing now" purchase. */
+  /** Single-line "buy this one thing now" purchase, outside the cart. */
   buyNow: CartLine | null;
+  /** When `buyNow` was set, so a stale one can be dropped on load. */
+  buyNowAt: number | null;
   /** False until localStorage has been read. Guards against hydration drift. */
   hydrated: boolean;
 
@@ -52,6 +73,7 @@ export const useCartStore = create<CartState>()(
     (set) => ({
       items: [],
       buyNow: null,
+      buyNowAt: null,
       hydrated: false,
 
       addItem: (line, maxQty = 99) =>
@@ -107,17 +129,33 @@ export const useCartStore = create<CartState>()(
 
       clear: () => set({ items: [] }),
 
-      startBuyNow: (line) => set({ buyNow: line }),
-      clearBuyNow: () => set({ buyNow: null }),
+      startBuyNow: (line) => set({ buyNow: line, buyNowAt: Date.now() }),
+      clearBuyNow: () => set({ buyNow: null, buyNowAt: null }),
     }),
     {
       name: "gng-cart-v1",
       storage: createJSONStorage(() => localStorage),
-      // buyNow is intentionally not persisted: it belongs to one checkout
-      // attempt, not to the customer's saved state.
-      partialize: (state) => ({ items: state.items }),
+      partialize: (state) => ({
+        items: state.items,
+        buyNow: state.buyNow,
+        buyNowAt: state.buyNowAt,
+      }),
       onRehydrateStorage: () => (state) => {
-        if (state) state.hydrated = true;
+        if (!state) return;
+
+        /* Checked here rather than when it is read: load is the one moment a
+           stale value can appear, and doing it once means every reader sees
+           the same answer without repeating the rule. */
+        const expired =
+          state.buyNow !== null &&
+          (state.buyNowAt === null || Date.now() - state.buyNowAt > BUY_NOW_TTL_MS);
+
+        if (expired) {
+          state.buyNow = null;
+          state.buyNowAt = null;
+        }
+
+        state.hydrated = true;
       },
     },
   ),

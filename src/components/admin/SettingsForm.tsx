@@ -67,6 +67,8 @@ export function SettingsForm() {
     address: "",
     invoiceFooter: "",
     whatsapp: "",
+    tagline: "",
+    footerNote: "",
     orderNumberPrefix: "",
     seoTitle: "",
     seoDescription: "",
@@ -90,6 +92,8 @@ export function SettingsForm() {
       address: data.store.address,
       invoiceFooter: data.store.invoiceFooter,
       whatsapp: data.store.whatsapp,
+      tagline: data.store.tagline,
+      footerNote: data.store.footerNote,
       orderNumberPrefix: data.orderNumberPrefix,
       seoTitle: data.store.seoTitle,
       seoDescription: data.store.seoDescription,
@@ -190,6 +194,8 @@ export function SettingsForm() {
           address: form.address.trim(),
           invoiceFooter: form.invoiceFooter.trim(),
           whatsapp: form.whatsapp.trim(),
+          tagline: form.tagline.trim(),
+          footerNote: form.footerNote.trim(),
           seoTitle: form.seoTitle.trim(),
           seoDescription: form.seoDescription.trim(),
         },
@@ -394,8 +400,41 @@ export function SettingsForm() {
                     value={form.invoiceFooter}
                     rows={2}
                     onChange={(event) => set("invoiceFooter", event.target.value)}
-                    placeholder="Thank you for shopping with gng."
+                    placeholder={`Thank you for shopping with ${form.name || "us"}.`}
                   />
+                </div>
+              </Card>
+
+              <Card>
+                <CardHeader
+                  title="Shop footer"
+                  hint="The text at the bottom of every page on your shop."
+                />
+                <div className="flex flex-col gap-4 p-4">
+                  <Input
+                    label="Tagline"
+                    value={form.tagline}
+                    onChange={(event) => set("tagline", event.target.value)}
+                    placeholder="Gadgets, delivered."
+                    hint="The short line under your shop name in the footer. Also used after your shop name in the browser tab, unless you set a page title above. Leave blank for the built-in one."
+                  />
+                  <Textarea
+                    label="Extra line"
+                    value={form.footerNote}
+                    rows={2}
+                    onChange={(event) => set("footerNote", event.target.value)}
+                    placeholder="Trade licence: 1234567890"
+                    hint="Sits under the copyright line — a trade licence number, a BIN, or anything else you want on every page. Leave blank to show nothing."
+                  />
+                  {/* The rest of the footer is already live data. Said here
+                      because the natural next question is "where do I edit the
+                      other bits", and the answer is that they follow by
+                      themselves. */}
+                  <p className="rounded-sm bg-surface px-3 py-2.5 text-micro text-muted">
+                    The shop name, phone number and copyright line in the footer come from
+                    Store details above, and the category links update themselves as you add
+                    categories.
+                  </p>
                 </div>
               </Card>
 
@@ -409,7 +448,7 @@ export function SettingsForm() {
                     label="Page title"
                     value={form.seoTitle}
                     onChange={(event) => set("seoTitle", event.target.value)}
-                    placeholder={`${form.name || "Your shop"} — Gadgets, delivered.`}
+                    placeholder={`${form.name || "Your shop"} — ${form.tagline || "Gadgets, delivered."}`}
                     hint="Shown in the browser tab and as the blue line in Google. Around 60 characters reads best — longer gets cut off. Leave blank to use your shop name and the built-in tagline."
                   />
                   <Textarea

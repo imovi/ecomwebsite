@@ -235,6 +235,10 @@ export interface StoreSettings {
   storeName?: string | undefined;
   /** Uploaded browser-tab icon. Undefined falls back to the bundled one. */
   faviconUrl?: string | undefined;
+  /** Footer line under the shop's name. Undefined uses the built-in tagline. */
+  tagline?: string | undefined;
+  /** Free footer line under the copyright. Undefined renders nothing. */
+  footerNote?: string | undefined;
   /** Page title override. Undefined uses `<store name> — <tagline>`. */
   seoTitle?: string | undefined;
   /** Meta description override. Undefined uses the built-in sentence. */

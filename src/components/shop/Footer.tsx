@@ -23,6 +23,9 @@ const ABOUT_LINKS = [
 export async function Footer() {
   const [categories, settings] = await Promise.all([getCategories(), getSettings()]);
   const shopName = settings.storeName || copy.brand.name;
+  /* Both written from Settings → Store. The tagline falls back to the built-in
+     line; the note has no built-in and simply does not render when unset. */
+  const tagline = settings.tagline || copy.brand.tagline;
 
   return (
     /* Bottom padding clears the sticky buy bar on product pages. */
@@ -31,9 +34,10 @@ export async function Footer() {
         <div className="grid grid-cols-2 gap-8 md:grid-cols-4">
           <div className="col-span-2 md:col-span-1">
             {/* The shop's own name, so a store that renamed itself in Settings is
-                not still called "gng" down here while the header shows its logo. */}
+                not still called something else down here while the header shows
+                its logo. */}
             <p className="text-title tracking-[-0.04em] text-ink">{shopName}</p>
-            <p className="mt-1 text-caption text-muted">{copy.brand.tagline}</p>
+            <p className="mt-1 text-caption text-muted">{tagline}</p>
 
             <a
               href={`tel:${settings.hotline}`}
@@ -69,9 +73,15 @@ export async function Footer() {
           </FooterColumn>
         </div>
 
-        <p className="mt-10 border-t border-line pt-6 text-center text-caption text-muted">
-          {copy.footer.rights(new Date().getFullYear(), shopName)}
-        </p>
+        <div className="mt-10 border-t border-line pt-6 text-center text-caption text-muted">
+          <p>{copy.footer.rights(new Date().getFullYear(), shopName)}</p>
+          {/* A trade licence, a BIN, a credit — whatever the shop typed. Absent
+              rather than empty when unset, so the footer does not carry a blank
+              line for every shop that has nothing to say here. */}
+          {settings.footerNote ? (
+            <p className="mt-1 whitespace-pre-line">{settings.footerNote}</p>
+          ) : null}
+        </div>
       </Container>
     </footer>
   );

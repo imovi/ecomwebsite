@@ -38,6 +38,8 @@ interface ApiPublicSettings {
       logoHeight?: number | null;
       faviconUrl?: string | null;
       whatsapp?: string | null;
+      tagline?: string | null;
+      footerNote?: string | null;
       seoTitle?: string | null;
       seoDescription?: string | null;
     };
@@ -77,6 +79,10 @@ export async function getSettings(): Promise<StoreSettings> {
     ...(data.settings.store.name ? { storeName: data.settings.store.name } : {}),
     ...(data.settings.store.faviconUrl
       ? { faviconUrl: data.settings.store.faviconUrl }
+      : {}),
+    ...(data.settings.store.tagline ? { tagline: data.settings.store.tagline } : {}),
+    ...(data.settings.store.footerNote
+      ? { footerNote: data.settings.store.footerNote }
       : {}),
     ...(data.settings.store.seoTitle ? { seoTitle: data.settings.store.seoTitle } : {}),
     ...(data.settings.store.seoDescription

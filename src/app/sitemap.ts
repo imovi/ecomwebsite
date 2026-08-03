@@ -1,8 +1,16 @@
 import type { MetadataRoute } from "next";
 import { getAllProducts, getCategories } from "@/lib/data/catalog";
 import { policies } from "@/data/policies";
+import { siteConfig } from "@/lib/api/config";
 
-const BASE = "https://gng.com.bd";
+/**
+ * The deployment's own origin, not a compiled-in one.
+ *
+ * This was a fixed domain, which meant every URL a search engine read here
+ * pointed at a site this deployment is not — the one place where being wrong is
+ * both invisible on screen and expensive.
+ */
+const BASE = siteConfig.url;
 
 /**
  * Only pages worth indexing. Cart, checkout, order confirmation and search

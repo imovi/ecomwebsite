@@ -835,6 +835,37 @@ describe("integrations — google sheets", () => {
     assert.match(res.body.data.result.reason ?? "", /tab name matches/);
   });
 
+  it("publishes the footer copy to the storefront", async () => {
+    interface Store {
+      settings: { store: { tagline: string; footerNote: string } };
+    }
+
+    const saved = await api<Envelope<Store>>(ctx.baseUrl, "/api/v1/admin/settings", {
+      method: "PATCH",
+      accessToken: superToken,
+      body: {
+        store: { tagline: "Gadgets, delivered.", footerNote: "Trade licence: 1234567890" },
+      },
+    });
+
+    assert.equal(saved.status, 200);
+    assert.equal(saved.body.data.settings.store.tagline, "Gadgets, delivered.");
+    assert.equal(saved.body.data.settings.store.footerNote, "Trade licence: 1234567890");
+
+    /* The admin round trip alone proves nothing: the footer is rendered from
+       the PUBLIC endpoint, so copy that saves but never reaches the storefront
+       is the failure this is here to catch. */
+    const published = await api<Envelope<Store>>(
+      ctx.baseUrl,
+      "/api/v1/storefront/settings",
+    );
+    assert.equal(published.body.data.settings.store.tagline, "Gadgets, delivered.");
+    assert.equal(
+      published.body.data.settings.store.footerNote,
+      "Trade licence: 1234567890",
+    );
+  });
+
   it("re-mints the token when the credentials are replaced", async () => {
     const replacement = makeServiceAccountKey("rotated@gng-test.iam.gserviceaccount.com");
 

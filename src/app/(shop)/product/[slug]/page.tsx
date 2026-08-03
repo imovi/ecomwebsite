@@ -7,6 +7,7 @@ import {
 } from "@/lib/data/catalog";
 import { minPrice, totalStock } from "@/lib/catalog-utils";
 import { copy } from "@/lib/copy";
+import { siteConfig } from "@/lib/api/config";
 import { Container, Divider, SectionHeader } from "@/components/ui/Layout";
 import { Icon } from "@/components/ui/Icon";
 import { ProductPurchase } from "@/components/product/ProductPurchase";
@@ -79,7 +80,10 @@ export default async function ProductPage({
       availability: inStock
         ? "https://schema.org/InStock"
         : "https://schema.org/OutOfStock",
-      url: `https://gng.com.bd/product/${product.slug}`,
+      /* Built from this deployment's own origin. A compiled-in domain would
+         hand Google an offer URL on a site that is not this one, which is worse
+         than omitting the field. */
+      url: `${siteConfig.url}/product/${product.slug}`,
     },
   };
 

@@ -129,6 +129,12 @@ const updateSettingsSchema = z
           ])
           .optional(),
 
+        /* Footer copy. One short line each — the tagline sits beside the shop
+           name and the note under the copyright, so a paragraph in either
+           wraps the footer into something nobody designed. */
+        tagline: safeString({ max: 120 }).optional(),
+        footerNote: safeString({ max: 200 }).optional(),
+
         /* Empty means "use the built-in", so the shop can clear an override
            and get the default back rather than being stuck with a blank tab. */
         seoTitle: safeString({ max: 70 }).optional(),

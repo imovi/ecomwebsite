@@ -38,7 +38,8 @@ export async function generateMetadata(): Promise<Metadata> {
    * marketing line would give every product page the same title — the fastest
    * way to lose the search results this is meant to help.
    */
-  const title = settings.seoTitle || `${name} — ${copy.brand.tagline}`;
+  const title =
+    settings.seoTitle || `${name} — ${settings.tagline || copy.brand.tagline}`;
   const description =
     settings.seoDescription ||
     "Buy original smartphones, earbuds, smartwatches, laptops and accessories in Bangladesh. Cash on delivery nationwide, 24–48 hour delivery in Dhaka.";

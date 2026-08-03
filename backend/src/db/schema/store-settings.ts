@@ -54,11 +54,33 @@ export const storeSettings = pgTable(
     orderNumberPrefix: text("order_number_prefix").notNull().default("GNG-"),
 
     /* --- Store identity, used on invoices -------------------------------- */
-    storeName: text("store_name").notNull().default("gng"),
+    storeName: text("store_name").notNull().default("HABU SHOP"),
     storePhone: text("store_phone").notNull().default(""),
     storeEmail: text("store_email").notNull().default(""),
     storeAddress: text("store_address").notNull().default(""),
     invoiceFooter: text("invoice_footer").notNull().default(""),
+
+    /**
+     * The half-sentence under the shop's name in the storefront footer —
+     * "Gadgets, delivered." and the like.
+     *
+     * Also the suffix of the default page title, so a shop that has not written
+     * its own `seo_title` still gets a `<title>` in its own words rather than
+     * the one this app happened to ship with.
+     *
+     * Empty falls back to the built-in tagline.
+     */
+    storeTagline: text("store_tagline").notNull().default(""),
+
+    /**
+     * A free line in the footer, under the copyright.
+     *
+     * Deliberately open text rather than named fields: shops put a trade
+     * licence number, a BIN, a "Powered by" credit or a slogan here, and
+     * guessing which of those in a schema means the next shop needs a
+     * migration to write the sentence it actually wants.
+     */
+    footerNote: text("footer_note").notNull().default(""),
 
     /**
      * The number behind the floating WhatsApp button, digits only with the

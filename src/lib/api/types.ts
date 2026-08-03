@@ -366,6 +366,10 @@ export interface ApiStoreSettings {
     invoiceFooter: string;
     /** Digits with country code. Empty hides the floating WhatsApp button. */
     whatsapp: string;
+    /** Footer line under the shop's name. Empty means "use the built-in". */
+    tagline: string;
+    /** Free footer line under the copyright. Empty means "show nothing". */
+    footerNote: string;
     /** Empty means "use the built-in title/description". */
     seoTitle: string;
     seoDescription: string;

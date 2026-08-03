@@ -152,6 +152,10 @@ const publicSettings: RequestHandler = async (_req, res) => {
         /* The number behind the floating WhatsApp button — a link target the
            shop publishes on purpose. */
         whatsapp: settings.storeWhatsapp,
+        /* Footer copy, which is printed on every page of the shop. Empty means
+           the storefront uses its built-in line, or none at all. */
+        tagline: settings.storeTagline,
+        footerNote: settings.footerNote,
         /* Page title and description. Empty means the storefront uses its
            built-in wording, so this never blanks a tab. */
         seoTitle: settings.seoTitle,

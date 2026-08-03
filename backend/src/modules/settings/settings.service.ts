@@ -56,6 +56,10 @@ export interface SettingsDto {
     invoiceFooter: string;
     /** Digits with country code, for the floating WhatsApp button. */
     whatsapp: string;
+    /** Footer line under the shop's name. Empty means "use the built-in". */
+    tagline: string;
+    /** Free footer line under the copyright. Empty means "show nothing". */
+    footerNote: string;
     /** Empty means "use the built-in title/description". */
     seoTitle: string;
     seoDescription: string;
@@ -197,6 +201,8 @@ export function toSettingsDto(row: StoreSettingsRow): SettingsDto {
       address: row.storeAddress,
       invoiceFooter: row.invoiceFooter,
       whatsapp: row.storeWhatsapp,
+      tagline: row.storeTagline,
+      footerNote: row.footerNote,
       seoTitle: row.seoTitle,
       seoDescription: row.seoDescription,
       logoUrl: row.storeLogoKey ? getStorage().url(row.storeLogoKey) : null,
@@ -306,6 +312,8 @@ export interface UpdateSettingsInput {
     address?: string;
     invoiceFooter?: string;
     whatsapp?: string;
+    tagline?: string;
+    footerNote?: string;
     seoTitle?: string;
     seoDescription?: string;
   };
@@ -379,6 +387,8 @@ export async function updateSettings(input: UpdateSettingsInput): Promise<Settin
        works whichever way they wrote it. */
     patch.storeWhatsapp = input.store.whatsapp.replace(/\D/g, "");
   }
+  if (input.store?.tagline !== undefined) patch.storeTagline = input.store.tagline;
+  if (input.store?.footerNote !== undefined) patch.footerNote = input.store.footerNote;
   if (input.store?.seoTitle !== undefined) patch.seoTitle = input.store.seoTitle;
   if (input.store?.seoDescription !== undefined) {
     patch.seoDescription = input.store.seoDescription;

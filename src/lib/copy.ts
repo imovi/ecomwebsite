@@ -16,7 +16,7 @@ export const copy = {
      * the API cannot be reached at render time, so it should stay in step with
      * the configured name rather than being the source of it.
      */
-    name: "Next Gadget",
+    name: "HABU SHOP",
     tagline: "Gadgets, delivered.",
   },
 
@@ -181,7 +181,7 @@ export const copy = {
   footer: {
     help: "Help",
     about: "About",
-    /* Takes the shop name so a renamed store is not still crediting "gng". */
+    /* Takes the shop name so a renamed store is not still crediting the old one. */
     rights: (year: number, shopName: string) =>
       `© ${year} ${shopName}. All rights reserved.`,
   },

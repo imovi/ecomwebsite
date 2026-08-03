@@ -13,7 +13,9 @@ import { copy } from "@/lib/copy";
  * the one page an attacker can reach at will.
  */
 export const metadata: Metadata = {
-  title: `Sign in · ${copy.brand.name} admin`,
+  /* The shop's name is not repeated here — the root layout's title template
+     already appends it, and spelling it out gave the tab the name twice. */
+  title: "Sign in · Admin",
   robots: { index: false, follow: false },
 };
 

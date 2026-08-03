@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { copy } from "@/lib/copy";
+import { useAutoAdvance } from "@/lib/hooks/use-auto-advance";
 
 /**
  * Swipeable product gallery.
@@ -11,7 +12,14 @@ import { copy } from "@/lib/copy";
  * Built on native CSS scroll-snap rather than a carousel library: it gets
  * real momentum scrolling on iOS, works before hydration, costs zero KB of
  * JavaScript for the scrolling itself, and degrades to a plain scroller if JS
- * fails. The only JS here is index tracking and the variant-change jump.
+ * fails. The only JS here is index tracking, the variant-change jump, and the
+ * auto-advance timer.
+ *
+ * The photos turn by themselves so the back, the ports and what is in the box
+ * are seen by a shopper who never thinks to swipe — on a phone the extra
+ * frames are otherwise invisible. It stops the moment they take over, and a
+ * variant change is not taking over: that jump is the page answering a choice
+ * they made elsewhere, so the rail keeps running afterwards.
  */
 
 interface GalleryProps {
@@ -36,12 +44,22 @@ export function Gallery({ images, title, activeIndex }: GalleryProps) {
     setTimeout(() => (jumpingRef.current = false), 400);
   }, []);
 
+  const { surrender, noteScroll, railHandlers } = useAutoAdvance({
+    railRef,
+    count: images.length,
+    goTo: scrollToIndex,
+  });
+
   const onScroll = useCallback(() => {
     const rail = railRef.current;
-    if (!rail || jumpingRef.current || rail.clientWidth === 0) return;
+    if (!rail || rail.clientWidth === 0) return;
+    /* Before the programmatic-jump guard, so a swipe that settles back on the
+       same photo still counts as the shopper taking over. */
+    noteScroll();
+    if (jumpingRef.current) return;
     const next = Math.round(rail.scrollLeft / rail.clientWidth);
     setIndex((prev) => (prev === next ? prev : next));
-  }, []);
+  }, [noteScroll]);
 
   useEffect(() => {
     if (activeIndex == null) return;
@@ -61,7 +79,12 @@ export function Gallery({ images, title, activeIndex }: GalleryProps) {
             <button
               key={src}
               type="button"
-              onClick={() => scrollToIndex(i)}
+              onClick={() => {
+                /* Picking a photo is the shopper driving; the rail stops
+                   moving under them from here on. */
+                surrender();
+                scrollToIndex(i);
+              }}
               aria-label={copy.product.imageOf(i + 1, images.length)}
               aria-current={i === index}
               className={cn(
@@ -85,6 +108,7 @@ export function Gallery({ images, title, activeIndex }: GalleryProps) {
         <div
           ref={railRef}
           onScroll={onScroll}
+          {...railHandlers}
           className="snap-rail aspect-square w-full rounded-md bg-surface md:rounded-lg"
           role="group"
           aria-roledescription="carousel"
@@ -145,7 +169,10 @@ export function Gallery({ images, title, activeIndex }: GalleryProps) {
             <button
               key={src}
               type="button"
-              onClick={() => scrollToIndex(i)}
+              onClick={() => {
+                surrender();
+                scrollToIndex(i);
+              }}
               aria-label={copy.product.imageOf(i + 1, images.length)}
               aria-current={i === index}
               className={cn(

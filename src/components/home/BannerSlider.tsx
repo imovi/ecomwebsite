@@ -2,9 +2,10 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { Banner } from "@/types";
 import { cn } from "@/lib/utils";
+import { useAutoAdvance } from "@/lib/hooks/use-auto-advance";
 
 /**
  * Banner slider.
@@ -14,8 +15,10 @@ import { cn } from "@/lib/utils";
  *
  *  - Slide 1 is preloaded and eagerly decoded; it is the LCP element on the
  *    homepage. Slides 2 and 3 lazy-load and cost nothing until swiped to.
- *  - Auto-advance is slow (6s) and stops permanently the moment the customer
- *    swipes — fighting a user's scroll is the worst carousel failure mode.
+ *  - Auto-advance is unhurried and stops permanently the moment the customer
+ *    swipes the rail — fighting a user's scroll is the worst carousel failure
+ *    mode. Scrolling the PAGE is not swiping the rail, which is the distinction
+ *    the first version got wrong; see `useAutoAdvance`.
  *  - It pauses when the tab is hidden and never runs under
  *    `prefers-reduced-motion`.
  *  - Separate mobile and desktop crops, so phones never download a 1600px
@@ -51,7 +54,6 @@ export function BannerSlider({ banners }: { banners: Banner[] }) {
   );
   const desktopRatio = ratio(first?.width, first?.height);
   const [index, setIndex] = useState(0);
-  const [autoPlay, setAutoPlay] = useState(true);
   const jumpingRef = useRef(false);
 
   const goTo = useCallback((i: number) => {
@@ -63,40 +65,28 @@ export function BannerSlider({ banners }: { banners: Banner[] }) {
     setTimeout(() => (jumpingRef.current = false), 500);
   }, []);
 
+  const { surrender, noteScroll, railHandlers } = useAutoAdvance({
+    railRef,
+    count: banners.length,
+    goTo,
+  });
+
   const onScroll = useCallback(() => {
     const rail = railRef.current;
-    if (!rail || jumpingRef.current || rail.clientWidth === 0) return;
+    if (!rail || rail.clientWidth === 0) return;
+    /* Asked before the programmatic-jump guard below returns, so a swipe that
+       settles back on the slide it started from still counts. */
+    noteScroll();
+    if (jumpingRef.current) return;
     setIndex(Math.round(rail.scrollLeft / rail.clientWidth));
-  }, []);
-
-  useEffect(() => {
-    if (!autoPlay || banners.length < 2) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-
-    const timer = setInterval(() => {
-      if (document.hidden) return;
-      const rail = railRef.current;
-      if (!rail) return;
-      const next = (Math.round(rail.scrollLeft / rail.clientWidth) + 1) % banners.length;
-      goTo(next);
-    }, 6000);
-
-    return () => clearInterval(timer);
-  }, [autoPlay, banners.length, goTo]);
-
-  /** Any touch or wheel input hands control to the customer for good. */
-  const surrender = () => setAutoPlay(false);
+  }, [noteScroll]);
 
   return (
-    <div
-      className="relative"
-      onTouchStart={surrender}
-      onMouseDown={surrender}
-      onWheel={surrender}
-    >
+    <div className="relative">
       <div
         ref={railRef}
         onScroll={onScroll}
+        {...railHandlers}
         /* Both ratios are published as custom properties so the breakpoint can
            be expressed in CSS. An inline `aspectRatio` cannot vary by media
            query, and phones and desktop use differently-shaped crops. */

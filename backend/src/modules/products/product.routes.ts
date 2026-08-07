@@ -1,5 +1,9 @@
-import { Router } from "express";
+import { Router, type RequestHandler } from "express";
+import { rateLimit } from "express-rate-limit";
+import { config } from "../../config/index.js";
+import { TooManyRequestsError } from "../../core/errors.js";
 import { authenticate, requireRole } from "../../middleware/authenticate.js";
+import { customerKey } from "../../middleware/rate-limit.js";
 import { uploadImages } from "../../middleware/upload.js";
 import { validate } from "../../middleware/validate.js";
 import * as controller from "./product.controller.js";
@@ -42,6 +46,35 @@ import {
 
 export const productPublicRouter: Router = Router();
 
+/**
+ * The one public read that no cache stands in front of.
+ *
+ * Every other listing here is served to the storefront through an ISR window,
+ * so a burst of identical requests costs one query. Search deliberately is not
+ * — a shopper looking for something that just sold out has to see that — which
+ * means every distinct `?q=` reaches the database, and the storefront's own
+ * calls are exempt from the global limit because they arrive from the private
+ * network as infrastructure. Between those two facts, walking random query
+ * strings was an unbounded way to make this shop run full-text searches until
+ * it fell over, from one machine, with no login.
+ *
+ * Keyed by the SHOPPER, like the quote and the checkout: keyed on the
+ * connection it would be one allowance for the whole shop, and the first script
+ * to spend it would take search away from every real customer. The quote budget
+ * is reused because the shape of the traffic is the same — a person typing,
+ * repeatedly, on one page.
+ */
+const searchRateLimit: RequestHandler = rateLimit({
+  windowMs: config.rateLimit.checkout.windowMs,
+  limit: config.rateLimit.checkout.quoteMax,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  keyGenerator: (req) => `search:${customerKey(req)}`,
+  handler: (_req, _res, next) => {
+    next(new TooManyRequestsError(Math.ceil(config.rateLimit.checkout.windowMs / 1000)));
+  },
+});
+
 productPublicRouter.get(
   "/",
   validate({ query: listProductsQuerySchema }),
@@ -50,6 +83,7 @@ productPublicRouter.get(
 
 productPublicRouter.get(
   "/search",
+  searchRateLimit,
   validate({ query: searchQuerySchema }),
   controller.search,
 );

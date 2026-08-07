@@ -3,6 +3,7 @@
 import { randomUUID } from "node:crypto";
 import { headers } from "next/headers";
 import { ApiError, ApiUnavailableError, apiRequest } from "@/lib/api/client";
+import { forwardClientHints } from "@/lib/api/client-hints";
 import { PLACEHOLDER_IMAGE } from "@/lib/api/adapters";
 import type {
   ApiDeliveryZone,
@@ -134,7 +135,28 @@ export async function resolveCartAction(
 ): Promise<CartResolution> {
   if (lines.length === 0) return { lines: [], unavailable: 0, dropped: [] };
 
-  const productIds = [...new Set(lines.map((line) => line.productId))];
+  /**
+   * Hard ceiling on how much work one call may ask for.
+   *
+   * A server action is a public endpoint — the browser is not the only thing
+   * that can call it, and the argument is whatever the caller sent. Unbounded,
+   * the fan-out below turned a single HTTP request into one concurrent API call
+   * per line: a few thousand ids meant a few thousand simultaneous requests and
+   * the database queries behind them, from one request, against a single VPS.
+   * The internal-caller exemption on the API's global limiter is what made it
+   * amplify rather than throttle.
+   *
+   * Fifty is not an arbitrary safety number — it is the API's own `items` limit
+   * on both quoting and placing an order, so a cart above it could never have
+   * checked out. The excess is reported through `unavailable`, which the cart
+   * already renders as "some items could not be shown", rather than silently
+   * disappearing.
+   */
+  const MAX_LINES = 50;
+  const overflow = Math.max(0, lines.length - MAX_LINES);
+  const considered = overflow > 0 ? lines.slice(0, MAX_LINES) : lines;
+
+  const productIds = [...new Set(considered.map((line) => line.productId))];
 
   /* Three outcomes per product, and the difference matters: `gone` means the API
      answered 404, `unreachable` means it did not answer at all. Collapsing them
@@ -164,9 +186,12 @@ export async function resolveCartAction(
 
   const resolved: ResolvedCartLine[] = [];
   const dropped: CartLineInput[] = [];
-  let unavailable = 0;
+  /* Lines past the ceiling were never looked up, so they are unshowable for the
+     same reason a failed lookup is — and deliberately NOT `dropped`, since
+     nothing has confirmed they are gone and dropping prunes the real cart. */
+  let unavailable = overflow;
 
-  for (const line of lines) {
+  for (const line of considered) {
     const product = byId.get(line.productId);
 
     /* A product that has been unpublished or deleted is dropped rather than
@@ -333,6 +358,14 @@ export async function recordIncompleteCheckoutAction(input: {
         ...(input.deliveryZone ? { deliveryZone: input.deliveryZone } : {}),
         items: toApiItems(input.lines),
       },
+      /* The shopper's address, for the same reason the quote sends it: without
+         it this arrives from the storefront container like every other call, and
+         the limiter on the far side is one allowance for the entire shop rather
+         than one per visitor. The form saves on a debounce while a customer
+         types, so a few dozen checkouts an hour was enough to exhaust it — and
+         because the failure is swallowed below, the call list would simply stop
+         filling with nobody the wiser. */
+      headers: forwardClientHints(await headers()),
     });
   } catch {
     /* Deliberately swallowed — see above. */
@@ -423,36 +456,9 @@ export async function placeOrderAction(input: CheckoutInput): Promise<CheckoutRe
   }
 }
 
-/** The shopper's IP and user agent, for the API's audit trail and for Meta. */
-function forwardClientHints(requestHeaders: Headers): Record<string, string> {
-  const forwarded: Record<string, string> = {};
-
-  const ip =
-    requestHeaders.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    requestHeaders.get("x-real-ip") ??
-    undefined;
-
-  if (ip) {
-    forwarded["x-forwarded-for"] = ip;
-    /**
-     * The same address again, under a name only this pair of services uses.
-     *
-     * The API's public rate limiters key on this. They cannot key on the
-     * connection, because every shopper reaches the API through this server
-     * and would share one bucket; and keying on `x-forwarded-for` alone would
-     * make the limit depend on `TRUST_PROXY_HOPS` being right, which is a
-     * setting that fails silently and turns a per-visitor limit into a
-     * shop-wide one. The API honours this header only from a caller on the
-     * private network.
-     */
-    forwarded["x-customer-ip"] = ip;
-  }
-
-  const userAgent = requestHeaders.get("user-agent");
-  if (userAgent) forwarded["user-agent"] = userAgent;
-
-  return forwarded;
-}
+/* `forwardClientHints` lives in `lib/api/client-hints` — the catalogue search
+   needs it too, and a second copy of address parsing this security-sensitive is
+   a copy that eventually disagrees with the first. */
 
 /* -------------------------------------------------------------------------- */
 /* Track order                                                                */
@@ -480,7 +486,17 @@ export async function trackOrderAction(
   try {
     const data = await apiRequest<{ order: ApiOrderTracking }>(
       "/api/v1/storefront/track-order",
-      { method: "POST", body: { orderNumber: orderNumber.trim(), phone: phone.trim() } },
+      {
+        method: "POST",
+        body: { orderNumber: orderNumber.trim(), phone: phone.trim() },
+        /* Per-visitor, not per-shop. This endpoint is deliberately the tightest
+           limit in the API — thirty in fifteen minutes, because it is a lookup
+           against a guessable order number — and without the shopper's address
+           every customer in the country shares that one allowance. Thirty
+           people checking their parcel in a quarter of an hour is an ordinary
+           afternoon, and the thirty-first was told to slow down. */
+        headers: forwardClientHints(await headers()),
+      },
     );
     return { ok: true, order: data.order };
   } catch (error) {

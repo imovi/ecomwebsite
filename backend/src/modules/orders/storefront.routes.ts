@@ -1,7 +1,8 @@
 import { Router, type RequestHandler } from "express";
 import { z } from "zod";
-import { ipKeyGenerator, rateLimit } from "express-rate-limit";
+import { rateLimit } from "express-rate-limit";
 import { config } from "../../config/index.js";
+import { customerKey } from "../../middleware/rate-limit.js";
 import { validate, validated } from "../../middleware/validate.js";
 import { sendSuccess } from "../../core/response.js";
 import { NotFoundError, TooManyRequestsError } from "../../core/errors.js";
@@ -37,15 +38,27 @@ import { bdPhoneSchema } from "./order.validation.js";
  *     match, so the endpoint cannot be used to confirm that an order exists.
  */
 
-/* Deliberately tighter than checkout: this endpoint is a lookup against a
-   guessable identifier, so the budget assumes a human checking their order a
-   handful of times, not a script walking the sequence. */
+/**
+ * Deliberately tighter than checkout: this endpoint is a lookup against a
+ * guessable identifier, so the budget assumes a human checking their order a
+ * handful of times, not a script walking the sequence.
+ *
+ * Keyed by the SHOPPER rather than by whoever connected. Nothing on the
+ * storefront reaches this API directly — a customer tracking a parcel posts to
+ * the Next.js server, which calls us over the Docker network — so `req.ip` is
+ * the storefront container for every customer alive. Keyed on that, thirty in
+ * fifteen minutes is not a per-visitor limit at all but a ceiling for the whole
+ * shop, and on any ordinary afternoon the thirty-first customer to check their
+ * order is told to slow down for something the thirty before them did. See
+ * `customerKey`, which honours the forwarded address only from a caller on the
+ * private network.
+ */
 const trackRateLimit: RequestHandler = rateLimit({
   windowMs: config.rateLimit.checkout.windowMs,
   limit: 30,
   standardHeaders: "draft-8",
   legacyHeaders: false,
-  keyGenerator: (req) => `track:${ipKeyGenerator(req.ip ?? "unknown")}`,
+  keyGenerator: (req) => `track:${customerKey(req)}`,
   handler: (_req, _res, next) => {
     next(new TooManyRequestsError(Math.ceil(config.rateLimit.checkout.windowMs / 1000)));
   },

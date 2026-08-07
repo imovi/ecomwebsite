@@ -1,8 +1,9 @@
 import { Router, type RequestHandler } from "express";
-import { ipKeyGenerator, rateLimit } from "express-rate-limit";
+import { rateLimit } from "express-rate-limit";
 import { z } from "zod";
 import { config } from "../../config/index.js";
 import { authenticate, requireRole } from "../../middleware/authenticate.js";
+import { customerKey } from "../../middleware/rate-limit.js";
 import { validate, validated } from "../../middleware/validate.js";
 import { sendNoContent, sendSuccess } from "../../core/response.js";
 import { TooManyRequestsError } from "../../core/errors.js";
@@ -37,13 +38,20 @@ export const abandonedAdminRouter: Router = Router();
  * The storefront saves on a debounce, so a genuine customer sends a handful of
  * these per checkout. A ceiling still matters: without one this is a free way
  * to write rows into the shop's database from anywhere.
+ *
+ * Keyed by the SHOPPER, like the quote and the checkout, and for the same
+ * reason: every one of these arrives from the storefront container, so keying
+ * on the connection makes one allowance for the entire shop. A debounced save
+ * per customer meant a few dozen checkouts spent it, and the failure is silent
+ * by design on the caller's side — so the shop's call list would simply stop
+ * filling and nothing anywhere would say why.
  */
 const recordRateLimit: RequestHandler = rateLimit({
   windowMs: config.rateLimit.checkout.windowMs,
   limit: config.rateLimit.checkout.quoteMax,
   standardHeaders: "draft-8",
   legacyHeaders: false,
-  keyGenerator: (req) => `abandoned:${ipKeyGenerator(req.ip ?? "unknown")}`,
+  keyGenerator: (req) => `abandoned:${customerKey(req)}`,
   handler: (_req, _res, next) => {
     next(new TooManyRequestsError(Math.ceil(config.rateLimit.checkout.windowMs / 1000)));
   },

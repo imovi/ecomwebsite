@@ -1,6 +1,8 @@
 import "server-only";
 
+import { headers } from "next/headers";
 import { apiRequestOptional, apiRequestSafe, query } from "@/lib/api/client";
+import { forwardClientHints } from "@/lib/api/client-hints";
 import { toBanner, toCategory, toProduct, toProductFromListItem } from "@/lib/api/adapters";
 import type {
   ApiBanner,
@@ -172,11 +174,20 @@ export async function searchProducts(searchQuery: string): Promise<Product[]> {
   if (trimmed.length < 2) return [];
 
   /* Search results must never be served stale — a shopper searching for
-     something that just sold out should see that. */
+     something that just sold out should see that.
+
+     That freshness is also what makes this the cheapest way to make the shop do
+     work: every distinct `?q=` is a full-text query that no cache absorbs, and
+     the API exempts this server from its global limit precisely because it is
+     infrastructure. So the shopper's own address travels with the request and
+     the API bounds it per visitor — see the limiter on `/products/search`.
+     Without the address that limit would be one allowance for the whole shop,
+     which is worse than none: the first script to find it takes search away
+     from every real customer. */
   const data = await apiRequestSafe<ApiProductListItem[]>(
     `/api/v1/products/search${query({ q: trimmed, perPage: 50 })}`,
     [],
-    { revalidate: 0 },
+    { revalidate: 0, headers: forwardClientHints(await headers()) },
   );
 
   return data.map(toProductFromListItem);

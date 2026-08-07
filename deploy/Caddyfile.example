@@ -12,7 +12,25 @@
 
 gng.com.bd {
 	# The storefront and the admin panel. Everything a browser talks to.
-	reverse_proxy 127.0.0.1:3000
+	reverse_proxy 127.0.0.1:3000 {
+		# OVERWRITE the forwarded chain, never append to it.
+		#
+		# By default a proxy appends the address it saw to whatever the client
+		# sent, so `X-Forwarded-For: 9.9.9.9` from a browser arrives upstream as
+		# `9.9.9.9, <real address>` — and anything reading the FIRST entry is
+		# reading a value the client wrote. The storefront forwards that address
+		# to the API, which keys its per-shopper rate limits on it, so a forged
+		# entry there means no limit at all: on a cash-on-delivery store, order
+		# spam that reserves real stock.
+		#
+		# Replacing the header leaves exactly one entry, and it is one this proxy
+		# observed on a connection it terminated. The storefront reads the last
+		# entry as well, so either half of this holds the line on its own.
+		#
+		# Behind Cloudflare or another proxy, take its trusted header instead:
+		#   header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
+		header_up X-Forwarded-For {http.request.remote.host}
+	}
 
 	encode gzip zstd
 
@@ -50,7 +68,13 @@ api.gng.com.bd {
 	# it out and delivery updates fall back to the ten-minute poll — slower, but
 	# nothing breaks.
 	handle /api/v1/webhooks/* {
-		reverse_proxy 127.0.0.1:4000
+		reverse_proxy 127.0.0.1:4000 {
+			# Same reason as the storefront block above. This endpoint is guarded
+			# by a bearer secret and rate limited on failures, and both defences
+			# key on the caller's address — a forgeable one would let an
+			# anonymous caller guess at the secret without ever being throttled.
+			header_up X-Forwarded-For {http.request.remote.host}
+		}
 
 		header {
 			# Never cached and never indexed: this is an inbound machine endpoint.

@@ -45,10 +45,13 @@ export function SearchEntry({ categories }: { categories: Category[] }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="hidden h-10 w-64 items-center gap-2.5 rounded-full bg-surface px-4 text-caption text-muted transition-colors hover:bg-line sm:flex lg:w-80"
+        /* `max-w-full` so it gives way rather than pushing: it lives in one
+           column of the header grid, and a pill wider than its share would
+           move the centred logo off centre. */
+        className="hidden h-10 w-64 max-w-full items-center gap-2.5 rounded-full bg-surface px-4 text-caption text-muted transition-colors hover:bg-line sm:flex lg:w-80"
       >
-        <Icon name="search" size={17} />
-        <span>{copy.nav.searchPlaceholder}</span>
+        <Icon name="search" size={17} className="shrink-0" />
+        <span className="truncate">{copy.nav.searchPlaceholder}</span>
       </button>
 
       <Sheet open={open} onClose={() => setOpen(false)} title={copy.search.title}>

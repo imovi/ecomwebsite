@@ -10,7 +10,14 @@ import { CartButton } from "./CartButton";
 import { SearchEntry } from "./SearchEntry";
 
 /**
- * A single sticky row: logo, search, cart. Nothing else.
+ * A single sticky row: search, logo, cart. Nothing else.
+ *
+ * The logo sits in the middle, between search on the left and the cart on the
+ * right. Laid out as three columns with both outer ones at `1fr` — equal
+ * shares of whatever is left — so the middle column is centred on the page
+ * rather than on the gap between two groups of different widths, which is what
+ * a flex row would have given and would have drifted every time the cart
+ * badge appeared.
  *
  * The announcement strip above it is the one concession — "Cash on delivery"
  * is the objection most first-time BD buyers have, and answering it before
@@ -33,11 +40,18 @@ export async function Header() {
       </div>
 
       <Container>
-        <div className="flex h-14 items-center gap-3 border-b border-line">
+        <div className="grid h-14 grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-line">
+          {/* Left: search. `min-w-0` so the pill shrinks into its share of the
+              row instead of widening the column and shoving the logo off
+              centre on a narrow tablet. */}
+          <div className="flex min-w-0 items-center justify-start">
+            <SearchEntry categories={categories} />
+          </div>
+
           <Link
             href="/"
             className={cn(
-              "flex shrink-0 items-center",
+              "flex shrink-0 items-center justify-center",
               /* With no logo the link would collapse to zero width and the
                  header would lose its route home entirely. A small invisible
                  target keeps the top-left corner clickable — which is where
@@ -64,7 +78,7 @@ export async function Header() {
                 height={settings.logoHeight ?? 36}
                 preload
                 unoptimized
-                className="h-auto max-h-10 w-auto max-w-[180px] object-contain object-left"
+                className="h-auto max-h-10 w-auto max-w-[140px] object-contain object-center sm:max-w-[180px]"
               />
             ) : (
               /* No logo means NO logo. This used to fall back to the shop name
@@ -79,17 +93,14 @@ export async function Header() {
             )}
           </Link>
 
-          <div className="flex flex-1 items-center justify-end gap-1 sm:justify-between sm:pl-6">
-            <SearchEntry categories={categories} />
-            <div className="flex items-center gap-1">
-              <Link
-                href="/track"
-                className="hidden rounded-full px-3 py-2 text-caption font-medium text-muted transition-colors hover:bg-surface hover:text-ink md:block"
-              >
-                {copy.nav.trackOrder}
-              </Link>
-              <CartButton />
-            </div>
+          <div className="flex min-w-0 items-center justify-end gap-1">
+            <Link
+              href="/track"
+              className="hidden shrink-0 rounded-full px-3 py-2 text-caption font-medium text-muted transition-colors hover:bg-surface hover:text-ink md:block"
+            >
+              {copy.nav.trackOrder}
+            </Link>
+            <CartButton />
           </div>
         </div>
       </Container>

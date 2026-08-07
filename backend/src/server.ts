@@ -8,6 +8,10 @@ import { registerMetaTracking } from "./modules/marketing/meta.subscriber.js";
 import { registerOrderIntegrations } from "./modules/integrations/integrations.subscriber.js";
 import { startCourierSync, stopCourierSync } from "./modules/courier/courier.sync.js";
 import {
+  startMetricsScheduler,
+  stopMetricsScheduler,
+} from "./modules/products/metrics.scheduler.js";
+import {
   startTelegramScheduler,
   stopTelegramScheduler,
 } from "./modules/integrations/telegram.scheduler.js";
@@ -41,6 +45,10 @@ async function start(): Promise<void> {
   /* Late alerts for abandoned checkouts, and the daily summary. Same unref'd
      timer discipline as the courier sync. */
   startTelegramScheduler();
+
+  /* Refreshes the trending ranking. Without it the score keeps its column
+     default of zero and the homepage rail is "newest" wearing another name. */
+  startMetricsScheduler();
 
   /* Said on every boot, not once at setup. An insecure-cookie deployment is
      meant to be a short bridge until a domain and a certificate exist, and the
@@ -92,6 +100,7 @@ async function shutdown(signal: string): Promise<void> {
      a connection that is being torn down. */
   stopCourierSync();
   stopTelegramScheduler();
+  stopMetricsScheduler();
 
   const forceExit = setTimeout(() => {
     logger.error("Graceful shutdown timed out — forcing exit");

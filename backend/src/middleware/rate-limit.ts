@@ -53,15 +53,69 @@ const shared = {
   keyGenerator,
 } satisfies Partial<Options>;
 
+/** Loopback, RFC1918 and IPv6 unique-local, including IPv4-mapped forms. */
+function isPrivateAddress(address: string): boolean {
+  const ip = address.startsWith("::ffff:") ? address.slice(7) : address;
+  if (ip === "::1" || ip === "localhost") return true;
+  if (/^f[cd][0-9a-f]{2}:/i.test(ip)) return true;
+  if (/^127\./.test(ip)) return true;
+  if (/^10\./.test(ip)) return true;
+  if (/^192\.168\./.test(ip)) return true;
+  return /^172\.(1[6-9]|2[0-9]|3[01])\./.test(ip);
+}
+
+/**
+ * The storefront's own server-side calls, which must not be counted.
+ *
+ * Public traffic arrives through the reverse proxy, which stamps
+ * `X-Forwarded-For`, so each visitor gets their own bucket. The Next.js
+ * container talks to this API directly over the Docker network: no proxy, no
+ * header, and one client address for the whole shop. Counted, that means every
+ * server-rendered page — category listings, search, the checkout quote, placing
+ * an order — draws down a single bucket. One busy minute empties it and the
+ * entire storefront starts answering 429 at once, for everybody, with checkout
+ * included. The limit meant to survive a traffic spike is what fails first.
+ *
+ * It is infrastructure rather than a client. The limiter exists to bound
+ * untrusted callers, and this one is neither untrusted nor reachable from
+ * outside — the API port is published on loopback only.
+ *
+ * Both conditions are required. The missing header alone would be enough today,
+ * but if the proxy in front is ever swapped for one that forgets to set it,
+ * that single condition would silently exempt the whole internet.
+ */
+function isInternalCaller(req: Request): boolean {
+  if (req.headers["x-forwarded-for"] !== undefined) return false;
+  return isPrivateAddress(req.socket.remoteAddress ?? "");
+}
+
 /** Applied to the whole API. */
 export const globalRateLimit: RequestHandler = rateLimit({
   ...shared,
   windowMs: config.rateLimit.global.windowMs,
   limit: config.rateLimit.global.max,
   handler: rejectWithAppError(config.rateLimit.global.windowMs),
-  /* Health probes must never be throttled — a limited probe reads as an
-     outage and can take a healthy instance out of rotation. */
-  skip: (req) => req.path.startsWith("/health"),
+  /**
+   * Two exemptions, both for the same reason: neither is an API call, and
+   * counting them against an API budget breaks the thing it was meant to
+   * protect.
+   *
+   * `/health` — a throttled probe reads as an outage and can take a healthy
+   * instance out of rotation.
+   *
+   * `/uploads` — static image files. One product page fetches the same photo at
+   * eight widths, so a handful of page views can spend a budget sized for API
+   * calls. When it runs out the storefront's image optimiser starts receiving
+   * 429 and EVERY picture on the shop disappears, while the HTML keeps
+   * rendering perfectly — which looks like the catalogue emptied itself rather
+   * than like a rate limit. Serving a file off disk is cheap; it does not need
+   * this defence, and the reverse proxy is the right place to bound it if it
+   * ever does.
+   */
+  skip: (req) =>
+    req.path.startsWith("/health") ||
+    req.path.startsWith("/uploads") ||
+    isInternalCaller(req),
 });
 
 /**

@@ -56,6 +56,26 @@ function isBodyParserError(
 }
 
 /**
+ * An error from `http-errors` — which is what `express.static` rejects with
+ * once `fallthrough` is off.
+ *
+ * These carry their intended status on the error itself and are otherwise plain
+ * `Error`s, so without this branch they fall through to `toAppError` and every
+ * one is answered as a 500. A request for a photo that is not on disk then
+ * reports "internal server error" instead of "not found", which is wrong twice
+ * over: it reads as an outage in the logs, and a 500 is not cacheable, so the
+ * same missing file is re-fetched from the API on every single page view.
+ */
+function isHttpError(
+  error: unknown,
+): error is Error & { status?: number; statusCode?: number } {
+  if (!(error instanceof Error)) return false;
+  const candidate = error as { status?: unknown; statusCode?: unknown };
+  const status = typeof candidate.status === "number" ? candidate.status : candidate.statusCode;
+  return typeof status === "number" && status >= 400 && status < 500;
+}
+
+/**
  * Maps a raw throw onto an AppError.
  *
  * Nothing in here leaks database internals: a unique violation becomes a
@@ -131,6 +151,24 @@ function normalise(error: unknown): AppError {
       default:
         break;
     }
+  }
+
+  /* Last, so anything with a more specific shape above still wins.
+
+     Only the two outcomes `express.static` actually produces are distinguished
+     — the file is not there, or the path was unusable. Anything else in the 4xx
+     range is reported as a bad request rather than being passed through
+     verbatim, which keeps this from becoming a way for a library's own status
+     codes to reach the client unreviewed.
+
+     The message is dropped rather than forwarded: `send` puts the absolute path
+     of the file it looked for into the ENOENT message, and this branch marks the
+     error operational — which is exactly what makes a message visible to the
+     client in production. */
+  if (isHttpError(error)) {
+    const status = typeof error.status === "number" ? error.status : error.statusCode;
+    if (status === HttpStatus.NOT_FOUND) return new NotFoundError();
+    return new BadRequestError("The request could not be handled.");
   }
 
   return toAppError(error);

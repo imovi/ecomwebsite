@@ -71,6 +71,16 @@ COPY --from=build /app/.next/standalone ./
 COPY --from=build /app/.next/static ./.next/static
 COPY --from=build /app/public ./public
 
+# The image cache, created before dropping privileges.
+#
+# Those COPY layers land as root, so `.next` is root-owned and the `node` user
+# cannot create anything inside it. Next.js writes optimised images to
+# `.next/cache`; without it every request re-optimises from scratch and re-fetches
+# the source, which on this deployment exhausted the API's rate limit and made
+# every image on the shop fail — while the HTML kept rendering, so it read as an
+# empty catalogue rather than as a permissions error.
+RUN mkdir -p .next/cache && chown -R node:node .next
+
 USER node
 
 EXPOSE 3000

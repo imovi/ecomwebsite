@@ -65,6 +65,11 @@ services:
       # .env.deploy.example.
       NO_REVERSE_PROXY: ${NO_REVERSE_PROXY:-false}
 
+      # Tunable without editing the compose file. Static `/uploads` is exempt
+      # from this limit in the API, so it is a budget for real API calls.
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-300}
+      RATE_LIMIT_WINDOW_MINUTES: ${RATE_LIMIT_WINDOW_MINUTES:-15}
+
       LOG_LEVEL: ${LOG_LEVEL:-info}
       LOG_PRETTY: "false"
 

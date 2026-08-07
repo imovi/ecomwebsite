@@ -12,6 +12,12 @@ import { Card, CardHeader, ErrorBanner, PageBody } from "./ui";
 import { ProductImages } from "./ProductImages";
 import { ProductImageStaging, type StagedImage } from "./ProductImageStaging";
 import { ProductVariants } from "./ProductVariants";
+import {
+  buildVariantPayload,
+  EMPTY_VARIANT_DRAFT,
+  ProductVariantStaging,
+  type VariantDraft,
+} from "./ProductVariantStaging";
 import { Input, Select, Textarea } from "@/components/ui/Field";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
@@ -153,6 +159,10 @@ export function ProductForm({ productId }: { productId?: string }) {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   /* Create mode only: photos picked before the product row exists. */
   const [staged, setStaged] = useState<StagedImage[]>([]);
+  /* Create mode only: variants declared before the product row exists. Unlike
+     photos these need no second request — the create endpoint takes them
+     inline and writes the whole set in one transaction. */
+  const [variantDraft, setVariantDraft] = useState<VariantDraft>(EMPTY_VARIANT_DRAFT);
   const [uploadNote, setUploadNote] = useState<string | null>(null);
 
   /**
@@ -213,6 +223,18 @@ export function ProductForm({ productId }: { productId?: string }) {
     setFieldErrors({});
     setUploadNote(null);
 
+    /* Variants are checked before anything is sent. The API would catch all of
+       this too, but it answers with `body.variants[2].sku`, and a banner naming
+       a row the admin can count to is the difference between a fix and a
+       guess. */
+    const variantResult = isEdit ? null : buildVariantPayload(variantDraft);
+    if (variantResult && "error" in variantResult) {
+      setError(variantResult.error);
+      setSaving(false);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+
     /* Empty strings are meaningful: the API treats `null` as "clear this
        field" and would reject `""` on a nullable text column with a min
        length. Numbers go through `Number()` because every input is a string. */
@@ -257,7 +279,13 @@ export function ProductForm({ productId }: { productId?: string }) {
         setForm(fromProduct(data.product));
         toast("Product saved");
       } else {
-        const data = await adminApi.post<{ product: ApiProduct }>("admin/products", payload);
+        const data = await adminApi.post<{ product: ApiProduct }>("admin/products", {
+          ...payload,
+          /* Only on create: the update endpoint takes `variantOptions` but not
+             `variants`, which are edited one at a time once the product
+             exists. Sending an empty pair is harmless — both default to []. */
+          ...(variantResult ? variantResult.payload : {}),
+        });
         const newId = data.product.id;
 
         /* The product row now exists, so the staged photos finally have
@@ -337,6 +365,13 @@ export function ProductForm({ productId }: { productId?: string }) {
 
   const canPublish =
     isEdit && product !== null && product.images.length > 0 && form.status !== "active";
+
+  /* Once a product is split into variants the single stock box stops meaning
+     anything — the API derives the product's quantity from the sum of its
+     variants and would overwrite whatever were typed here. */
+  const stockIsPerVariant = isEdit
+    ? product !== null && product.variants.length > 0
+    : variantDraft.variants.length > 0;
 
   return (
     <AdminShell
@@ -582,9 +617,10 @@ export function ProductForm({ productId }: { productId?: string }) {
                 step={1}
                 value={form.stockQuantity}
                 onChange={(event) => set("stockQuantity", event.target.value)}
+                disabled={stockIsPerVariant}
                 hint={
-                  product && product.variants.length > 0
-                    ? "Ignored while this product has variants — each variant holds its own stock."
+                  stockIsPerVariant
+                    ? "Counted from the variants below — each one holds its own stock."
                     : undefined
                 }
                 error={fieldErrors.stockQuantity}
@@ -601,6 +637,20 @@ export function ProductForm({ productId }: { productId?: string }) {
               />
             </div>
           </Card>
+
+          {/* Variants sit against creation too, not only against a saved
+              product: an admin adding a t-shirt in five sizes should not have to
+              save, find the edit screen and start again. Once the product
+              exists the server-backed editor below takes over. */}
+          {!isEdit && (
+            <ProductVariantStaging
+              draft={variantDraft}
+              onChange={setVariantDraft}
+              productSku={form.sku}
+              productPrice={form.price}
+              disabled={saving}
+            />
+          )}
 
           <Card>
             <CardHeader title="Details" />

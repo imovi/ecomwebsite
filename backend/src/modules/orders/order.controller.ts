@@ -1,16 +1,22 @@
 import type { Request, RequestHandler } from "express";
 import { sendCreated, sendNoContent, sendPaginated, sendSuccess } from "../../core/response.js";
-import { UnauthorizedError } from "../../core/errors.js";
+import { NotFoundError, UnauthorizedError } from "../../core/errors.js";
 import { validated } from "../../middleware/validate.js";
 import { searchAreas } from "../../lib/geo/delivery-zone.js";
 import * as checkout from "./checkout.service.js";
 import * as orderService from "./order.service.js";
-import { buildInvoice, renderInvoiceHtml } from "./invoice.service.js";
+import {
+  buildInvoice,
+  buildInvoices,
+  renderInvoiceHtml,
+  renderInvoiceSheetHtml,
+} from "./invoice.service.js";
 import type { Actor } from "./order-event.repository.js";
 import type { OrderFilters } from "./order.repository.js";
 import type {
   CancelOrderInput,
   InternalNotesInput,
+  InvoiceSheetQuery,
   ListOrdersQuery,
   PlaceOrderInput,
   QuoteInput,
@@ -295,4 +301,20 @@ export const invoice: RequestHandler = async (req, res) => {
   }
 
   sendSuccess(res, { invoice: data });
+};
+
+/**
+ * GET /api/v1/admin/orders/invoices?ids=a,b,c&per=4
+ *
+ * Many invoices tiled onto A4 sheets, for packing a batch in one print run.
+ * Always HTML — the JSON form of this is the single-order endpoint called in a
+ * loop, and there is no caller that wants an array of invoice documents.
+ */
+export const invoiceSheet: RequestHandler = async (req, res) => {
+  const { query } = validated<unknown, InvoiceSheetQuery>(req);
+
+  const invoices = await buildInvoices(query.ids);
+  if (invoices.length === 0) throw new NotFoundError("None of those orders exist.");
+
+  res.type("html").send(renderInvoiceSheetHtml(invoices, query.per));
 };

@@ -35,6 +35,15 @@ const STATUS_TONE: Record<ApiOrderStatus, "neutral" | "positive" | "warn" | "sal
   returned: "saleSoft",
 };
 
+/**
+ * Densities the print sheet tiles evenly onto A4.
+ *
+ * Mirrors `SHEET_LAYOUTS` in the API's invoice service. Only counts that fill
+ * a page in whole rows are offered — anything else leaves cells of differing
+ * height and the stack cannot be cut apart in straight lines.
+ */
+const SHEET_SIZES = [1, 2, 4, 6, 9] as const;
+
 const FILTERS: { value: string; label: string }[] = [
   { value: "", label: "All" },
   { value: "pending", label: "New" },
@@ -62,6 +71,9 @@ export function OrderList() {
      status or search changes, and an index would then point at a different
      order with nothing looking wrong. */
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  /* Four to a page is the useful default: a 2×2 cell is large enough to read
+     an address off at arm's length, and it quarters the paper. */
+  const [perSheet, setPerSheet] = useState<number>(4);
 
   /* Today by default: this screen is worked through day by day, and a queue
      that opens on every order ever placed buries the ones that arrived this
@@ -217,8 +229,45 @@ export function OrderList() {
       </div>
 
       {selected.size > 0 && (
-        <div className="mb-3 flex flex-wrap items-center gap-3 rounded-sm bg-surface px-3 py-2.5">
+        <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-sm bg-surface px-3 py-2.5">
           <span className="text-caption font-medium text-ink">{selected.size} selected</span>
+
+          {/* Order numbers rather than uuids: the endpoint takes either, and
+              fifty of these fit in a query string where fifty uuids would be
+              four times the length for a URL nobody can read. Sent in the
+              order they appear on screen so the printed stack matches. */}
+          <Button
+            href={`/api/admin/admin/orders/invoices?ids=${encodeURIComponent(
+              orders
+                .filter((order) => selected.has(order.id))
+                .map((order) => order.orderNumber)
+                .join(","),
+            )}&per=${perSheet}`}
+            target="_blank"
+            rel="noopener"
+            variant="secondary"
+            size="sm"
+          >
+            <Icon name="package" size={15} />
+            Print {selected.size} invoice{selected.size === 1 ? "" : "s"}
+          </Button>
+
+          <label className="flex items-center gap-1.5 text-caption text-muted">
+            per A4 sheet
+            <select
+              value={perSheet}
+              onChange={(event) => setPerSheet(Number(event.target.value))}
+              aria-label="Invoices per A4 sheet"
+              className="h-9 rounded-sm border border-line bg-white px-2 text-caption text-ink outline-none focus:border-ink"
+            >
+              {SHEET_SIZES.map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
+          </label>
+
           <button
             type="button"
             onClick={() => setSelected(new Set())}

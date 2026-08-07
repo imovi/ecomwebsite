@@ -275,6 +275,46 @@ export const invoiceQuerySchema = z
   .object({ format: z.enum(["json", "html"]).default("json") })
   .strict();
 
+/**
+ * Bulk invoice sheet.
+ *
+ * `ids` is comma separated and holds order numbers or uuids — whichever the
+ * caller has. Capped at 200: past that the URL approaches what proxies will
+ * carry, and a browser asked to lay out that many sheets at once stops being
+ * responsive long before the printer is the problem.
+ *
+ * `per` is validated against the layouts the renderer actually tiles evenly,
+ * rather than any integer — a count that leaves a ragged last row cannot be
+ * cut apart in straight lines.
+ */
+export const invoiceSheetQuerySchema = z
+  .object({
+    ids: z
+      .string()
+      .min(1, "Select at least one order.")
+      .transform((value) =>
+        value
+          .split(",")
+          .map((part) => part.trim())
+          .filter(Boolean),
+      )
+      .pipe(
+        z
+          .array(z.string().min(1).max(160))
+          .min(1, "Select at least one order.")
+          .max(200, "Too many orders for one print run — select 200 or fewer."),
+      ),
+    per: z.coerce.number().int().refine((value) => [1, 2, 4, 6, 9].includes(value), {
+      message: "Choose 1, 2, 4, 6 or 9 invoices per sheet.",
+    }).default(4),
+    /** Suppresses the automatic print dialog; read by the page, not the API. */
+    autoprint: z.string().optional(),
+    keep: z.string().optional(),
+  })
+  .strict();
+
+export type InvoiceSheetQuery = z.infer<typeof invoiceSheetQuerySchema>;
+
 export const areaSearchQuerySchema = z
   .object({ q: z.string().trim().min(2).max(80) })
   .strict();

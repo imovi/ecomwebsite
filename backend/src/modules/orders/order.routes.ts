@@ -10,6 +10,7 @@ import {
   cancelOrderSchema,
   internalNotesSchema,
   invoiceQuerySchema,
+  invoiceSheetQuerySchema,
   listOrdersQuerySchema,
   statusCountsQuerySchema,
   orderIdParamSchema,
@@ -123,6 +124,15 @@ orderAdminRouter.get(
   "/trash",
   validate({ query: listOrdersQuerySchema }),
   controller.listTrash,
+);
+
+/* Also before `/:identifier`, for the same reason as the two above: on its own
+   "invoices" is a perfectly good order number as far as the router is
+   concerned. Plural, so it cannot collide with `/:identifier/invoice`. */
+orderAdminRouter.get(
+  "/invoices",
+  validate({ query: invoiceSheetQuerySchema }),
+  controller.invoiceSheet,
 );
 
 orderAdminRouter.get(

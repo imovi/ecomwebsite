@@ -109,13 +109,23 @@ export function Gallery({ images, title, activeIndex }: GalleryProps) {
           ref={railRef}
           onScroll={onScroll}
           {...railHandlers}
-          className="snap-rail aspect-square w-full rounded-md bg-surface md:rounded-lg"
+          /* Square, but never more than half the screen on a phone.
+             A square frame is 390px tall on a 390px-wide phone, which is fine in
+             Chrome and not fine inside Facebook's in-app browser, where the
+             address bar and the bottom bar leave roughly 640px to work with — the
+             price and the buttons end up below the fold on exactly the traffic
+             the ads send. `svh` rather than `vh` measures the viewport with those
+             bars showing, which is the state the shopper actually lands in. */
+          className="snap-rail aspect-square max-h-[50svh] w-full rounded-md bg-surface md:max-h-none md:rounded-lg"
           role="group"
           aria-roledescription="carousel"
           aria-label={copy.product.gallery}
         >
+          {/* Each frame fills the rail rather than setting its own square, so
+              the cap above actually binds — an aspect-square item would grow
+              past a capped rail and spill out of it. */}
           {images.map((src, i) => (
-            <div key={src} className="snap-item relative aspect-square w-full">
+            <div key={src} className="snap-item relative h-full w-full">
               <Image
                 src={src}
                 alt={`${title} — ${copy.product.imageOf(i + 1, images.length)}`}

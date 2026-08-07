@@ -5,7 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { adminApi, AdminApiError, qs } from "@/lib/admin/client";
 import { downloadCsv, toCsv } from "@/lib/admin/csv";
-import { formatTaka } from "@/lib/utils";
+import { cn, formatTaka } from "@/lib/utils";
 import type { ApiProductListItem } from "@/lib/api/types";
 import { AdminShell } from "./AdminShell";
 import { AsyncState, TableWrap } from "./ui";
@@ -134,8 +134,8 @@ export function ProductList() {
         </Button>
       }
     >
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <div className="flex gap-1 rounded-sm bg-white p-1 ring-1 ring-line">
+      <div className="mb-4 flex flex-col gap-2">
+        <div className="flex gap-1 self-start rounded-sm bg-white p-1 ring-1 ring-line">
           {STATUS_TABS.map((tab) => (
             <button
               key={tab.value}
@@ -143,8 +143,8 @@ export function ProductList() {
               onClick={() => setStatus(tab.value)}
               className={
                 status === tab.value
-                  ? "rounded-xs bg-ink px-3 py-1.5 text-caption font-medium text-white"
-                  : "rounded-xs px-3 py-1.5 text-caption text-ink-soft hover:bg-surface"
+                  ? "rounded-xs bg-ink px-3 py-2 text-caption font-medium text-white"
+                  : "rounded-xs px-3 py-2 text-caption text-ink-soft hover:bg-surface"
               }
             >
               {tab.label}
@@ -152,21 +152,28 @@ export function ProductList() {
           ))}
         </div>
 
-        <input
-          type="search"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search name, SKU or brand"
-          aria-label="Search products"
-          className="h-10 min-w-[200px] flex-1 rounded-sm border border-line bg-white px-3 text-caption text-ink outline-none placeholder:text-muted focus:border-ink"
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search name, SKU or brand"
+            aria-label="Search products"
+            className="h-11 min-w-[180px] flex-1 rounded-sm border border-line bg-white px-3 text-caption text-ink outline-none placeholder:text-muted focus:border-ink"
+          />
 
-        <span className="tnum text-caption text-muted">{total} total</span>
+          <span className="tnum text-caption text-muted">{total} total</span>
 
-        <Button variant="secondary" size="sm" onClick={exportCsv} disabled={products.length === 0}>
-          <Icon name="package" size={15} />
-          {selected.size > 0 ? `Export ${selected.size}` : "Export all"}
-        </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={exportCsv}
+            disabled={products.length === 0}
+          >
+            <Icon name="package" size={15} />
+            {selected.size > 0 ? `Export ${selected.size}` : "Export all"}
+          </Button>
+        </div>
       </div>
 
       {selected.size > 0 && (
@@ -195,7 +202,98 @@ export function ProductList() {
         }
         onRetry={() => void load()}
       >
-        <TableWrap>
+        {/* Cards on a phone, table from md up — the same reason as the order
+            queue: price, stock and status all sat off the right edge of a
+            table that had to scroll, and those three are the whole reason to
+            open this list. */}
+        <ul className="flex flex-col gap-2 md:hidden">
+          {products.map((product) => (
+            <li key={product.id} className="rounded-md border border-line bg-white">
+              <div className="flex items-start gap-3 p-3">
+                <input
+                  type="checkbox"
+                  checked={selected.has(product.id)}
+                  onChange={() => toggleOne(product.id)}
+                  aria-label={`Select ${product.name}`}
+                  className="mt-1 size-4 shrink-0 accent-[var(--color-ink)]"
+                />
+
+                <Link
+                  href={`/admin/products/${product.id}`}
+                  className="flex min-w-0 flex-1 items-start gap-3"
+                >
+                  <span className="relative size-14 shrink-0 overflow-hidden rounded-xs bg-surface">
+                    {product.featuredImage ? (
+                      <Image
+                        src={product.featuredImage.url}
+                        alt=""
+                        fill
+                        sizes="56px"
+                        className="object-cover"
+                      />
+                    ) : (
+                      <Icon
+                        name="package"
+                        size={20}
+                        className="absolute inset-0 m-auto text-muted"
+                      />
+                    )}
+                  </span>
+
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-caption font-medium text-ink">
+                      {product.name}
+                    </span>
+                    <span className="mt-0.5 block truncate text-micro text-muted">
+                      {product.brand ? `${product.brand} · ` : ""}
+                      {product.sku}
+                    </span>
+
+                    <span className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                      <span className="tnum text-caption font-medium text-ink">
+                        {formatTaka(product.price)}
+                        {product.discountPercent > 0 && (
+                          <span className="ml-1.5 text-micro text-sale">
+                            −{product.discountPercent}%
+                          </span>
+                        )}
+                      </span>
+
+                      <span
+                        className={cn(
+                          "tnum text-micro",
+                          product.stockQuantity === 0
+                            ? "text-sale"
+                            : product.isLowStock
+                              ? "text-warn"
+                              : "text-muted",
+                        )}
+                      >
+                        {product.stockQuantity} in stock
+                      </span>
+
+                      <Badge
+                        tone={
+                          product.status === "active"
+                            ? product.isVisible
+                              ? "positive"
+                              : "warn"
+                            : "neutral"
+                        }
+                      >
+                        {product.status === "active" && !product.isVisible
+                          ? "Hidden"
+                          : (product.status ?? "draft")}
+                      </Badge>
+                    </span>
+                  </span>
+                </Link>
+              </div>
+            </li>
+          ))}
+        </ul>
+
+        <TableWrap className="hidden md:block">
           <div className="overflow-hidden rounded-md border border-line bg-white">
             <table className="w-full border-collapse text-left">
               <thead>
@@ -209,10 +307,15 @@ export function ProductList() {
                       className="size-4 accent-[var(--color-ink)]"
                     />
                   </th>
-                  <th className="px-3 py-2.5 font-medium">Product</th>
-                  <th className="px-3 py-2.5 font-medium">Price</th>
-                  <th className="px-3 py-2.5 font-medium">Stock</th>
-                  <th className="px-3 py-2.5 font-medium">Status</th>
+                  {/* `w-full` on Product and nothing on the rest: in an auto
+                      table that hands every leftover pixel to this column and
+                      sizes the other three to their content, instead of
+                      spreading the slack across four columns and leaving the
+                      name — the one thing being read — the narrowest. */}
+                  <th className="w-full px-3 py-2.5 font-medium">Product</th>
+                  <th className="whitespace-nowrap px-3 py-2.5 font-medium">Price</th>
+                  <th className="whitespace-nowrap px-3 py-2.5 font-medium">Stock</th>
+                  <th className="whitespace-nowrap px-3 py-2.5 font-medium">Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -227,7 +330,12 @@ export function ProductList() {
                         className="size-4 accent-[var(--color-ink)]"
                       />
                     </td>
-                    <td className="px-3 py-2.5">
+                    {/* `max-w-0` against the table's `w-full`: a table cell
+                        sizes to its content, so `truncate` on the span inside
+                        did nothing and a long product name pushed Price, Stock
+                        and Status off the right edge. Zero max-width makes this
+                        the cell that gives up space instead. */}
+                    <td className="w-full max-w-0 px-3 py-2.5">
                       <Link
                         href={`/admin/products/${product.id}`}
                         className="flex items-center gap-3"

@@ -39,11 +39,16 @@ export function Overview() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  /* All time by default: the tiles are the first thing read on opening the
-     panel, and a pending order from three days ago disappearing from "Needs a
-     call" because today's window excludes it is the one failure this screen
-     must not have. */
-  const [preset, setPreset] = useState<DateRangePreset>("all");
+  /**
+   * Today by default.
+   *
+   * The panel is opened to see how the day is going, and an all-time count of
+   * delivered orders answers nothing about that. The cost is real and worth
+   * knowing: a pending order placed three days ago is outside today's window,
+   * so it is not in "Needs a call" until the range is widened. Orders itself
+   * is unfiltered and remains the queue of record.
+   */
+  const [preset, setPreset] = useState<DateRangePreset>("today");
   const [custom, setCustom] = useState<{ from: string; to: string } | null>(null);
 
   const range: DateRange = custom
@@ -159,22 +164,30 @@ export function Overview() {
               <ul className="divide-y divide-line">
                 {recent.map((order) => (
                   <li key={order.id}>
+                    {/* Two lines rather than four columns. Across a phone the
+                        single row squeezed the customer and the time into a
+                        truncated stub — the two facts that tell you whether
+                        this order still needs a call. */}
                     <Link
                       href={`/admin/orders/${order.orderNumber}`}
-                      className="flex items-center gap-3 px-4 py-3 hover:bg-surface"
+                      className="flex items-start gap-3 px-4 py-3 hover:bg-surface"
                     >
                       <div className="min-w-0 flex-1">
-                        <p className="text-caption font-semibold text-ink">{order.orderNumber}</p>
-                        <p className="truncate text-micro text-muted">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <p className="text-caption font-semibold text-ink">
+                            {order.orderNumber}
+                          </p>
+                          <Badge tone={order.status === "pending" ? "warn" : "neutral"}>
+                            {copy.orderStatus[order.status as ApiOrderStatus]}
+                          </Badge>
+                        </div>
+                        <p className="mt-1 truncate text-micro text-muted">
                           {order.customerName} · {formatDateTime(order.createdAt)}
                         </p>
                       </div>
                       <span className="tnum shrink-0 text-caption font-medium text-ink">
                         {formatTaka(order.grandTotal)}
                       </span>
-                      <Badge tone={order.status === "pending" ? "warn" : "neutral"}>
-                        {copy.orderStatus[order.status as ApiOrderStatus]}
-                      </Badge>
                     </Link>
                   </li>
                 ))}

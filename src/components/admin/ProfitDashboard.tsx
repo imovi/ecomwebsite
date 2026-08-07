@@ -267,7 +267,10 @@ function RangePicker({
 
   return (
     <div className={cn("flex flex-col gap-2", className)}>
-      <div className="-mx-4 flex gap-1.5 overflow-x-auto px-4 lg:mx-0 lg:px-0">
+      {/* Wraps rather than scrolls, same as the range chips in ui.tsx: on a
+          phone the later presets sat past the right edge of a strip that did
+          not look scrollable. */}
+      <div className="flex flex-wrap gap-1.5">
         {PRESETS.map((option) => (
           <button
             key={option.value}

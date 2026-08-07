@@ -30,16 +30,52 @@ import { Icon } from "@/components/ui/Icon";
  * All-lowercase on purpose: the API's icon field accepts `[a-z0-9-]` only, so the
  * camelCase entries in the Icon registry (`chevronLeft`) would be rejected on save
  * and are deliberately absent rather than offered and then refused.
+ *
+ * Grouped by department rather than alphabetically — someone naming a category
+ * "Ceiling fans" scans for the electrical block, not for the letter F. The
+ * groups are only an ordering; the grid wraps them into one continuous field.
  */
 const ICONS = [
+  /* Gadgets and computing */
   "mobile",
-  "headphones",
-  "watch",
+  "tablet",
   "laptop",
+  "tv",
+  "watch",
+  "headphones",
+  "earbuds",
   "speaker",
+  "microphone",
   "camera",
-  "power",
+  "drone",
   "gamepad",
+  "keyboard",
+  "mouse",
+  "printer",
+  "router",
+  "pendrive",
+  "power",
+
+  /* Lighting and electrical */
+  "bulb",
+  "lamp",
+  "torch",
+  "fan",
+  "plug",
+  "socket",
+  "switch",
+  "cable",
+  "bolt",
+
+  /* Toys */
+  "teddy",
+  "blocks",
+  "car",
+  "robot",
+  "ball",
+  "rocket",
+
+  /* Generic — for a department none of the above fits */
   "package",
   "grid",
   "cart",

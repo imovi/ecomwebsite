@@ -1,11 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { logoutAction } from "@/lib/admin/actions";
 import { cn } from "@/lib/utils";
 import { copy } from "@/lib/copy";
 import { Icon } from "@/components/ui/Icon";
+import { Sheet } from "@/components/ui/Sheet";
 
 /**
  * Admin chrome.
@@ -13,20 +15,40 @@ import { Icon } from "@/components/ui/Icon";
  * Sidebar on desktop, bottom tab bar on mobile — the store is run from a phone
  * more often than a desk, and an order queue that needs a desktop to work is an
  * order queue that gets worked late.
+ *
+ * The phone bar carries four destinations and a More button, not all ten. Ten
+ * tabs do not fit across a phone: squeezed to fit they leave ~37px each and
+ * every label truncates into nonsense, and the scrolling row that replaced them
+ * hid half the panel off the right edge of a bar that does not look scrollable.
+ * Four is what fits at a legible size, and the rest live one tap away in a
+ * sheet that shows every destination at once.
  */
 
-const NAV = [
-  { href: "/admin", label: "Overview", icon: "grid" },
-  { href: "/admin/orders", label: "Orders", icon: "package" },
-  { href: "/admin/profit", label: "Profit", icon: "cash" },
-  { href: "/admin/products", label: "Products", icon: "mobile" },
-  { href: "/admin/categories", label: "Categories", icon: "grid" },
+interface NavItem {
+  href: string;
+  label: string;
+  icon: string;
+  /** Earns a permanent slot in the phone's bottom bar. */
+  primary?: boolean;
+}
+
+/* The four primaries are the daily loop of running the shop: see what came in,
+   work the queue, fix a listing, check the margin. Everything else is set up
+   once and revisited occasionally, which is exactly what a More menu is for. */
+const NAV: NavItem[] = [
+  { href: "/admin", label: "Overview", icon: "grid", primary: true },
+  { href: "/admin/orders", label: "Orders", icon: "package", primary: true },
+  { href: "/admin/products", label: "Products", icon: "mobile", primary: true },
+  { href: "/admin/profit", label: "Profit", icon: "cash", primary: true },
+  { href: "/admin/categories", label: "Categories", icon: "blocks" },
   { href: "/admin/branding", label: "Branding", icon: "camera" },
-  { href: "/admin/marketing", label: "Marketing", icon: "alert" },
-  { href: "/admin/integrations", label: "Alerts", icon: "phone" },
-  { href: "/admin/team", label: "Team", icon: "shield" },
-  { href: "/admin/settings", label: "Settings", icon: "refresh" },
-] as const;
+  { href: "/admin/marketing", label: "Marketing", icon: "bolt" },
+  { href: "/admin/integrations", label: "Alerts", icon: "alert" },
+  { href: "/admin/team", label: "Team", icon: "users" },
+  { href: "/admin/settings", label: "Settings", icon: "settings" },
+];
+
+const PRIMARY = NAV.filter((item) => item.primary);
 
 interface AdminShellProps {
   title: string;
@@ -37,6 +59,22 @@ interface AdminShellProps {
 
 export function AdminShell({ title, action, children }: AdminShellProps) {
   const pathname = usePathname();
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  /**
+   * Close on navigation.
+   *
+   * Each page renders its own shell, but a client-side push can reuse this
+   * instance, and a sheet left open over the page the admin just asked for is
+   * the kind of thing that gets called a freeze. Adjusted during render — the
+   * pattern React documents for deriving state from props — rather than from
+   * an effect, which would render the stale sheet once before closing it.
+   */
+  const [menuPath, setMenuPath] = useState(pathname);
+  if (menuPath !== pathname) {
+    setMenuPath(pathname);
+    if (menuOpen) setMenuOpen(false);
+  }
 
   /* `/admin` must not light up for `/admin/orders`, so the root is matched
      exactly while every other entry matches its subtree. Incomplete checkouts
@@ -49,6 +87,10 @@ export function AdminShell({ title, action, children }: AdminShellProps) {
     }
     return pathname.startsWith(href);
   };
+
+  /* More stands in for wherever you actually are, so the bar never shows an
+     admin sitting on Settings with nothing lit. */
+  const inMore = NAV.some((item) => !item.primary && isActive(item.href));
 
   return (
     <div className="min-h-dvh bg-surface">
@@ -92,7 +134,7 @@ export function AdminShell({ title, action, children }: AdminShellProps) {
               type="submit"
               className="flex w-full items-center gap-2.5 rounded-sm px-3 py-2.5 text-caption text-muted transition-colors hover:bg-sale-soft hover:text-sale"
             >
-              <Icon name="power" size={17} />
+              <Icon name="signOut" size={17} />
               Sign out
             </button>
           </form>
@@ -100,32 +142,102 @@ export function AdminShell({ title, action, children }: AdminShellProps) {
       </aside>
 
       <div className="lg:pl-56">
-        <header className="sticky top-0 z-20 flex min-h-16 flex-wrap items-center gap-3 border-b border-line bg-white/95 px-5 py-3 backdrop-blur-md">
-          <h1 className="flex-1 text-title font-semibold text-ink">{title}</h1>
+        {/* `min-w-0` on the title: a long product name has to be allowed to
+            truncate, or it pushes the page action off the right of a phone. */}
+        <header className="sticky top-0 z-20 flex min-h-16 flex-wrap items-center gap-x-3 gap-y-2 border-b border-line bg-white/95 px-4 py-3 backdrop-blur-md lg:px-5">
+          <h1 className="min-w-0 flex-1 truncate text-title font-semibold text-ink">{title}</h1>
           {action}
         </header>
 
         <main className="px-4 pb-28 pt-5 lg:px-6 lg:pb-10">{children}</main>
       </div>
 
-      {/* Mobile tab bar */}
-      {/* Scrolls rather than squeezing: ten tabs divided evenly across a phone
-          leaves ~37px each, which truncates every label into nonsense. */}
-      <nav className="fixed inset-x-0 bottom-0 z-30 flex overflow-x-auto border-t border-line bg-white/95 pb-safe backdrop-blur-md lg:hidden">
-        {NAV.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={cn(
-              "flex min-w-[68px] flex-1 shrink-0 flex-col items-center gap-1 py-2.5 text-micro font-medium transition-colors",
-              isActive(item.href) ? "text-ink" : "text-muted",
-            )}
-          >
-            <Icon name={item.icon} size={20} />
-            {item.label}
-          </Link>
+      {/* Phone tab bar: four destinations and More, evenly divided. */}
+      <nav
+        aria-label="Sections"
+        className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-line bg-white/95 pb-safe backdrop-blur-md lg:hidden"
+      >
+        {PRIMARY.map((item) => (
+          <TabLink key={item.href} item={item} active={isActive(item.href)} />
         ))}
+
+        <button
+          type="button"
+          onClick={() => setMenuOpen(true)}
+          aria-haspopup="dialog"
+          aria-expanded={menuOpen}
+          className={cn(
+            "flex min-h-14 flex-col items-center justify-center gap-1 text-micro font-medium transition-colors",
+            inMore ? "text-ink" : "text-muted",
+          )}
+        >
+          <Icon name="dots" size={20} />
+          More
+        </button>
       </nav>
+
+      <Sheet open={menuOpen} onClose={() => setMenuOpen(false)} title="All sections">
+        {/* Three across: every destination is on one screen with no scrolling,
+            and each tile keeps a thumb-sized target. */}
+        <div className="grid grid-cols-3 gap-2 px-gutter pb-2">
+          {NAV.map((item) => {
+            const active = isActive(item.href);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={() => setMenuOpen(false)}
+                aria-current={active ? "page" : undefined}
+                className={cn(
+                  "flex min-h-[84px] flex-col items-center justify-center gap-2 rounded-sm border px-2 py-3 text-center text-caption font-medium transition-colors",
+                  active
+                    ? "border-ink bg-ink text-white"
+                    : "border-line text-ink-soft active:bg-surface",
+                )}
+              >
+                <Icon name={item.icon} size={21} />
+                <span className="leading-tight">{item.label}</span>
+              </Link>
+            );
+          })}
+        </div>
+
+        <div className="mt-2 flex flex-col border-t border-line px-gutter py-2 pb-5">
+          <Link
+            href="/"
+            onClick={() => setMenuOpen(false)}
+            className="flex min-h-12 items-center gap-2.5 rounded-sm px-1 text-caption text-muted active:bg-surface"
+          >
+            <Icon name="cart" size={18} />
+            View storefront
+          </Link>
+          <form action={logoutAction}>
+            <button
+              type="submit"
+              className="flex min-h-12 w-full items-center gap-2.5 rounded-sm px-1 text-caption text-muted active:bg-sale-soft active:text-sale"
+            >
+              <Icon name="signOut" size={18} />
+              Sign out
+            </button>
+          </form>
+        </div>
+      </Sheet>
     </div>
+  );
+}
+
+function TabLink({ item, active }: { item: NavItem; active: boolean }) {
+  return (
+    <Link
+      href={item.href}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "flex min-h-14 flex-col items-center justify-center gap-1 text-micro font-medium transition-colors",
+        active ? "text-ink" : "text-muted",
+      )}
+    >
+      <Icon name={item.icon} size={20} />
+      {item.label}
+    </Link>
   );
 }

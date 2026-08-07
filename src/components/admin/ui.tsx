@@ -315,7 +315,11 @@ export function DateRangeFilter({
 
   return (
     <div className={cn("flex flex-col gap-2", className)}>
-      <div className="-mx-4 flex gap-1.5 overflow-x-auto px-4 lg:mx-0 lg:px-0">
+      {/* Wraps rather than scrolls. Six chips do not fit across a phone, and a
+          scrolling row put "Last 30 days", "All time" and "Custom" past the
+          right edge of a strip with nothing to say it moved — an admin who
+          never scrolled it believed the panel had four ranges. */}
+      <div className="flex flex-wrap gap-1.5">
         {RANGE_PRESETS.map((option) => (
           <button
             key={option.value}
@@ -348,24 +352,27 @@ export function DateRangeFilter({
         </button>
       </div>
 
+      {/* The date inputs are the widest thing here — full width on a phone so
+          neither of them is half a control. */}
+
       {open && (
         <div className="flex flex-wrap items-end gap-3 rounded-md border border-line bg-white p-4">
-          <label className="flex flex-col gap-1.5">
+          <label className="flex min-w-[45%] flex-1 flex-col gap-1.5 sm:min-w-0 sm:flex-none">
             <span className="text-caption font-medium text-ink-soft">From</span>
             <input
               type="date"
               value={from}
               onChange={(event) => setFrom(event.target.value)}
-              className="h-10 w-[160px] rounded-sm border border-line bg-white px-3 text-caption text-ink outline-none focus:border-ink"
+              className="h-11 rounded-sm border border-line bg-white px-3 text-caption text-ink outline-none focus:border-ink sm:w-[160px]"
             />
           </label>
-          <label className="flex flex-col gap-1.5">
+          <label className="flex min-w-[45%] flex-1 flex-col gap-1.5 sm:min-w-0 sm:flex-none">
             <span className="text-caption font-medium text-ink-soft">To</span>
             <input
               type="date"
               value={to}
               onChange={(event) => setTo(event.target.value)}
-              className="h-10 w-[160px] rounded-sm border border-line bg-white px-3 text-caption text-ink outline-none focus:border-ink"
+              className="h-11 rounded-sm border border-line bg-white px-3 text-caption text-ink outline-none focus:border-ink sm:w-[160px]"
             />
           </label>
           <button
@@ -375,7 +382,7 @@ export function DateRangeFilter({
               setOpen(false);
               onCustom({ from, to });
             }}
-            className="h-10 rounded-sm bg-ink px-4 text-caption font-medium text-white disabled:opacity-40"
+            className="h-11 w-full rounded-sm bg-ink px-4 text-caption font-medium text-white disabled:opacity-40 sm:w-auto"
           >
             Show
           </button>
@@ -423,9 +430,15 @@ export function OrderTabs({ active }: { active: "orders" | "incomplete" | "trash
 }
 
 /** Horizontal scroll wrapper so wide tables never widen the page itself. */
-export function TableWrap({ children }: { children: React.ReactNode }) {
+export function TableWrap({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
-    <div className="-mx-4 overflow-x-auto px-4 lg:mx-0 lg:px-0">
+    <div className={cn("-mx-4 overflow-x-auto px-4 lg:mx-0 lg:px-0", className)}>
       <div className="min-w-[640px]">{children}</div>
     </div>
   );

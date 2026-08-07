@@ -177,8 +177,10 @@ export function OrderList() {
         onCustom={setCustom}
       />
 
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <div className="-mx-4 flex gap-1 overflow-x-auto px-4 lg:mx-0 lg:px-0">
+      <div className="mb-4 flex flex-col gap-2">
+        {/* Wraps rather than scrolls: a sideways strip put Cancelled off the
+            edge of a phone with nothing to say it was there. */}
+        <div className="flex flex-wrap gap-1">
           {FILTERS.map((filter) => (
             <button
               key={filter.value}
@@ -186,8 +188,8 @@ export function OrderList() {
               onClick={() => setStatus(filter.value)}
               className={
                 status === filter.value
-                  ? "shrink-0 rounded-sm bg-ink px-3 py-1.5 text-caption font-medium text-white"
-                  : "shrink-0 rounded-sm bg-white px-3 py-1.5 text-caption text-ink-soft ring-1 ring-line hover:bg-surface"
+                  ? "shrink-0 rounded-sm bg-ink px-3 py-2 text-caption font-medium text-white"
+                  : "shrink-0 rounded-sm bg-white px-3 py-2 text-caption text-ink-soft ring-1 ring-line hover:bg-surface"
               }
             >
               {filter.label}
@@ -195,21 +197,23 @@ export function OrderList() {
           ))}
         </div>
 
-        <input
-          type="search"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="Order number, name or phone"
-          aria-label="Search orders"
-          className="h-10 min-w-[200px] flex-1 rounded-sm border border-line bg-white px-3 text-caption text-ink outline-none placeholder:text-muted focus:border-ink"
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Order number, name or phone"
+            aria-label="Search orders"
+            className="h-11 min-w-[180px] flex-1 rounded-sm border border-line bg-white px-3 text-caption text-ink outline-none placeholder:text-muted focus:border-ink"
+          />
 
-        <span className="tnum text-caption text-muted">{total} total</span>
+          <span className="tnum text-caption text-muted">{total} total</span>
 
-        <Button variant="secondary" size="sm" onClick={exportCsv} disabled={orders.length === 0}>
-          <Icon name="package" size={15} />
-          {selected.size > 0 ? `Export ${selected.size}` : "Export all"}
-        </Button>
+          <Button variant="secondary" size="sm" onClick={exportCsv} disabled={orders.length === 0}>
+            <Icon name="package" size={15} />
+            {selected.size > 0 ? `Export ${selected.size}` : "Export all"}
+          </Button>
+        </div>
       </div>
 
       {selected.size > 0 && (
@@ -241,7 +245,67 @@ export function OrderList() {
         }
         onRetry={() => void load()}
       >
-        <TableWrap>
+        {/* Cards on a phone, table from md up.
+            A five-column table across 375px scrolls sideways, and Total and
+            Status — the two columns you scan for — are the ones off the right
+            edge. Same data, stacked, plus the call button: this screen exists
+            so somebody can ring the customer, and on a phone that should be a
+            tap rather than a copied number. */}
+        <ul className="flex flex-col gap-2 md:hidden">
+          {orders.map((order) => (
+            <li key={order.id} className="overflow-hidden rounded-md border border-line bg-white">
+              <div className="flex items-start gap-3 p-3">
+                <input
+                  type="checkbox"
+                  checked={selected.has(order.id)}
+                  onChange={() => toggleOne(order.id)}
+                  aria-label={`Select ${order.orderNumber}`}
+                  className="mt-0.5 size-4 shrink-0 accent-[var(--color-ink)]"
+                />
+
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start gap-2">
+                    <Link
+                      href={`/admin/orders/${order.orderNumber}`}
+                      className="text-caption font-semibold text-ink"
+                    >
+                      {order.orderNumber}
+                    </Link>
+                    <span className="tnum ml-auto shrink-0 text-caption font-semibold text-ink">
+                      {formatTaka(order.grandTotal)}
+                    </span>
+                  </div>
+
+                  <p className="mt-0.5 text-micro text-muted">
+                    {formatDateTime(order.createdAt)}
+                  </p>
+
+                  <p className="mt-2 truncate text-caption text-ink">{order.customerName}</p>
+
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <Badge tone={STATUS_TONE[order.status]}>
+                      {copy.orderStatus[order.status]}
+                    </Badge>
+                    <span className="text-micro text-muted">
+                      {order.totalQuantity} item{order.totalQuantity === 1 ? "" : "s"} ·{" "}
+                      {order.deliveryZone === "inside_dhaka" ? "Dhaka" : "Outside"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <a
+                href={`tel:${order.phone}`}
+                className="flex min-h-12 items-center justify-center gap-2 border-t border-line text-caption font-medium text-ink active:bg-surface"
+              >
+                <Icon name="phone" size={16} />
+                <span className="tnum">{order.phone}</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+
+        <TableWrap className="hidden md:block">
           <div className="overflow-hidden rounded-md border border-line bg-white">
             <table className="w-full border-collapse text-left">
               <thead>
@@ -255,10 +319,11 @@ export function OrderList() {
                       className="size-4 accent-[var(--color-ink)]"
                     />
                   </th>
-                  <th className="px-3 py-2.5 font-medium">Order</th>
-                  <th className="px-3 py-2.5 font-medium">Customer</th>
-                  <th className="px-3 py-2.5 font-medium">Total</th>
-                  <th className="px-3 py-2.5 font-medium">Status</th>
+                  <th className="whitespace-nowrap px-3 py-2.5 font-medium">Order</th>
+                  {/* Customer absorbs the slack — see the note in ProductList. */}
+                  <th className="w-full px-3 py-2.5 font-medium">Customer</th>
+                  <th className="whitespace-nowrap px-3 py-2.5 font-medium">Total</th>
+                  <th className="whitespace-nowrap px-3 py-2.5 font-medium">Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -273,7 +338,11 @@ export function OrderList() {
                         className="size-4 accent-[var(--color-ink)]"
                       />
                     </td>
-                    <td className="px-3 py-2.5">
+                    {/* Nowrap on the cell, not only the header: Customer takes
+                        the slack, so anything without it collapses to its
+                        narrowest wrap — "SB-" over "10167" over four lines of
+                        date. */}
+                    <td className="whitespace-nowrap px-3 py-2.5">
                       <Link
                         href={`/admin/orders/${order.orderNumber}`}
                         className="block text-caption font-semibold text-ink hover:underline"
@@ -285,7 +354,10 @@ export function OrderList() {
                       </span>
                     </td>
 
-                    <td className="px-3 py-2.5">
+                    {/* See the note on the product cell in ProductList: a cell
+                        sizes to its content unless something caps it, so a long
+                        customer name would push Total and Status off-screen. */}
+                    <td className="w-full max-w-0 px-3 py-2.5">
                       <span className="block truncate text-caption text-ink">
                         {order.customerName}
                       </span>
@@ -298,8 +370,8 @@ export function OrderList() {
                       </a>
                     </td>
 
-                    <td className="px-3 py-2.5">
-                      <span className="tnum block whitespace-nowrap text-caption font-medium text-ink">
+                    <td className="whitespace-nowrap px-3 py-2.5">
+                      <span className="tnum block text-caption font-medium text-ink">
                         {formatTaka(order.grandTotal)}
                       </span>
                       <span className="block text-micro text-muted">

@@ -66,6 +66,40 @@ function toUserMessage(error: unknown): string {
   return "Something went wrong. Please try again.";
 }
 
+/**
+ * True when a failure is ours rather than something the shopper typed.
+ *
+ * A 4xx is the API doing its job — "that phone number is not valid", "only 2
+ * left" — and logging those would bury the real thing in noise. Everything else
+ * is the system being broken.
+ */
+function isSystemFailure(error: unknown): boolean {
+  if (error instanceof ApiError) return error.status >= 500;
+  return true;
+}
+
+/**
+ * Server-side trace for a failure the shopper will never see.
+ *
+ * Every catch in this file turns a failure into either a friendly sentence or a
+ * silent no-op. That is right for the customer and blinding for us: an order
+ * endpoint that starts refusing, or a lead capture that stops recording, looks
+ * exactly like a quiet afternoon. Without this there is no other trace — these
+ * actions do not go through `apiRequestSafe`, which is the only thing in the
+ * API client that logs.
+ *
+ * Deliberately `console.error` rather than a logger: it is what the API client
+ * already uses, and it lands in the Next server's output where the container
+ * logs collect it. A real reporter belongs here eventually — see `app/error.tsx`.
+ */
+function logFailure(context: string, error: unknown): void {
+  if (!isSystemFailure(error)) return;
+  console.error(
+    `[actions] ${context}`,
+    error instanceof Error ? `${error.name}: ${error.message}` : error,
+  );
+}
+
 /** Field-level errors, so the checkout form can highlight the right input. */
 function toFieldError(error: unknown): { field?: string; message: string } {
   if (error instanceof ApiError && error.details?.length) {
@@ -172,6 +206,10 @@ export async function resolveCartAction(
         return { id, product: data.product, gone: false };
       } catch (error) {
         const gone = error instanceof ApiError && error.isNotFound;
+        /* A 404 is ordinary — the product really is deleted. Anything else means
+           the shopper is being told "some items could not be shown" because the
+           API is unwell, which is worth knowing before they tell us. */
+        logFailure(`cart product lookup failed for ${id}`, error);
         return { id, product: null, gone };
       }
     }),
@@ -320,6 +358,9 @@ export async function quoteAction(input: {
       amountToFreeDelivery: quote.amountToFreeDelivery,
     };
   } catch (error) {
+    /* The checkout page cannot show a total. The shopper sees a message and
+       usually leaves, so this is a lost sale that never reaches placement. */
+    logFailure("checkout quote failed", error);
     return { ...empty, error: toUserMessage(error) };
   }
 }
@@ -367,8 +408,13 @@ export async function recordIncompleteCheckoutAction(input: {
          filling with nobody the wiser. */
       headers: forwardClientHints(await headers()),
     });
-  } catch {
-    /* Deliberately swallowed — see above. */
+  } catch (error) {
+    /* Still swallowed as far as the shopper is concerned — see above — but no
+       longer invisible to us. The comment on the headers above describes exactly
+       this going wrong once already: the call list stopped filling and nothing
+       said so. A silent failure the customer must not see still has to leave a
+       trace somewhere. */
+    logFailure("incomplete-checkout capture failed", error);
   }
 }
 
@@ -451,6 +497,9 @@ export async function placeOrderAction(input: CheckoutInput): Promise<CheckoutRe
        needing a public order-lookup endpoint. */
     return { ok: true, order };
   } catch (error) {
+    /* A failure here is a sale that did not happen. The shopper gets a sentence
+       they can act on; this is the only place it is recorded as an incident. */
+    logFailure(`order placement failed for ${input.phone}`, error);
     const { field, message } = toFieldError(error);
     return { ok: false, error: message, ...(field ? { field } : {}) };
   }
@@ -503,6 +552,9 @@ export async function trackOrderAction(
     if (error instanceof ApiError && error.isNotFound) {
       return { ok: false, error: "No order found with that ID and phone number." };
     }
+    /* Not the 404 above — that one is a normal answer. This is the lookup itself
+       being broken, which reads to the customer as "we lost your order". */
+    logFailure("order tracking lookup failed", error);
     return { ok: false, error: toUserMessage(error) };
   }
 }

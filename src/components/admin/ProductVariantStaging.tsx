@@ -32,12 +32,19 @@ export interface StagedVariant {
 export interface VariantDraft {
   /* Axis values stay raw text — "Black, Blue, Titanium" — because that is how
      someone types a list, and it is the same shape the saved-product editor
-     uses. Parsing happens once, at submit. */
-  axes: { name: string; values: string }[];
+     uses. Parsing happens once, at submit.
+
+     `id` is presentation-only: it keys the row so a removal cannot shift focus
+     or in-progress IME composition onto the next input. `parseAxes` builds the
+     payload from scratch, so it never reaches the API. */
+  axes: { id: string; name: string; values: string }[];
   variants: StagedVariant[];
 }
 
 export const EMPTY_VARIANT_DRAFT: VariantDraft = { axes: [], variants: [] };
+
+let axisRowSeq = 0;
+export const nextAxisRowId = () => `axis-${(axisRowSeq += 1)}`;
 
 const MAX_AXES = 4;
 const MAX_VARIANTS = 100;
@@ -254,13 +261,13 @@ export function ProductVariantStaging({
           <p className="text-caption font-medium text-ink-soft">Option types</p>
 
           {draft.axes.map((axis, index) => (
-            <div key={index} className="flex items-center gap-2">
+            <div key={axis.id} className="flex items-center gap-2">
               <input
                 value={axis.name}
                 onChange={(event) =>
                   setAxes(
-                    draft.axes.map((row, i) =>
-                      i === index ? { ...row, name: event.target.value } : row,
+                    draft.axes.map((row) =>
+                      row.id === axis.id ? { ...row, name: event.target.value } : row,
                     ),
                   )
                 }
@@ -273,8 +280,8 @@ export function ProductVariantStaging({
                 value={axis.values}
                 onChange={(event) =>
                   setAxes(
-                    draft.axes.map((row, i) =>
-                      i === index ? { ...row, values: event.target.value } : row,
+                    draft.axes.map((row) =>
+                      row.id === axis.id ? { ...row, values: event.target.value } : row,
                     ),
                   )
                 }
@@ -285,7 +292,7 @@ export function ProductVariantStaging({
               />
               <button
                 type="button"
-                onClick={() => setAxes(draft.axes.filter((_, i) => i !== index))}
+                onClick={() => setAxes(draft.axes.filter((row) => row.id !== axis.id))}
                 aria-label={`Remove option ${index + 1}`}
                 disabled={disabled}
                 className="flex size-9 shrink-0 items-center justify-center rounded-sm text-muted hover:bg-sale-soft hover:text-sale"
@@ -300,7 +307,7 @@ export function ProductVariantStaging({
             variant="ghost"
             size="sm"
             disabled={disabled || draft.axes.length >= MAX_AXES}
-            onClick={() => setAxes([...draft.axes, { name: "", values: "" }])}
+            onClick={() => setAxes([...draft.axes, { id: nextAxisRowId(), name: "", values: "" }])}
             className="self-start"
           >
             <Icon name="plus" size={15} />

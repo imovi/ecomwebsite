@@ -34,10 +34,17 @@ import { Icon } from "@/components/ui/Icon";
  * truncating it, so the inputs step by 1 and never by 0.01.
  */
 
+/* `id` is presentation-only: it gives each row a React key that survives
+   reordering, so removing a row cannot carry focus or in-progress IME
+   composition into the next one. It is stripped before the payload is sent. */
 interface SpecRow {
+  id: string;
   label: string;
   value: string;
 }
+
+let specRowSeq = 0;
+const nextSpecRowId = () => `spec-${(specRowSeq += 1)}`;
 
 /* The origin never changes for the life of the page, so there is nothing to
    subscribe to. Both live at module scope because `useSyncExternalStore`
@@ -128,7 +135,10 @@ function fromProduct(product: ApiProduct): FormState {
     lowStockThreshold: String(product.lowStockThreshold),
     status: product.status ?? "draft",
     isVisible: product.isVisible ?? true,
-    specifications: product.specifications,
+    specifications: product.specifications.map((spec) => ({
+      ...spec,
+      id: nextSpecRowId(),
+    })),
   };
 }
 
@@ -249,7 +259,11 @@ export function ProductForm({ productId }: { productId?: string }) {
       shortDescription: form.shortDescription.trim() || null,
       description: form.description.trim() || null,
       warranty: form.warranty.trim() || null,
-      specifications: form.specifications.filter((spec) => spec.label && spec.value),
+      /* Drop the presentation-only row id — the API stores exactly what it is
+         given, so an extra key here would end up persisted. */
+      specifications: form.specifications
+        .filter((spec) => spec.label && spec.value)
+        .map(({ label, value }) => ({ label, value })),
       whatsIncluded: toList(form.whatsIncluded, /\n/),
       tags: toList(form.tags, /,/).map((tag) => slugify(tag)),
       price: Number(form.price),
@@ -758,32 +772,32 @@ function SpecEditor({
   specs: SpecRow[];
   onChange: (specs: SpecRow[]) => void;
 }) {
-  const update = (index: number, patch: Partial<SpecRow>) =>
-    onChange(specs.map((spec, i) => (i === index ? { ...spec, ...patch } : spec)));
+  const update = (id: string, patch: Partial<SpecRow>) =>
+    onChange(specs.map((spec) => (spec.id === id ? { ...spec, ...patch } : spec)));
 
   return (
     <div className="flex flex-col gap-2">
       <p className="text-caption font-medium text-ink-soft">Specifications</p>
 
       {specs.map((spec, index) => (
-        <div key={index} className="flex items-center gap-2">
+        <div key={spec.id} className="flex items-center gap-2">
           <input
             value={spec.label}
-            onChange={(event) => update(index, { label: event.target.value })}
+            onChange={(event) => update(spec.id, { label: event.target.value })}
             placeholder="Display"
             aria-label={`Specification ${index + 1} label`}
             className="h-11 w-2/5 rounded-sm border border-line bg-white px-3 text-caption text-ink outline-none focus:border-ink"
           />
           <input
             value={spec.value}
-            onChange={(event) => update(index, { value: event.target.value })}
+            onChange={(event) => update(spec.id, { value: event.target.value })}
             placeholder="6.7 inch AMOLED"
             aria-label={`Specification ${index + 1} value`}
             className="h-11 flex-1 rounded-sm border border-line bg-white px-3 text-caption text-ink outline-none focus:border-ink"
           />
           <button
             type="button"
-            onClick={() => onChange(specs.filter((_, i) => i !== index))}
+            onClick={() => onChange(specs.filter((row) => row.id !== spec.id))}
             aria-label={`Remove specification ${index + 1}`}
             className="flex size-9 shrink-0 items-center justify-center rounded-sm text-muted hover:bg-sale-soft hover:text-sale"
           >
@@ -796,7 +810,7 @@ function SpecEditor({
         type="button"
         variant="soft"
         size="sm"
-        onClick={() => onChange([...specs, { label: "", value: "" }])}
+        onClick={() => onChange([...specs, { id: nextSpecRowId(), label: "", value: "" }])}
         className="self-start"
       >
         <Icon name="plus" size={15} />

@@ -123,6 +123,12 @@ export function ProductVariants({
 /* Option axes                                                                */
 /* -------------------------------------------------------------------------- */
 
+/* Rows need an identity that survives reordering. Keying by index would let a
+   removal shift every later row onto a different key, carrying focus, cursor
+   position and in-progress IME composition into the wrong input. */
+let axisRowSeq = 0;
+const nextAxisRowId = () => `axis-${(axisRowSeq += 1)}`;
+
 function AxisEditor({
   axes,
   busy,
@@ -134,13 +140,17 @@ function AxisEditor({
 }) {
   /* Edited as text — "Black, Blue, Titanium" — because that is how someone
      types a list, and parsing it is trivial compared with a chip editor. */
-  const [draft, setDraft] = useState(
-    axes.map((axis) => ({ name: axis.name, values: axis.values.join(", ") })),
+  const [draft, setDraft] = useState(() =>
+    axes.map((axis) => ({
+      id: nextAxisRowId(),
+      name: axis.name,
+      values: axis.values.join(", "),
+    })),
   );
   const [dirty, setDirty] = useState(false);
 
-  const update = (index: number, patch: Partial<{ name: string; values: string }>) => {
-    setDraft((current) => current.map((axis, i) => (i === index ? { ...axis, ...patch } : axis)));
+  const update = (id: string, patch: Partial<{ name: string; values: string }>) => {
+    setDraft((current) => current.map((axis) => (axis.id === id ? { ...axis, ...patch } : axis)));
     setDirty(true);
   };
 
@@ -149,17 +159,17 @@ function AxisEditor({
       <p className="text-caption font-medium text-ink-soft">Option types</p>
 
       {draft.map((axis, index) => (
-        <div key={index} className="flex items-center gap-2">
+        <div key={axis.id} className="flex items-center gap-2">
           <input
             value={axis.name}
-            onChange={(event) => update(index, { name: event.target.value })}
+            onChange={(event) => update(axis.id, { name: event.target.value })}
             placeholder="Colour"
             aria-label={`Option ${index + 1} name`}
             className="h-10 w-1/3 rounded-sm border border-line bg-white px-3 text-caption text-ink outline-none focus:border-ink"
           />
           <input
             value={axis.values}
-            onChange={(event) => update(index, { values: event.target.value })}
+            onChange={(event) => update(axis.id, { values: event.target.value })}
             placeholder="Black, Blue, Titanium"
             aria-label={`Option ${index + 1} values`}
             className="h-10 flex-1 rounded-sm border border-line bg-white px-3 text-caption text-ink outline-none focus:border-ink"
@@ -167,7 +177,7 @@ function AxisEditor({
           <button
             type="button"
             onClick={() => {
-              setDraft((current) => current.filter((_, i) => i !== index));
+              setDraft((current) => current.filter((row) => row.id !== axis.id));
               setDirty(true);
             }}
             aria-label={`Remove option ${index + 1}`}
@@ -185,7 +195,7 @@ function AxisEditor({
           size="sm"
           disabled={draft.length >= 4}
           onClick={() => {
-            setDraft((current) => [...current, { name: "", values: "" }]);
+            setDraft((current) => [...current, { id: nextAxisRowId(), name: "", values: "" }]);
             setDirty(true);
           }}
         >

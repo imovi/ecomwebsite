@@ -268,6 +268,12 @@ export async function quoteAction(input: {
   if (input.lines.length === 0) return { ...empty, error: "Your cart is empty." };
 
   try {
+    /* The shopper's address, for the same reason the order call sends it: the
+       quote limiter is 120 in fifteen minutes, and without this every shopper
+       on the site is drawing from that one allowance. The checkout page
+       re-quotes on load and on every address change, so a few dozen shoppers
+       in a quarter of an hour was enough to start answering the whole shop
+       with "too many requests" at the last step before the sale. */
     const quote = await apiRequest<ApiQuote>("/api/v1/checkout/quote", {
       method: "POST",
       body: {
@@ -275,6 +281,7 @@ export async function quoteAction(input: {
         ...(input.areaText ? { areaText: input.areaText } : {}),
         ...(input.deliveryZone ? { deliveryZone: input.deliveryZone } : {}),
       },
+      headers: forwardClientHints(await headers()),
     });
 
     return {
@@ -425,7 +432,21 @@ function forwardClientHints(requestHeaders: Headers): Record<string, string> {
     requestHeaders.get("x-real-ip") ??
     undefined;
 
-  if (ip) forwarded["x-forwarded-for"] = ip;
+  if (ip) {
+    forwarded["x-forwarded-for"] = ip;
+    /**
+     * The same address again, under a name only this pair of services uses.
+     *
+     * The API's public rate limiters key on this. They cannot key on the
+     * connection, because every shopper reaches the API through this server
+     * and would share one bucket; and keying on `x-forwarded-for` alone would
+     * make the limit depend on `TRUST_PROXY_HOPS` being right, which is a
+     * setting that fails silently and turns a per-visitor limit into a
+     * shop-wide one. The API honours this header only from a caller on the
+     * private network.
+     */
+    forwarded["x-customer-ip"] = ip;
+  }
 
   const userAgent = requestHeaders.get("user-agent");
   if (userAgent) forwarded["user-agent"] = userAgent;

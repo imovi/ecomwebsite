@@ -1,9 +1,10 @@
 import { Router, type RequestHandler } from "express";
-import { ipKeyGenerator, rateLimit } from "express-rate-limit";
+import { rateLimit } from "express-rate-limit";
 import { config } from "../../config/index.js";
 import { authenticate, requireRole } from "../../middleware/authenticate.js";
 import { validate } from "../../middleware/validate.js";
 import { TooManyRequestsError } from "../../core/errors.js";
+import { customerKey } from "../../middleware/rate-limit.js";
 import * as controller from "./order.controller.js";
 import {
   areaSearchQuerySchema,
@@ -45,9 +46,11 @@ import {
  * obvious target for order spam on a cash-on-delivery store where placing an
  * order costs the customer nothing.
  *
- * Keyed by IP collapsed to a /64 for IPv6 — a residential IPv6 allocation
- * gives one attacker 2^64 addresses, so keying on the full address is no limit
- * at all.
+ * Keyed by the SHOPPER, not by whoever connected: every checkout arrives from
+ * the storefront container, so keying on the socket would make this one quota
+ * shared by the whole shop — see `customerKey`. The address is collapsed to a
+ * /64 for IPv6, because a residential IPv6 allocation gives one attacker 2^64
+ * addresses and keying on the full address is no limit at all.
  *
  * SCALING NOTE: the default store is per-process memory, so the effective
  * limit multiplies by the replica count. Swap in `rate-limit-redis` before
@@ -58,7 +61,7 @@ const checkoutRateLimit: RequestHandler = rateLimit({
   limit: config.rateLimit.checkout.max,
   standardHeaders: "draft-8",
   legacyHeaders: false,
-  keyGenerator: (req) => `checkout:${ipKeyGenerator(req.ip ?? "unknown")}`,
+  keyGenerator: (req) => `checkout:${customerKey(req)}`,
   handler: (_req, _res, next) => {
     next(new TooManyRequestsError(Math.ceil(config.rateLimit.checkout.windowMs / 1000)));
   },
@@ -70,7 +73,7 @@ const quoteRateLimit: RequestHandler = rateLimit({
   limit: config.rateLimit.checkout.quoteMax,
   standardHeaders: "draft-8",
   legacyHeaders: false,
-  keyGenerator: (req) => `quote:${ipKeyGenerator(req.ip ?? "unknown")}`,
+  keyGenerator: (req) => `quote:${customerKey(req)}`,
   handler: (_req, _res, next) => {
     next(new TooManyRequestsError(Math.ceil(config.rateLimit.checkout.windowMs / 1000)));
   },

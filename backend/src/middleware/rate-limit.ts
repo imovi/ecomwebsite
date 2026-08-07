@@ -89,6 +89,40 @@ function isInternalCaller(req: Request): boolean {
   return isPrivateAddress(req.socket.remoteAddress ?? "");
 }
 
+/** The storefront names the shopper it is acting for. See `customerKey`. */
+const CUSTOMER_IP_HEADER = "x-customer-ip";
+
+/**
+ * The bucket a PUBLIC endpoint should count against.
+ *
+ * Nothing on the storefront reaches this API directly. A shopper pricing a
+ * cart or placing an order posts to the Next.js server, which calls us over
+ * the Docker network — so `req.ip` is the storefront container for every
+ * shopper alive, and a limit keyed on it is not a per-visitor limit at all but
+ * a shop-wide quota. At 20 orders per fifteen minutes that is a ceiling a good
+ * ad set reaches before lunch, and the 21st customer is told to slow down for
+ * something the 20 before them did.
+ *
+ * So the storefront forwards the shopper's own address and this keys on it.
+ * Honoured only when the request came from a private address — otherwise
+ * anyone on the internet could mint a fresh bucket per request by setting a
+ * header, which is worse than having no limiter at all.
+ *
+ * A dedicated header rather than `X-Forwarded-For`: that one is what
+ * `isInternalCaller` reads to tell infrastructure from the public, and setting
+ * it here would put the storefront's own server-side traffic back under the
+ * global limit this file already exempts it from.
+ */
+export function customerKey(req: Request): string {
+  const declared = req.headers[CUSTOMER_IP_HEADER];
+  if (typeof declared === "string" && declared.trim() !== "") {
+    if (isPrivateAddress(req.socket.remoteAddress ?? "")) {
+      return ipKeyGenerator(declared.trim());
+    }
+  }
+  return ipKey(req);
+}
+
 /** Applied to the whole API. */
 export const globalRateLimit: RequestHandler = rateLimit({
   ...shared,

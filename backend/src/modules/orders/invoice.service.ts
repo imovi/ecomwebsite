@@ -194,7 +194,10 @@ export function renderInvoiceHtml(invoice: InvoiceDto): string {
   *{ box-sizing: border-box; }
   body{ font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Bengali", sans-serif;
         color:#111; margin:0; padding:24px; font-size:13px; line-height:1.5; }
-  .sheet{ max-width:760px; margin:0 auto; }
+  /* The exact printed width, on screen too. A max-width in px measured one
+     thing and printed another, which made it impossible to tell in advance
+     whether an order would fit on the page. */
+  .sheet{ width:186mm; margin:0 auto; transform-origin:top center; }
   header{ display:flex; justify-content:space-between; gap:24px;
           border-bottom:2px solid #111; padding-bottom:16px; }
   .store-name{ font-size:22px; font-weight:700; letter-spacing:-0.02em; }
@@ -223,7 +226,15 @@ export function renderInvoiceHtml(invoice: InvoiceDto): string {
   @media print{
     body{ padding:0; }
     .no-print{ display:none; }
-    @page{ margin:12mm; }
+    @page{ size:A4; margin:12mm; }
+
+    /* If an order is long enough that even the shrink below cannot get it onto
+       one page, it may run to a second — but it must never break in the middle
+       of something. A row split across the fold, or a totals block landing
+       alone on page two, is the thing that makes a printed invoice look like a
+       mistake. */
+    tr, .totals, footer, header{ break-inside:avoid; page-break-inside:avoid; }
+    thead{ display:table-header-group; }
   }
 </style>
 </head>
@@ -293,11 +304,55 @@ export function renderInvoiceHtml(invoice: InvoiceDto): string {
   </footer>
 </div>
 <script>
-  /* Opening the invoice in a new tab from the admin panel should go straight
-     to the print dialog; ?autoprint=0 suppresses it for a plain preview. */
-  if (!location.search.includes("autoprint=0")) {
-    window.addEventListener("load", () => window.print());
+  /* Shrink to one page.
+     An order with many lines runs past the fold and puts two rows and the
+     totals on a second sheet, which for a document that travels in a parcel is
+     just a way to lose half of it. Scaled down to fit instead, as far as 55% —
+     below that it stops being readable, so a very long order is allowed its
+     second page and the print rules above keep the break out of the middle of
+     a row.
+
+     The negative margin is not cosmetic: a transform does not change the space
+     an element reserves, so without it the browser still paginates against the
+     unscaled height and emits a blank second page. */
+  function fitToPage() {
+    var PX_PER_MM = 96 / 25.4;
+    var available = 273 * PX_PER_MM; /* A4 297mm less the 12mm print margins */
+    var MIN_SCALE = 0.55; /* below this the type stops being readable */
+
+    var sheet = document.querySelector(".sheet");
+    sheet.style.transform = "";
+    sheet.style.marginBottom = "";
+
+    var actual = sheet.getBoundingClientRect().height;
+    if (actual <= available) return;
+
+    var scale = (available / actual) * 0.998;
+
+    /* All or nothing. A partial shrink would still cross the fold, and a
+       transformed element that spans a page break does not paginate — the
+       overflow is clipped at the boundary rather than continued, so half the
+       items would simply not print. An order too long to fit at a readable
+       size is left alone and paginates normally; the print rules above keep
+       the break out of the middle of a row. */
+    if (scale < MIN_SCALE) return;
+
+    sheet.style.transform = "scale(" + scale + ")";
+    /* A transform does not change the space an element reserves, so without
+       this the browser paginates against the unscaled height and emits a blank
+       second page. */
+    sheet.style.marginBottom = -(actual * (1 - scale)) + "px";
   }
+
+  window.addEventListener("load", function () {
+    fitToPage();
+    /* Opening the invoice in a new tab from the admin panel should go straight
+       to the print dialog; ?autoprint=0 suppresses it for a plain preview. */
+    if (!location.search.includes("autoprint=0")) window.print();
+  });
+
+  /* Re-measure if the window was resized, or printed a second time. */
+  window.addEventListener("beforeprint", fitToPage);
 </script>
 </body>
 </html>`;
@@ -359,7 +414,7 @@ function renderCell(invoice: InvoiceDto, maxItems: number): string {
     .join("");
 
   return `
-  <article class="cell">
+  <article class="cell"><div class="fit">
     <div class="cell-head">
       <div class="shop">${escapeHtml(invoice.store.name)}</div>
       <div class="onum">${escapeHtml(invoice.invoiceNumber)}</div>
@@ -386,7 +441,7 @@ function renderCell(invoice: InvoiceDto, maxItems: number): string {
         invoice.order.paymentStatus === "paid" ? "PAID" : taka(invoice.order.amountDue)
       }</span>
     </div>
-  </article>`;
+  </div></article>`;
 }
 
 /**
@@ -438,8 +493,13 @@ export function renderInvoiceSheetHtml(invoices: InvoiceDto[], perSheet: number)
 
   .cell{
     border:1px dashed #bbb; margin:-0.5px; padding:3.5mm;
-    display:flex; flex-direction:column; gap:2mm; overflow:hidden;
+    overflow:hidden; position:relative;
   }
+  /* The scaler sits inside the cell so the border stays put while the content
+     shrinks. The overflow:hidden above is only a backstop — the script below
+     is what keeps anything from needing to be clipped. */
+  .fit{ display:flex; flex-direction:column; gap:2mm; height:100%;
+        transform-origin:top left; }
   .cell-head{ display:flex; justify-content:space-between; align-items:baseline;
               gap:3mm; border-bottom:1px solid #111; padding-bottom:1.5mm; }
   .shop{ font-weight:700; letter-spacing:-0.01em; }
@@ -508,13 +568,41 @@ ${sheets.join("\n")}
     link.href = url.pathname + url.search;
   });
 
-  /* Straight to the print dialog, as with a single invoice — unless the page
-     was reached by changing the density from the bar above, where another
-     dialog on every click would be intolerable. */
-  var q = location.search;
-  if (!q.includes("autoprint=0") && !q.includes("keep=1")) {
-    window.addEventListener("load", function () { window.print(); });
+  /* Shrink any cell whose content is taller than its box.
+     The item cap keeps most orders inside, but a long product name wrapping to
+     three lines can still overflow — and a cell that overflows is a cell that
+     silently loses the bottom of itself, which on an invoice is the amount to
+     collect. Nothing here ever splits across a page: every cell is one grid
+     track on one sheet, so shrinking is the only way it can fail to fit, and
+     this removes that. */
+  function fitCells() {
+    document.querySelectorAll(".cell").forEach(function (cell) {
+      var inner = cell.querySelector(".fit");
+      inner.style.transform = "";
+      inner.style.width = "";
+
+      var box = cell.clientHeight - 2 * parseFloat(getComputedStyle(cell).paddingTop);
+      var actual = inner.scrollHeight;
+      if (actual <= box) return;
+
+      var scale = Math.max(0.6, (box / actual) * 0.99);
+      inner.style.transform = "scale(" + scale + ")";
+      /* Compensate the width so the shrunk content still fills the cell
+         rather than leaving a margin down the right of every one. */
+      inner.style.width = 100 / scale + "%";
+    });
   }
+
+  window.addEventListener("load", function () {
+    fitCells();
+    /* Straight to the print dialog, as with a single invoice — unless the page
+       was reached by changing the density from the bar above, where another
+       dialog on every click would be intolerable. */
+    var q = location.search;
+    if (!q.includes("autoprint=0") && !q.includes("keep=1")) window.print();
+  });
+
+  window.addEventListener("beforeprint", fitCells);
 </script>
 </body>
 </html>`;

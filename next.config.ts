@@ -87,7 +87,22 @@ const nextConfig: NextConfig = {
     /** Phone-first breakpoints — no point generating 3840px variants. */
     deviceSizes: [360, 414, 640, 828, 1080, 1280, 1600],
     imageSizes: [64, 96, 128, 180, 256, 384],
-    formats: ["image/avif", "image/webp"],
+
+    /**
+     * WebP only. AVIF is deliberately NOT enabled.
+     *
+     * AVIF encodes perhaps 10-20% smaller than WebP and costs several times the
+     * CPU to produce — a trade that makes sense where a build farm or a CDN does
+     * the encoding, and not on the single modest VPS that is also rendering the
+     * shop and serving the admin panel. There are thirteen breakpoints above, so
+     * every product photo is that many encodes, and the first request for each
+     * competes with page rendering for the same cores.
+     *
+     * The source images are already WebP: the API decodes, resizes and
+     * re-encodes every upload at quality 82 before storing it, so the remaining
+     * gain from AVIF is on top of an image that is not large to begin with.
+     */
+    formats: ["image/webp"],
     minimumCacheTTL: 60 * 60 * 24 * 30,
   },
 

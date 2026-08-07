@@ -42,6 +42,15 @@ services:
       timeout: 5s
       retries: 10
       start_period: 20s
+    # Sized for an 8GB host. See the memory note at the foot of this file.
+    #
+    # Postgres is given the largest share and is the service that must never be
+    # the one killed: the API and the storefront recover from a restart in
+    # seconds, while a database killed mid-write comes back through crash
+    # recovery. Giving every OTHER service a ceiling is what keeps the host out
+    # of the memory pressure that would make the kernel pick a victim at all.
+    mem_limit: 2g
+    mem_reservation: 512m
 
   api:
     build:
@@ -56,6 +65,14 @@ services:
     environment:
       NODE_ENV: production
       PORT: 4000
+
+      # Node sizes its heap from the HOST's memory, not the container's limit —
+      # so under `mem_limit` it will happily grow past the ceiling and be killed
+      # rather than collect garbage. Set below the limit, leaving room for what
+      # lives outside the JS heap: sharp decodes images in native memory, and a
+      # 2000×2000 decode is tens of megabytes that the heap setting cannot see.
+      NODE_OPTIONS: --max-old-space-size=1024
+
       API_URL: ${API_PUBLIC_URL:?set API_PUBLIC_URL in .env}
       CORS_ORIGINS: ${SITE_URL:?set SITE_URL in .env}
       # The storefront and the reverse proxy both sit in front of this service.
@@ -76,6 +93,19 @@ services:
       DATABASE_DRIVER: postgres
       DATABASE_URL: postgres://${POSTGRES_USER:-gng}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-gng}
       DATABASE_SSL: "false"
+
+      # How many database connections this API may hold at once.
+      #
+      # The code's own default is 10, chosen to be safe on any machine. That is
+      # the number of checkouts that can be COMMITTING simultaneously — each one
+      # holds its connection for the whole transaction, and every server-rendered
+      # page borrows one too. On a shop running ads, ten is reached in a burst
+      # and the eleventh request does not fail, it WAITS, which reads as "the
+      # site got slow" rather than as a limit anyone would think to look at.
+      #
+      # Twenty is comfortable on this host: Postgres allows a hundred by
+      # default, and a connection costs a few megabytes.
+      DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-20}
 
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?set JWT_ACCESS_SECRET in .env}
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
@@ -98,6 +128,11 @@ services:
       # product photos to customers; everything else on the API is reached
       # server-to-server over the compose network and is never exposed.
       - "127.0.0.1:4000:4000"
+    # Image processing is the memory-hungry part: several uploads at once each
+    # decode to raw pixels before being re-encoded. `optimizeImages` runs them
+    # one at a time for exactly this reason, so the ceiling is comfortable.
+    mem_limit: 1500m
+    mem_reservation: 384m
 
   web:
     build:
@@ -116,6 +151,10 @@ services:
       - api
     environment:
       NODE_ENV: production
+      # Same reason as the API: Node reads the host's memory, not the container
+      # ceiling. Lower than the limit because next/image re-encodes photos
+      # through sharp, in native memory the heap setting does not govern.
+      NODE_OPTIONS: --max-old-space-size=1024
       # Server-side calls take the internal address; the browser never uses it.
       API_URL: http://api:4000
       NEXT_PUBLIC_SITE_URL: ${SITE_URL}
@@ -125,11 +164,55 @@ services:
       # Meta tracking is deliberately absent: the pixel id and Conversions API
       # token live in the database and are set from /admin/marketing, so changing
       # them needs neither a rebuild nor a restart.
+    volumes:
+      # Optimised product photos, and the ONLY expensive thing this container
+      # produces. Next re-encodes every image at each breakpoint on first
+      # request; without this volume that cache lives inside the container and
+      # is destroyed by the next deploy, so every release is followed by a burst
+      # of re-encoding across the whole catalogue — precisely when a shop is
+      # most likely to be sending traffic at it. On a small VPS that burst is
+      # what saturates the CPU, and the symptom is a slow shop rather than
+      # anything that names images.
+      #
+      # Only `cache` is mounted, never `.next` itself: the rest of that
+      # directory is build output that MUST come from the image, and a stale
+      # volume over it would serve the previous release's code.
+      - next-cache:/app/.next/cache
     ports:
       # Loopback only. TLS is the reverse proxy's job — exposing this directly
       # would serve the shop over plaintext HTTP.
       - "127.0.0.1:3000:3000"
+    # Renders pages and optimises images, both of which spike under exactly the
+    # traffic this shop is built to attract.
+    mem_limit: 1500m
+    mem_reservation: 384m
+
+# ---------------------------------------------------------------------------
+# MEMORY BUDGET — 8GB host
+#
+#   postgres  2.0G   api  1.5G   web  1.5G   =  5.0G capped
+#   leaving   ~3.0G  for the host, Caddy, Docker itself, and the page cache
+#
+# WHY CAP AT ALL. Without a limit a container may grow until the HOST runs out,
+# and the kernel then kills whichever process it judges worst — routinely
+# Postgres, because it is the largest. The shop then loses its database over a
+# burst of image traffic. With limits the offender is killed instead, `restart:
+# unless-stopped` brings it back, and the database never notices.
+#
+# The headroom is not slack. Postgres reads through the kernel's page cache,
+# which lives in that free memory and is what keeps the catalogue queries off
+# the disk; filling it with container limits would trade crashes for slowness.
+#
+# WHY NO CPU LIMIT. Deliberate. Memory exhaustion kills; CPU contention only
+# slows, and the kernel's scheduler shares cores better than a fixed quota can.
+# Capping `web` would throttle image optimisation during precisely the traffic
+# spike the cap was meant to survive.
+#
+# ON A DIFFERENT HOST: keep the same shape — Postgres largest, roughly a third
+# of total memory left uncapped — and scale the three numbers together.
+# ---------------------------------------------------------------------------
 
 volumes:
   postgres-data:
   uploads:
+  next-cache:

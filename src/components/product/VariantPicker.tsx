@@ -2,6 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import { isOptionValueAvailable } from "@/lib/catalog-utils";
+import { copy } from "@/lib/copy";
 import type { Product, VariantOptionName } from "@/types";
 
 type Selection = Partial<Record<VariantOptionName, string>>;
@@ -79,6 +80,15 @@ export function VariantPicker({
                 );
               })}
             </div>
+
+            {/* Under the axis, not only in the toast: a toast is gone in three
+                seconds and the customer is looking at the buttons by then. */}
+            {hasError && !chosen && (
+              <p role="alert" className="mt-2 flex items-center gap-1.5 text-caption text-sale">
+                <span aria-hidden="true">↑</span>
+                {copy.product.selectAxis(option.name)}
+              </p>
+            )}
           </fieldset>
         );
       })}

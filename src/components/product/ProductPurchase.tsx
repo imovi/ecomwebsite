@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import type { Product, VariantOptionName } from "@/types";
 import {
-  defaultSelection,
+  cheapestVariant,
   findVariant,
   isSelectionComplete,
 } from "@/lib/catalog-utils";
@@ -42,11 +42,16 @@ export function ProductPurchase({ product }: { product: Product }) {
   const addItem = useCartStore((s) => s.addItem);
   const startBuyNow = useCartStore((s) => s.startBuyNow);
 
-  /* Pre-select the cheapest in-stock variant. One less tap between arriving
-     and buying, and it guarantees the page never opens on a sold-out combo. */
-  const [selection, setSelection] = useState<Selection>(() =>
-    defaultSelection(product),
-  );
+  /**
+   * Nothing is pre-selected.
+   *
+   * The page used to open on the cheapest in-stock variant, which saved a tap
+   * but meant a customer could buy a colour or a pack size they never looked
+   * at — and the shop only finds out when the wrong item comes back. On a
+   * product with variants the choice is the customer's to make, so an
+   * unanswered axis blocks the purchase and says which one is unanswered.
+   */
+  const [selection, setSelection] = useState<Selection>({});
   const [requestedQty, setRequestedQty] = useState(1);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [stickyVisible, setStickyVisible] = useState(false);
@@ -66,7 +71,30 @@ export function ProductPurchase({ product }: { product: Product }) {
   const stock = hasVariants ? (variant?.stock ?? 0) : 99;
   const complete = isSelectionComplete(product, selection);
   const inStock = complete && stock > 0;
-  const saved = savings(price, oldPrice);
+
+  /**
+   * Sold out is a dead end; an unanswered option is not.
+   *
+   * Disabling the buttons until every axis is chosen would be the obvious
+   * reading of "you must choose first", but a disabled button explains
+   * nothing — the customer taps it, nothing happens, and they leave. They stay
+   * live while the selection is incomplete precisely so the tap can produce
+   * the warning.
+   */
+  const purchaseBlocked = complete && !inStock;
+
+  /**
+   * What the price block shows.
+   *
+   * Until an axis is answered there is no one price, so the cheapest variant's
+   * is shown under a "From" — a bare figure would read as the price and then
+   * change when the customer picks the twin pack. Its own old price travels
+   * with it, or the discount badge would be computed across two variants.
+   */
+  const from = hasVariants && !complete ? cheapestVariant(product) : undefined;
+  const shownPrice = from?.price ?? price;
+  const shownOldPrice = from ? from.oldPrice : oldPrice;
+  const saved = savings(shownPrice, shownOldPrice);
 
   /* Quantity is derived, not synced. Switching to a variant with less stock
      clamps the displayed value immediately, and switching back restores what
@@ -112,7 +140,7 @@ export function ProductPurchase({ product }: { product: Product }) {
     if (missing.length === 0) return true;
 
     setErrorAxes(missing);
-    toast(copy.product.selectRequired, { tone: "error" });
+    toast(copy.product.selectRequired(missing), { tone: "error" });
     variantsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
     return false;
   }
@@ -179,6 +207,13 @@ export function ProductPurchase({ product }: { product: Product }) {
         />
 
         <div className="mt-5 flex flex-col gap-5 md:mt-0">
+          {/* Title stays first in the DOM — it is the h1, and a screen reader or
+              a crawler should meet the product's name before its price.
+
+              On a phone the two are reordered visually: the shopper arrives from
+              a video ad already knowing what the lamp is, and the one thing they
+              came to find out is what it costs. Above 768px there is no fold to
+              fight and the conventional title-then-price order is restored. */}
           <div>
             {/* Brand is optional. The element is dropped rather than rendered
                 empty, so an unbranded product does not sit under a blank line
@@ -186,13 +221,33 @@ export function ProductPurchase({ product }: { product: Product }) {
             {product.brand && (
               <p className="text-caption font-medium text-muted">{product.brand}</p>
             )}
-            <h1 className={product.brand ? "mt-1 text-display text-ink" : "text-display text-ink"}>
+            {/* One step down from display on a phone. At 28px a keyword-stuffed
+                title runs to six lines and pushes the price, the stock line and
+                both buttons off the first screen; the title is not what has to
+                be read first, so it is the one that gives up the space. */}
+            <h1
+              className={
+                product.brand
+                  ? "mt-1 text-title text-ink md:text-display"
+                  : "text-title text-ink md:text-display"
+              }
+            >
               {product.title}
             </h1>
           </div>
 
-          <div className="flex flex-col gap-2">
-            <Price price={price} oldPrice={oldPrice} size="page" showBadge />
+          {/* Only the price is reordered, and it moves to -1 rather than the
+              rest moving to 2 and 3: every sibling defaults to `order: 0`, so
+              numbering just this one above them would have sent the quantity
+              stepper and both buttons above the title instead. */}
+          <div className="-order-1 flex flex-col gap-2 md:order-none">
+            <Price
+              price={shownPrice}
+              oldPrice={shownOldPrice}
+              size="page"
+              showBadge
+              prefix={from ? copy.product.priceFrom : undefined}
+            />
             <div className="flex flex-wrap items-center gap-2">
               {stockLine}
               {saved > 0 && (
@@ -234,7 +289,7 @@ export function ProductPurchase({ product }: { product: Product }) {
               size="xl"
               fullWidth
               onClick={handleBuyNow}
-              disabled={!inStock}
+              disabled={purchaseBlocked}
             >
               {copy.product.buyNow}
             </Button>
@@ -243,7 +298,7 @@ export function ProductPurchase({ product }: { product: Product }) {
               size="xl"
               fullWidth
               onClick={handleAddToCart}
-              disabled={!inStock}
+              disabled={purchaseBlocked}
             >
               <Icon name="cart" size={19} />
               {copy.product.addToCart}
@@ -258,8 +313,8 @@ export function ProductPurchase({ product }: { product: Product }) {
         visible={stickyVisible && !sheetOpen}
         image={product.images[variant?.imageIndex ?? 0] ?? product.images[0]}
         title={product.title}
-        price={price}
-        disabled={!inStock && complete}
+        price={shownPrice}
+        disabled={purchaseBlocked}
         onAddToCart={() => stickyAction(handleAddToCart)}
         onBuyNow={() => stickyAction(handleBuyNow)}
       />
@@ -282,7 +337,13 @@ export function ProductPurchase({ product }: { product: Product }) {
                 />
               </div>
               <div className="flex min-w-0 flex-col justify-center gap-1.5">
-                <Price price={price} oldPrice={oldPrice} size="row" showBadge />
+                <Price
+                  price={shownPrice}
+                  oldPrice={shownOldPrice}
+                  size="row"
+                  showBadge
+                  prefix={from ? copy.product.priceFrom : undefined}
+                />
                 {stockLine}
               </div>
             </div>
@@ -310,7 +371,7 @@ export function ProductPurchase({ product }: { product: Product }) {
                 size="lg"
                 fullWidth
                 onClick={handleAddToCart}
-                disabled={!inStock}
+                disabled={purchaseBlocked}
               >
                 {copy.product.addToCart}
               </Button>
@@ -319,7 +380,7 @@ export function ProductPurchase({ product }: { product: Product }) {
                 size="lg"
                 fullWidth
                 onClick={handleBuyNow}
-                disabled={!inStock}
+                disabled={purchaseBlocked}
                 data-autofocus
               >
                 {copy.product.buyNow}

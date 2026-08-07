@@ -54,7 +54,21 @@ export const copy = {
     included: "What's included",
     related: "You may also like",
     selectPrompt: (option: string) => `Select ${option}`,
-    selectRequired: "Please choose an option first",
+    /**
+     * Names what is missing rather than saying "an option".
+     *
+     * Nothing is pre-selected on a product with variants, so this is the
+     * message that stands between a customer and checkout. "Please choose an
+     * option first" makes them hunt for which one; on a two-axis product they
+     * frequently pick the axis they already chose.
+     */
+    selectRequired: (axes: string[]) =>
+      axes.length === 1
+        ? `Please choose a ${axes[0]} first`
+        : `Please choose ${axes.slice(0, -1).join(", ")} and ${axes[axes.length - 1]} first`,
+    /** Sits under the axis itself, where the choice is actually made. */
+    selectAxis: (axis: string) => `Choose a ${axis}`,
+    priceFrom: "From",
     save: (amount: string) => `Save ${amount}`,
     off: (percent: number) => `${percent}% OFF`,
     gallery: "Product images",
@@ -66,7 +80,17 @@ export const copy = {
 
   trust: {
     cod: "Cash on Delivery",
-    warranty: (period: string) => `${period} warranty`,
+    /**
+     * The word is appended only when it is missing.
+     *
+     * The admin field takes free text and its placeholder reads "1 year
+     * official warranty", so most products already carry the word — and
+     * appending unconditionally produced "2 years replacement warranty
+     * warranty" on the badge. A bare "1 year" still needs the noun, so
+     * dropping the suffix outright is not the fix either.
+     */
+    warranty: (period: string) =>
+      /warranty\s*$/i.test(period) ? period : `${period} warranty`,
     replacement: "7-day replacement",
     fastDelivery: "24–48h delivery in Dhaka",
   },

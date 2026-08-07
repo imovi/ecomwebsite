@@ -78,16 +78,24 @@ export function variantLabel(variant: Variant | undefined): string | undefined {
   return values.length ? values.join(" · ") : undefined;
 }
 
-/** Default selection: the cheapest in-stock variant, so the page never opens
- *  on a sold-out combination. */
-export function defaultSelection(
-  product: Product,
-): Partial<Record<VariantOptionName, string>> {
-  const inStock = product.variants.filter((v) => v.stock > 0);
-  const target = inStock.length
-    ? inStock.reduce((a, b) => (a.price <= b.price ? a : b))
-    : product.variants[0];
-  return target ? { ...target.options } : {};
+/**
+ * The cheapest variant, for the "From ৳x" shown before the customer has
+ * chosen one.
+ *
+ * The whole variant rather than just its price, so the struck-through old
+ * price and the discount badge belong to the same item as the figure beside
+ * them. Undefined when every variant costs the same — a "from" on a single
+ * price is noise — and undefined for a product without variants.
+ */
+export function cheapestVariant(product: Product): Variant | undefined {
+  if (product.variants.length < 2) return undefined;
+  let cheapest = product.variants[0]!;
+  let dearest = product.variants[0]!;
+  for (const variant of product.variants) {
+    if (variant.price < cheapest.price) cheapest = variant;
+    if (variant.price > dearest.price) dearest = variant;
+  }
+  return cheapest.price === dearest.price ? undefined : cheapest;
 }
 
 /* -------------------------------------------------------------------------- */

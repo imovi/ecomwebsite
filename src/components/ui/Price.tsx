@@ -14,6 +14,8 @@ interface PriceProps {
   size?: keyof typeof priceSizes;
   /** Show the "-25%" badge inline after the old price. */
   showBadge?: boolean;
+  /** Small leading word — "From", when the figure is the cheapest of several. */
+  prefix?: string;
   className?: string;
 }
 
@@ -28,6 +30,7 @@ export function Price({
   oldPrice,
   size = "card",
   showBadge = false,
+  prefix,
   className,
 }: PriceProps) {
   const s = priceSizes[size];
@@ -36,6 +39,8 @@ export function Price({
 
   return (
     <div className={cn("flex flex-wrap items-baseline gap-x-2 gap-y-1", className)}>
+      {prefix && <span className="text-caption text-muted">{prefix}</span>}
+
       <span
         className={cn("tnum tracking-tight", s.current, discounted ? "text-sale" : "text-ink")}
       >

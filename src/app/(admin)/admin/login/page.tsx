@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import { Suspense } from "react";
+import { cookies } from "next/headers";
 import { LoginForm } from "@/components/admin/LoginForm";
-import { Skeleton } from "@/components/ui/Layout";
 import { copy } from "@/lib/copy";
+import { RETURN_TO_COOKIE, safeReturnTo } from "@/lib/admin/return-to";
 
 /**
  * The shop's name, not a live lookup.
@@ -25,7 +25,12 @@ export const metadata: Metadata = {
  * Deliberately outside the admin shell — no navigation, no store branding
  * beyond the wordmark. Nothing here should hint at what the panel contains.
  */
-export default function AdminLoginPage() {
+export default async function AdminLoginPage() {
+  /* Where the proxy was taking this admin before it found no session. Read here
+     rather than in the form so the destination survives a submission without
+     JavaScript — it goes into the form as a hidden field. */
+  const returnTo = safeReturnTo((await cookies()).get(RETURN_TO_COOKIE)?.value);
+
   return (
     <main className="flex min-h-dvh items-center justify-center bg-surface px-5 py-12">
       <div className="w-full max-w-[380px]">
@@ -35,9 +40,7 @@ export default function AdminLoginPage() {
         </div>
 
         <div className="rounded-md border border-line bg-white p-6 shadow-card">
-          <Suspense fallback={<Skeleton className="h-64 w-full" />}>
-            <LoginForm />
-          </Suspense>
+          <LoginForm returnTo={returnTo} />
         </div>
 
         <p className="mt-6 text-center text-micro text-muted">

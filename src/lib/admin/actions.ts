@@ -1,7 +1,9 @@
 "use server";
 
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { login, logout, readSession } from "./session";
+import { RETURN_TO_COOKIE, RETURN_TO_PATH, safeReturnTo } from "./return-to";
 import type { ApiAdmin } from "@/lib/api/types";
 
 /**
@@ -19,22 +21,14 @@ export interface LoginFormState {
   email?: string;
 }
 
-/** Only same-site paths are honoured, so `?next=` cannot become a redirector. */
-function safeNext(value: unknown): string {
-  if (typeof value !== "string" || value === "") return "/admin";
-  if (!value.startsWith("/admin")) return "/admin";
-  /* Protocol-relative URLs (`//evil.com`) start with a slash too. */
-  if (value.startsWith("//")) return "/admin";
-  return value;
-}
-
 export async function loginAction(
   _state: LoginFormState,
   formData: FormData,
 ): Promise<LoginFormState> {
   const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "");
-  const next = safeNext(formData.get("next"));
+  const value = formData.get("next");
+  const next = safeReturnTo(typeof value === "string" ? value : null);
 
   if (!email || !password) {
     return { error: "Enter your email and password.", email };
@@ -42,6 +36,10 @@ export async function loginAction(
 
   const result = await login(email, password);
   if (!result.ok) return { error: result.error, email };
+
+  /* Spent. Left behind, it would override the destination of the next sign-in
+     on this browser for the ten minutes it has left to live. */
+  (await cookies()).delete({ name: RETURN_TO_COOKIE, path: RETURN_TO_PATH });
 
   /* `redirect` throws, so it must sit outside any try/catch. */
   redirect(next);

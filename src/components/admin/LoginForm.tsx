@@ -1,7 +1,6 @@
 "use client";
 
 import { useActionState } from "react";
-import { useSearchParams } from "next/navigation";
 import { useFormStatus } from "react-dom";
 import { loginAction, type LoginFormState } from "@/lib/admin/actions";
 import { Input } from "@/components/ui/Field";
@@ -13,15 +12,15 @@ import { Button } from "@/components/ui/Button";
  * A server action rather than a fetch: the response has to set an httpOnly
  * cookie, and this way the form also submits without JavaScript.
  */
-export function LoginForm() {
-  const searchParams = useSearchParams();
-  const next = searchParams.get("next") ?? "/admin";
-
+export function LoginForm({ returnTo }: { returnTo: string }) {
   const [state, formAction] = useActionState<LoginFormState, FormData>(loginAction, {});
 
   return (
     <form action={formAction} className="flex flex-col gap-4">
-      <input type="hidden" name="next" value={next} />
+      {/* Read from a cookie by the page above, not from the address bar — see
+          lib/admin/return-to.ts. Still validated in the action: a hidden field
+          is a field, and anyone can post their own. */}
+      <input type="hidden" name="next" value={returnTo} />
 
       <Input
         label="Email"

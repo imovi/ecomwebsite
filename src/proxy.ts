@@ -1,4 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
+import {
+  RETURN_TO_COOKIE,
+  RETURN_TO_PATH,
+  returnToCookieOptions,
+  safeReturnTo,
+} from "@/lib/admin/return-to";
 
 /**
  * Admin route guard.
@@ -23,29 +29,6 @@ import { NextResponse, type NextRequest } from "next/server";
 
 const SESSION_COOKIES = ["gng_admin_at", "gng_admin_rt"];
 
-/**
- * Only same-site admin paths are honoured as a redirect target.
- *
- * `next` arrives in a query string, so it is attacker-controlled: without this
- * an emailed `/admin/login?next=https://evil.example` would bounce an
- * authenticated admin straight off-site. Mirrors the check in
- * `lib/admin/actions.ts`, which guards the same parameter on the form path.
- */
-function safeNext(value: string | null): string {
-  if (!value) return "/admin";
-
-  /* A path boundary is required, not a prefix match: `/adminx/evil` and
-     `/admin.evil.com` both start with "/admin" while going somewhere else. */
-  if (value !== "/admin" && !value.startsWith("/admin/")) return "/admin";
-
-  /* Protocol-relative URLs start with a slash too, but cannot reach here given
-     the check above. Kept as an explicit guard so a future loosening of that
-     check does not quietly open a redirect. */
-  if (value.startsWith("//")) return "/admin";
-
-  return value;
-}
-
 export function proxy(request: NextRequest): NextResponse {
   const { pathname, search } = request.nextUrl;
 
@@ -53,22 +36,50 @@ export function proxy(request: NextRequest): NextResponse {
 
   if (pathname === "/admin/login") {
     /* Already signed in — skip the form, but honour where they were headed.
-       Dropping `next` here would silently strand anyone who followed a link to a
-       specific order or product back on the overview. */
+       Forgetting the destination here would silently strand anyone who followed
+       a link to a specific order or product back on the overview. */
     if (hasSession) {
-      const target = safeNext(request.nextUrl.searchParams.get("next"));
-      return NextResponse.redirect(new URL(target, request.url));
+      const target = safeReturnTo(request.cookies.get(RETURN_TO_COOKIE)?.value);
+      const response = NextResponse.redirect(new URL(target, request.url));
+      response.cookies.delete({ name: RETURN_TO_COOKIE, path: RETURN_TO_PATH });
+      return response;
     }
+
+    /* A `?next=` still arrives from two places: an old bookmark, and the panel
+       itself, which bounces an expired session here from the browser and has no
+       way to write a server cookie. Absorb it and redirect to the bare address
+       — the destination is kept, and the parameter never reaches the page the
+       admin reads while typing a password. */
+    const fromQuery = request.nextUrl.searchParams.get("next");
+    if (fromQuery !== null) {
+      const response = NextResponse.redirect(new URL("/admin/login", request.url));
+      const target = safeReturnTo(fromQuery);
+      if (target === "/admin") {
+        response.cookies.delete({ name: RETURN_TO_COOKIE, path: RETURN_TO_PATH });
+      } else {
+        response.cookies.set(RETURN_TO_COOKIE, target, returnToCookieOptions);
+      }
+      return response;
+    }
+
     return NextResponse.next();
   }
 
   if (!hasSession) {
-    const login = new URL("/admin/login", request.url);
-    /* Round-trip the intended destination so a bookmarked order page still
-       lands where the admin meant to go after signing in. Path-only, and
-       validated on the other side, so this cannot become an open redirect. */
-    if (pathname !== "/admin") login.searchParams.set("next", pathname + search);
-    return NextResponse.redirect(login);
+    const response = NextResponse.redirect(new URL("/admin/login", request.url));
+
+    if (pathname !== "/admin") {
+      /* Remembered in a cookie rather than a `?next=` parameter, so the sign-in
+         page keeps a plain address. Path-only, and validated again on the way
+         out, so it cannot become an open redirect. */
+      response.cookies.set(RETURN_TO_COOKIE, pathname + search, returnToCookieOptions);
+    } else {
+      /* Going to the dashboard is itself a destination. Leaving an older cookie
+         in place would send this admin somewhere they did not ask for. */
+      response.cookies.delete({ name: RETURN_TO_COOKIE, path: RETURN_TO_PATH });
+    }
+
+    return response;
   }
 
   const response = NextResponse.next();

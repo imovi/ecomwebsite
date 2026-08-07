@@ -108,6 +108,18 @@ export function CategoryManager() {
     try {
       const data = await adminApi.get<{ categories: ApiCategory[] }>("admin/categories");
       setCategories(data.categories);
+
+      /* Re-point the open editor at the row that was just re-read.
+         `editing` holds the category object, not its id, so without this it
+         keeps the copy it was opened with — and removing a picture would
+         refresh the list underneath while the form above still showed the
+         picture it had just deleted. */
+      setEditing((current) =>
+        current && current !== "new"
+          ? (data.categories.find((row) => row.id === current.id) ?? current)
+          : current,
+      );
+
       setError(null);
     } catch (caught) {
       setError(caught instanceof AdminApiError ? caught.message : "Could not load categories.");
@@ -235,6 +247,12 @@ export function CategoryManager() {
                 "Picture uploaded",
               );
             }}
+            onRemoveImage={async (id) => {
+              await run(
+                () => adminApi.delete(`admin/categories/${id}/image`),
+                "Picture removed — the icon is used now",
+              );
+            }}
           />
         )}
 
@@ -342,6 +360,7 @@ function CategoryForm({
   onClose,
   onSave,
   onUploadImage,
+  onRemoveImage,
 }: {
   category: ApiCategory | null;
   busy: boolean;
@@ -352,6 +371,7 @@ function CategoryForm({
     stagedImage?: File,
   ) => Promise<void>;
   onUploadImage: (id: string, file: File) => Promise<void>;
+  onRemoveImage: (id: string) => Promise<void>;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState(category?.name ?? "");
@@ -465,14 +485,28 @@ function CategoryForm({
                 {currentImage ? "Replace picture" : "Upload picture"}
               </Button>
 
-              {stagedImage && (
+              {/* Removable whether the picture is staged or already saved.
+                  It used to be offered only for a staged one, which meant a
+                  category that had ever been given a picture could never go
+                  back to an icon: the picture always wins, so choosing an icon
+                  and saving looked like the save had failed. */}
+              {currentImage && (
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
-                  onClick={() => stageFile(null)}
+                  loading={busy}
+                  onClick={() => {
+                    if (stagedImage) {
+                      stageFile(null);
+                      return;
+                    }
+                    if (!category) return;
+                    void onRemoveImage(category.id);
+                  }}
                 >
-                  Remove
+                  <Icon name="trash" size={15} />
+                  Remove picture
                 </Button>
               )}
             </div>
@@ -480,7 +514,7 @@ function CategoryForm({
 
           <p className="text-micro text-muted">
             Optional. Square images work best — it is shown in a circle. When set, it
-            is used instead of the icon below.
+            is used instead of the icon below — remove it to go back to an icon.
           </p>
         </div>
 

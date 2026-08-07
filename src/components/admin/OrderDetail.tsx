@@ -114,9 +114,13 @@ export function OrderDetail({ identifier }: { identifier: string }) {
           <Button href="/admin/orders" variant="ghost" size="sm">
             Back
           </Button>
-          {/* Opens the API's printable invoice through the authenticated proxy. */}
+          {/* Opens the API's printable invoice through the authenticated proxy.
+
+              `format=html` is not optional here: the endpoint defaults to JSON —
+              for a caller that wants to render its own invoice — so without it
+              this button opened a tab of raw JSON. */}
           <Button
-            href={`/api/admin/admin/orders/${order.orderNumber}/invoice`}
+            href={`/api/admin/admin/orders/${order.orderNumber}/invoice?format=html`}
             target="_blank"
             rel="noopener"
             variant="secondary"

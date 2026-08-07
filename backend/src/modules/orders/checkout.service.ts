@@ -556,6 +556,22 @@ export async function placeOrder(
  * that did not send one. It compares the phone number and the exact totals of
  * recent orders — a customer legitimately ordering twice in two minutes will
  * almost never match on both.
+ *
+ * NOT CURRENTLY WIRED INTO `placeOrder`, and that is a product decision rather
+ * than an oversight to be quietly corrected. Calling it there collapses two
+ * identical back-to-back orders into one, which the integration tests pin as
+ * two distinct orders in more than twenty places — so switching it on changes
+ * what "an order" means, not merely how a retry is handled.
+ *
+ * The retry hole it was written for is closed on the client instead: the
+ * checkout's idempotency key now survives a reload (`ATTEMPT_KEY` in
+ * `CheckoutForm`), which was the actual gap — the key used to live in a ref and
+ * die with the mount, so a shopper who reloaded after a timeout submitted with
+ * a fresh key and got a second real order.
+ *
+ * Turn this on only alongside a decision about the false positive: a genuine
+ * second identical order inside the window is answered with the first order's
+ * confirmation, and the customer has no way to tell.
  */
 export async function findLikelyDuplicate(
   phone: string,

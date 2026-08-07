@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { resolveCartAction, type ResolvedCartLine } from "@/app/actions";
 import { useCartStore } from "@/lib/stores/cart-store";
 import type { CartLine } from "@/types";
@@ -26,6 +26,22 @@ import type { CartLine } from "@/types";
  * Keyed on the cart CONTENTS rather than the array identity, so a re-render does
  * not trigger a refetch but changing a quantity does.
  */
+
+/**
+ * How long a quantity change settles before the server is asked about it.
+ *
+ * The stepper reports every tap immediately — it must, or the number under the
+ * customer's finger would lag — and the cart key includes the quantity, so
+ * without this each tap was its own round trip. Going from one to five sent five
+ * resolutions, each of them a request per distinct product in the cart, and a
+ * customer adjusting quantities does that on the two pages where the server is
+ * already busiest.
+ *
+ * Long enough to swallow a run of taps, short enough that a deliberate single
+ * change still feels immediate.
+ */
+const SETTLE_MS = 350;
+
 export function useResolvedCart(lines: CartLine[], enabled = true) {
   const removeLines = useCartStore((s) => s.removeLines);
 
@@ -46,6 +62,10 @@ export function useResolvedCart(lines: CartLine[], enabled = true) {
     .map((line) => `${line.productId}:${line.variantId ?? ""}:${line.qty}`)
     .join("|");
 
+  /* The first resolution is what the page renders from, so it must not wait.
+     Only CHANGES are worth settling — those come from a stepper being tapped. */
+  const settled = useRef(false);
+
   useEffect(() => {
     if (!enabled) return;
 
@@ -63,32 +83,48 @@ export function useResolvedCart(lines: CartLine[], enabled = true) {
 
     let cancelled = false;
 
-    void resolveCartAction(
-      lines.map((line) => ({
-        productId: line.productId,
-        variantId: line.variantId,
-        qty: line.qty,
-      })),
-    ).then((result) => {
-      if (cancelled) return;
+    const resolve = () => {
+      void resolveCartAction(
+        lines.map((line) => ({
+          productId: line.productId,
+          variantId: line.variantId,
+          qty: line.qty,
+        })),
+      ).then((result) => {
+        if (cancelled) return;
 
-      /* Zero-quantity lines mean the item sold out entirely while the cart sat
-         open; they leave the display and are reported as removed. */
-      setResolved(result.lines.filter((line) => line.qty > 0));
-      setRemoved(result.dropped.length);
-      /* Whatever `unavailable` counted beyond what was dropped could not be
-         reached — those lines stay in the cart. */
-      setUnloadable(Math.max(0, result.unavailable - result.dropped.length));
-      setLoading(false);
+        /* Zero-quantity lines mean the item sold out entirely while the cart sat
+           open; they leave the display and are reported as removed. */
+        setResolved(result.lines.filter((line) => line.qty > 0));
+        setRemoved(result.dropped.length);
+        /* Whatever `unavailable` counted beyond what was dropped could not be
+           reached — those lines stay in the cart. */
+        setUnloadable(Math.max(0, result.unavailable - result.dropped.length));
+        setLoading(false);
 
-      /* Bring the stored cart in line with what is actually buyable. Called after
-         the state updates above so the shopper still sees the "removed" notice on
-         this view rather than the cart silently shrinking under them. */
-      if (result.dropped.length > 0) removeLines(result.dropped);
-    });
+        /* Bring the stored cart in line with what is actually buyable. Called after
+           the state updates above so the shopper still sees the "removed" notice on
+           this view rather than the cart silently shrinking under them. */
+        if (result.dropped.length > 0) removeLines(result.dropped);
+      });
+    };
+
+    if (!settled.current) {
+      settled.current = true;
+      resolve();
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    /* A change. The previous figures stay on screen while this settles, which is
+       what the display already did during a fetch — the alternative is the cart
+       total flickering to a skeleton on every tap of the stepper. */
+    const timer = setTimeout(resolve, SETTLE_MS);
 
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
     /* Intentionally keyed on the serialised contents, not the array. */
     // eslint-disable-next-line react-hooks/exhaustive-deps

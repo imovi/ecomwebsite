@@ -26,6 +26,53 @@ import { OrderSummary } from "./OrderSummary";
 
 const DRAFT_KEY = "gng-checkout-draft-v1";
 
+/**
+ * The idempotency key for the checkout attempt in progress.
+ *
+ * Stored beside the draft rather than held only in memory. A key that lives in a
+ * ref dies with the mount, and the mount dies on a reload — so the one scenario
+ * it exists to cover was the one it did not: the request times out at eight
+ * seconds while the order actually commits, the shopper sees "we could not reach
+ * our system", refreshes, and submits again. A fresh key makes that a second
+ * real order, with a second set of stock reserved and a second parcel to send
+ * out cash-on-delivery.
+ *
+ * Cleared once an order comes back, so the next customer on a shared phone — and
+ * the same customer buying again tomorrow — starts a genuinely new attempt.
+ */
+const ATTEMPT_KEY = "gng-checkout-attempt-v1";
+
+/**
+ * Reads the current attempt's key, minting and persisting one if there is none.
+ *
+ * Runs on submit rather than at mount: touching storage during render would be
+ * read on the server too, and the value is not needed until there is something
+ * to send.
+ */
+function currentAttemptKey(): string {
+  try {
+    const existing = sessionStorage.getItem(ATTEMPT_KEY);
+    if (existing) return existing;
+
+    const minted = crypto.randomUUID();
+    sessionStorage.setItem(ATTEMPT_KEY, minted);
+    return minted;
+  } catch {
+    /* Private mode or a blocked store. A per-call key is still better than
+       none: it covers the client's own retry of a single submit, which is what
+       `apiRequest` and a double-tapped button produce. */
+    return crypto.randomUUID();
+  }
+}
+
+function clearAttemptKey(): void {
+  try {
+    sessionStorage.removeItem(ATTEMPT_KEY);
+  } catch {
+    /* Nothing was stored, so nothing to clear. */
+  }
+}
+
 interface Draft {
   customerName: string;
   phone: string;
@@ -68,11 +115,9 @@ export function CheckoutForm({ settings }: { settings: StoreSettings }) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
 
-  /* One key per mounted checkout attempt. A retry after a dropped connection
-     reuses it, so the API returns the original order rather than creating a
-     second one — the single most expensive bug a flaky mobile network can
-     cause on a cash-on-delivery store. */
-  const idempotencyKey = useRef<string>(crypto.randomUUID());
+  /* The key itself lives in `sessionStorage` — see `currentAttemptKey`. It has
+     to outlive this component, because a reload after a timeout is exactly the
+     retry it exists to make safe. */
 
   /* --- Lines ------------------------------------------------------------ */
 
@@ -347,9 +392,10 @@ export function CheckoutForm({ settings }: { settings: StoreSettings }) {
         variantId: l.variantId,
         qty: l.qty,
       })),
-      /* Stable for this checkout attempt, so a retry after a dropped
-         connection returns the original order instead of creating a second. */
-      idempotencyKey: idempotencyKey.current,
+      /* Stable for this checkout attempt — across a retry, a re-render AND a
+         reload — so a submit that timed out on the way back returns the
+         original order instead of creating a second. */
+      idempotencyKey: currentAttemptKey(),
     });
 
     if (!result.ok) {
@@ -362,6 +408,11 @@ export function CheckoutForm({ settings }: { settings: StoreSettings }) {
     /* Stash the confirmation so the success page can itemise the order
        without a public lookup endpoint. */
     rememberOrder(result.order);
+
+    /* This attempt is over. Leaving the key behind would make the customer's
+       NEXT order — same tab, ten minutes later — replay this one and hand them
+       a confirmation for a parcel they already have. */
+    clearAttemptKey();
 
     // Clear only what was actually purchased.
     if (buyNowMode) clearBuyNow();

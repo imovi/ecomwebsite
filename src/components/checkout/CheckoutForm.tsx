@@ -296,11 +296,40 @@ export function CheckoutForm({ settings }: { settings: StoreSettings }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cartKey, zone]);
 
-  /* Report reaching checkout once the cart is priced, so both platforms can
-     report a checkout-to-purchase rate. */
+  /**
+   * Report reaching checkout, so both platforms can report a
+   * checkout-to-purchase rate.
+   *
+   * NOT on arrival. This used to fire the moment the cart was priced, which
+   * meant every visitor who so much as landed on the page counted as having
+   * begun a checkout — including the ones who took one look at the delivery
+   * charge and left without touching a field. That inflates the top of the
+   * funnel with people who never intended anything, and since Meta optimises
+   * delivery toward whoever produces the event, it teaches the ad account to
+   * find more of exactly that person.
+   *
+   * A name and a working phone number is where intent becomes real on a
+   * cash-on-delivery store: it is the point where the shopper has handed over
+   * the thing the shop would actually call them on.
+   *
+   * The thresholds are the form's OWN — `validate()` accepts a name of three
+   * characters and a Bangladeshi mobile, and this deliberately reuses both
+   * rather than inventing a second standard. A number that would be rejected at
+   * Place Order must not be good enough to report a checkout.
+   *
+   * Still once per page, by the ref: the fields keep changing after this fires
+   * and a second event would double-count one shopper.
+   */
   const reportedCheckout = useRef(false);
   useEffect(() => {
     if (reportedCheckout.current || lines.length === 0) return;
+
+    /* The phone pattern only matches a complete number, so this cannot fire
+       part-way through someone typing one. */
+    const named = form.customerName.trim().length >= 3;
+    const reachable = /^01[3-9]\d{8}$/.test(normalizePhone(form.phone));
+    if (!named || !reachable) return;
+
     reportedCheckout.current = true;
 
     trackInitiateCheckout({
@@ -311,8 +340,13 @@ export function CheckoutForm({ settings }: { settings: StoreSettings }) {
          product and break the funnel entirely. */
       items: lines.map((l) => ({ sku: l.sku, title: l.title, quantity: l.qty })),
     });
+    /* The two fields are dependencies now, not just the cart: the whole point is
+       that this re-checks as the shopper types and fires on the keystroke that
+       completes their phone number. Keyed on `lines.length` rather than `lines`
+       so a quantity change does not re-enter — the ref would stop it anyway,
+       but only after the work. */
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lines.length]);
+  }, [lines.length, form.customerName, form.phone]);
 
   /* --- Submit ------------------------------------------------------------ */
 

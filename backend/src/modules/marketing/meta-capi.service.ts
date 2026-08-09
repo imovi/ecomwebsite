@@ -234,6 +234,14 @@ export interface SendOutcome {
   /** Meta's event receipt, useful for confirming a test event arrived. */
   eventsReceived?: number;
   fbTraceId?: string;
+  /**
+   * The event went to the Test Events console instead of counting.
+   *
+   * Reported because "sent" and "counted" are not the same thing, and a caller
+   * that logs the first as if it were the second is telling the operator their
+   * sales are being reported when they are not.
+   */
+  testMode?: boolean;
 }
 
 /**
@@ -260,11 +268,24 @@ async function send(
     };
   }
 
+  /**
+   * A test code diverts EVERY event, not just the dashboard's test button.
+   *
+   * That is what makes it useful — it is how an operator watches a real order
+   * arrive in the Test Events console during setup — and it is also the most
+   * expensive thing to leave switched on, because Meta does not count a test
+   * event toward delivery or reporting. Every real sale placed while it is set
+   * is a sale the campaign never learns from.
+   *
+   * The admin panel warns while it is on. This flag is so the outcome can say so
+   * too: "sent" and "counted" are not the same thing, and a caller that reports
+   * the first as the second hides the loss.
+   */
+  const testMode = config.metaTestEventCode.trim() !== "";
+
   const body = {
     data: [event],
-    ...(config.metaTestEventCode.trim() !== ""
-      ? { test_event_code: config.metaTestEventCode.trim() }
-      : {}),
+    ...(testMode ? { test_event_code: config.metaTestEventCode.trim() } : {}),
     access_token: config.metaCapiToken,
   };
 
@@ -304,6 +325,7 @@ async function send(
 
   return {
     sent: true,
+    testMode,
     ...(parsed.events_received !== undefined ? { eventsReceived: parsed.events_received } : {}),
     ...(parsed.fbtrace_id !== undefined ? { fbTraceId: parsed.fbtrace_id } : {}),
   };

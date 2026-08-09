@@ -54,7 +54,27 @@ export function registerMetaTracking(): void {
       fbp: event.fbp,
     });
 
-    if (outcome.sent) {
+    if (outcome.sent && outcome.testMode) {
+      /**
+       * Delivered, and deliberately not counted.
+       *
+       * A test event code is set in settings, so Meta files this sale in the
+       * Test Events console and it trains nothing. That is correct during
+       * setup and expensive afterwards — a code left in place quietly turns
+       * every real sale into a rehearsal.
+       *
+       * WARN, not info, and it names what was lost: the previous line here
+       * said "Purchase reported to Meta" either way, which was true in the
+       * narrow sense and misleading in the one that costs money. The admin
+       * panel warns while the code is set; this is the same warning where an
+       * operator reading the logs will meet it.
+       */
+      log.warn(
+        { orderNumber: event.orderNumber },
+        "Purchase sent to Meta as a TEST event — it will not count toward the campaign. " +
+          "Clear the test event code in Marketing settings.",
+      );
+    } else if (outcome.sent) {
       log.info({ orderNumber: event.orderNumber }, "Purchase reported to Meta");
     } else {
       /* Not an error when tracking is simply switched off — that is the normal

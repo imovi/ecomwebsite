@@ -205,6 +205,33 @@ describe("meta CAPI — purchase match keys", () => {
   });
 });
 
+describe("meta CAPI — test mode is reported, not hidden", () => {
+  it("says so when a real sale was filed as a test", async () => {
+    const outcome = await trackPurchase(EVENT, { ...CONFIG, metaTestEventCode: "TEST12345" });
+
+    /* A test code diverts EVERY event, not only the dashboard's test button —
+       which is what makes leaving it set the most expensive misconfiguration
+       available. The outcome has to admit it, because "sent" and "counted" are
+       not the same thing and a caller that logs the first as the second hides
+       the loss. */
+    assert.equal(outcome.sent, true);
+    assert.equal(outcome.testMode, true, "the outcome must admit the sale was not counted");
+    assert.equal(sent[0]!.body.test_event_code, "TEST12345");
+  });
+
+  it("counts the sale when no test code is set", async () => {
+    const outcome = await trackPurchase(EVENT, CONFIG);
+
+    assert.equal(outcome.sent, true);
+    assert.equal(outcome.testMode, false);
+    assert.equal(
+      "test_event_code" in sent[0]!.body,
+      false,
+      "nothing may divert a live sale to the test console",
+    );
+  });
+});
+
 describe("meta CAPI — normalisation", () => {
   it("strips case and punctuation before hashing", () => {
     assert.equal(hashField("  Rahman  "), sha256("rahman"));

@@ -4,6 +4,7 @@ import { WhatsAppButton } from "@/components/shop/WhatsAppButton";
 import { FloatingCart } from "@/components/shop/FloatingCart";
 import { getSettings } from "@/lib/data/settings";
 import { MetaPixel } from "@/lib/analytics/pixel";
+import { FbClickCapture } from "@/lib/analytics/FbClickCapture";
 import { GoogleTagManager } from "@/lib/analytics/gtm";
 
 /**
@@ -31,6 +32,8 @@ export default async function ShopLayout({
       <WhatsAppButton phone={settings.whatsappNumber} />
       <FloatingCart />
       <MetaPixel />
+      {/* Records the ad click on arrival, whether or not the pixel loads. */}
+      <FbClickCapture />
       <GoogleTagManager />
     </>
   );

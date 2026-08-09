@@ -6,6 +6,7 @@ import type { DeliveryZone, StoreSettings } from "@/types";
 import { useResolvedCart } from "@/lib/hooks/use-resolved-cart";
 import { suggestZone, type ZoneSuggestion } from "@/lib/geo";
 import { trackInitiateCheckout } from "@/lib/analytics/events";
+import { getClickIds } from "@/lib/analytics/fb-click-id";
 import { rememberOrder } from "@/lib/stores/last-order";
 import { useCartStore } from "@/lib/stores/cart-store";
 import { toast } from "@/lib/stores/toast-store";
@@ -430,6 +431,10 @@ export function CheckoutForm({ settings }: { settings: StoreSettings }) {
          reload — so a submit that timed out on the way back returns the
          original order instead of creating a second. */
       idempotencyKey: currentAttemptKey(),
+      /* Read here rather than earlier: these are cookies, and reading them at
+         submit means the value is whatever the browser holds at the moment the
+         order is actually placed. Both are null for most shoppers. */
+      ...getClickIds(),
     });
 
     if (!result.ok) {

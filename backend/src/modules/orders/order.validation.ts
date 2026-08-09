@@ -86,6 +86,22 @@ export const placeOrderSchema = z
     items: z.array(cartItemSchema).min(1, "Your cart is empty.").max(50),
     /** Free-text from the customer, kept separate from internal notes. */
     customerNote: safeString({ max: 500 }).nullish(),
+
+    /**
+     * Meta's click and browser cookies, read by the storefront at submit.
+     *
+     * Opaque to this API — they are passed through to the conversion report and
+     * never parsed, so they are bounded by length and nothing else. A client
+     * that sends nonsense here poisons only its own attribution.
+     *
+     * They MUST be declared even though nothing here reads them, because this
+     * schema is `.strict()`: an undeclared field is not ignored, it is a 422.
+     * Shipping the storefront half of this without this line would reject every
+     * checkout in the shop.
+     */
+    fbc: safeString({ max: 255 }).nullish(),
+    fbp: safeString({ max: 255 }).nullish(),
+
     /* Deliberately absent: price, subtotal, deliveryCharge, grandTotal.
        Accepting any of them from an unauthenticated request would let a
        client name its own price. `.strict()` rejects them outright. */

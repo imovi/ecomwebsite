@@ -446,6 +446,10 @@ export async function placeOrder(
         idempotencyKey: context.idempotencyKey ?? null,
         customerIp: context.ipAddress ?? null,
         userAgent: context.userAgent?.slice(0, 512) ?? null,
+        /* From the request body rather than a header: these are cookies only
+           the browser can read, and the storefront forwards them explicitly. */
+        fbc: input.fbc ?? null,
+        fbp: input.fbp ?? null,
       },
       tx,
     );
@@ -526,6 +530,12 @@ export async function placeOrder(
     /* The note is never stored on the order row — it lives in the timeline —
        so it comes from the request that is still in scope here. */
     customerNote: input.customerNote ?? null,
+    /* Read off the committed row rather than the request: what was actually
+       stored is what a conversion should be reported against. */
+    customerIp: created.order.customerIp,
+    userAgent: created.order.userAgent,
+    fbc: created.order.fbc,
+    fbp: created.order.fbp,
     placedAt: created.order.createdAt,
   });
 

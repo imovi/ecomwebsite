@@ -224,6 +224,49 @@ export function suggestDeliveryZone(areaText: string): ZoneSuggestion | null {
   return null;
 }
 
+/**
+ * The city an order belongs to, as a plain lowercase token.
+ *
+ * For ad platforms, which match a customer on a CITY and not on the line of an
+ * address. `area_text` is whatever the customer typed — "Dhanmondi 27, Dhaka",
+ * "savar,dhaka", "কুমিল্লা" — and handing that over raw matches nothing at all,
+ * because the receiving end lowercases it, strips the spaces and compares the
+ * result to a list of real city names. `dhanmondi27dhaka` is on no such list.
+ *
+ * So it is resolved through the same normalisation the zone suggestion uses,
+ * which already knows the sixty-four districts, the Bangla spellings and the
+ * usual misspellings.
+ *
+ * Inside Dhaka the answer is always "dhaka" whatever neighbourhood was written:
+ * Gulshan is not a city, it is part of one. Outside, the district IS the city
+ * for this purpose — that is the granularity a courier and an ad platform both
+ * work at.
+ *
+ * Returns null rather than guessing. An unmatched city is a field better left
+ * off the event than filled with something that cannot be true.
+ */
+export function resolveCity(areaText: string, zone: DeliveryZone): string | null {
+  if (zone === "inside_dhaka") return "dhaka";
+
+  const raw = normalize(areaText);
+  if (raw.length < 3) return null;
+  const text = applyAliases(raw);
+
+  /* A district named outright wins — it is the most specific thing the
+     customer could have written. */
+  const district = findMatch(text, DISTRICTS);
+  if (district) return district;
+
+  /* Otherwise a town from the outside-overrides list. Several of those ARE
+     districts (Gazipur, Narayanganj, Munshiganj); the rest — Savar, Ashulia,
+     Tongi — are real towns an ad platform knows by name, so they are worth
+     sending as they stand. */
+  const override = findMatch(text, OUTSIDE_OVERRIDES);
+  if (override) return override;
+
+  return null;
+}
+
 /** Autocomplete source for an address field. */
 export function searchAreas(query: string, limit = 8): string[] {
   const normalized = normalize(query);

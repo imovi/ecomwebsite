@@ -87,6 +87,25 @@ export const orders = pgTable(
     customerIp: text("customer_ip"),
     userAgent: text("user_agent"),
 
+    /**
+     * Meta's click and browser identifiers, as the browser held them at
+     * checkout.
+     *
+     * `fbc` encodes the exact ad click that brought this customer — it is what
+     * lets a sale be attributed to the ad that paid for it instead of being
+     * guessed at from a name and a phone number. `fbp` identifies the browser.
+     *
+     * Stored rather than passed straight through because the conversion is
+     * reported from the order event bus AFTER the transaction commits, and a
+     * value held only in the request would be lost to any retry or replay — the
+     * cases where the report matters most.
+     *
+     * Null for the large majority of orders: a customer who found the shop
+     * without clicking an ad has no click to record.
+     */
+    fbc: text("fbc"),
+    fbp: text("fbp"),
+
     /* --- Lifecycle timestamps -------------------------------------------- */
     /* Individually stamped rather than derived from the timeline: reporting
        queries must not have to scan an event table to find when an order was

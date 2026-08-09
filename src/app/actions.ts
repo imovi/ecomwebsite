@@ -435,6 +435,19 @@ export interface CheckoutInput {
    * attempt, so a dropped connection cannot create two orders.
    */
   idempotencyKey?: string | undefined;
+
+  /**
+   * Meta's click and browser cookies, read in the browser at submit.
+   *
+   * They can only come from the client: they are cookies on the shop's own
+   * domain and this server never sees them on a server action's request. `fbc`
+   * names the ad click that produced the order, which is what lets the sale be
+   * attributed to the ad that paid for it rather than guessed at.
+   *
+   * Absent for most orders — a shopper who never clicked an ad has no click.
+   */
+  fbc?: string | null | undefined;
+  fbp?: string | null | undefined;
 }
 
 export type CheckoutResult =
@@ -461,6 +474,11 @@ export async function placeOrderAction(input: CheckoutInput): Promise<CheckoutRe
           deliveryZone: input.deliveryZone,
           items: toApiItems(input.lines),
           ...(input.customerNote ? { customerNote: input.customerNote } : {}),
+          /* Omitted rather than sent as null when absent — the API's schema is
+             `.strict()`, so these keys exist there deliberately and sending
+             nothing is the same as sending nothing. */
+          ...(input.fbc ? { fbc: input.fbc } : {}),
+          ...(input.fbp ? { fbp: input.fbp } : {}),
         },
         headers: {
           "idempotency-key": input.idempotencyKey ?? randomUUID(),

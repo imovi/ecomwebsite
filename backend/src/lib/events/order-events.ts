@@ -60,6 +60,25 @@ export interface OrderCreatedEvent {
   deliveryCharge: number;
   customerNote: string | null;
 
+  /**
+   * What the shopper's browser told us about itself.
+   *
+   * Carried for ad-platform conversion reporting, which matches a sale to a
+   * person partly on these. They live on the order row and a subscriber could
+   * read them back — but the same rule applies here as to `contents`: the order
+   * is immutable at this instant, and a later admin correction must not be able
+   * to rewrite what was reported about a sale that already happened.
+   *
+   * `fbc` names the ad click that produced the order and is the single
+   * strongest attribution signal there is; `fbp` identifies the browser. Both
+   * are null for a shopper who arrived without ever clicking an ad, which is
+   * most of them, and that is fine — they are additive.
+   */
+  customerIp: string | null;
+  userAgent: string | null;
+  fbc: string | null;
+  fbp: string | null;
+
   placedAt: Date;
 }
 

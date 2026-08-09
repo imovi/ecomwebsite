@@ -944,6 +944,13 @@ describe("integrations — when an order arrives", () => {
     subtotal: 15_000,
     deliveryCharge: 60,
     customerNote: "Call before delivery",
+    /* What the browser told us. Carried on the event for ad-platform reporting;
+       the integrations under test here ignore them. `fbc`/`fbp` null is the
+       ordinary case — most shoppers arrive without clicking an ad. */
+    customerIp: "203.0.113.42",
+    userAgent: "Mozilla/5.0 (Linux; Android 13)",
+    fbc: null,
+    fbp: null,
     placedAt: new Date("2026-07-31T10:00:00.000Z"),
   };
 

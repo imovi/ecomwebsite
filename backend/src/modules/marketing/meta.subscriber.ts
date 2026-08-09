@@ -1,6 +1,7 @@
 import { config } from "../../config/index.js";
 import { createLogger } from "../../core/logger.js";
 import { orderEvents } from "../../lib/events/order-events.js";
+import { resolveCity } from "../../lib/geo/delivery-zone.js";
 import { trackPurchase } from "./meta-capi.service.js";
 
 /**
@@ -38,6 +39,19 @@ export function registerMetaTracking(): void {
       eventTime: event.placedAt,
       /* The conversion happened on the storefront, not on this API. */
       sourceUrl: `${config.marketing.storefrontUrl}/checkout`,
+
+      /* Match keys. Everything below is what turns "a sale happened" into "this
+         sale was this person, who came from that ad" — without them Meta is
+         matching on a phone number alone, which in Bangladesh frequently is not
+         on the account at all. */
+      customerName: event.customerName,
+      /* The CITY, resolved from what the customer typed — not the raw line.
+         See `resolveCity`: an address matches nothing, a city matches. */
+      city: resolveCity(event.areaText, event.deliveryZone),
+      clientIp: event.customerIp,
+      userAgent: event.userAgent,
+      fbc: event.fbc,
+      fbp: event.fbp,
     });
 
     if (outcome.sent) {

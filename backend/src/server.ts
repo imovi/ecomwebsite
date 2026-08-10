@@ -7,6 +7,10 @@ import { initStorage } from "./lib/storage/index.js";
 import { registerMetaTracking } from "./modules/marketing/meta.subscriber.js";
 import { registerOrderIntegrations } from "./modules/integrations/integrations.subscriber.js";
 import { isDeliveryConfigured } from "./modules/auth/reset-code.delivery.js";
+import {
+  startBlockedIpRefresh,
+  stopBlockedIpRefresh,
+} from "./modules/security/blocked-ip.service.js";
 import { startCourierSync, stopCourierSync } from "./modules/courier/courier.sync.js";
 import {
   startMetricsScheduler,
@@ -50,6 +54,11 @@ async function start(): Promise<void> {
   /* Refreshes the trending ranking. Without it the score keeps its column
      default of zero and the homepage rail is "newest" wearing another name. */
   startMetricsScheduler();
+
+  /* Loads the blocked-address set into memory and keeps it current, so a
+     checkout never pays for a database lookup to catch a rare abuser. Also
+     what makes an expiry take effect without anyone doing anything. */
+  startBlockedIpRefresh();
 
   /* Said on every boot, not once at setup. An insecure-cookie deployment is
      meant to be a short bridge until a domain and a certificate exist, and the
@@ -123,6 +132,7 @@ async function shutdown(signal: string): Promise<void> {
   stopCourierSync();
   stopTelegramScheduler();
   stopMetricsScheduler();
+  stopBlockedIpRefresh();
 
   const forceExit = setTimeout(() => {
     logger.error("Graceful shutdown timed out — forcing exit");

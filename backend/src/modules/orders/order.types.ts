@@ -68,8 +68,45 @@ export interface OrderListItemDto {
   deletedAt: string | null;
 }
 
+/** One of the other orders that came from the same address. */
+export interface SameIpOrderDto {
+  orderNumber: string;
+  customerName: string;
+  phone: string;
+  status: OrderStatus;
+  grandTotal: number;
+  createdAt: string;
+}
+
+/**
+ * What else has arrived from this order's address.
+ *
+ * `distinctPhones` is the number that matters and the reason this exists. In
+ * Bangladesh the carriers run carrier-grade NAT, so one public address fronts
+ * hundreds of real customers — four orders from ONE phone number is somebody
+ * gaming the shop, and four orders from FOUR numbers is an ordinary mobile
+ * tower. Without that split, "4 orders from this IP" reads as guilt either way,
+ * and blocking on it takes out a district.
+ */
+export interface SameIpSummary {
+  /** Other orders from this address, excluding the one being viewed. */
+  total: number;
+  distinctPhones: number;
+  /** The most recent few, for the panel. */
+  recent: SameIpOrderDto[];
+}
+
 export interface OrderDto extends OrderListItemDto {
   address: string;
+  /**
+   * Where the order was placed from. Admin detail only — never the public
+   * confirmation or tracking response.
+   */
+  customerIp: string | null;
+  /** Null when no address was recorded. */
+  sameIp: SameIpSummary | null;
+  /** The live block covering this address, if there is one. */
+  blocked: { id: string; reason: string; expiresAt: string | null } | null;
   internalNotes: string | null;
   cancellationReason: string | null;
   version: number;
@@ -180,10 +217,17 @@ export function toOrderDto(
   row: OrderRow,
   items: OrderItemRow[],
   events: OrderEventRow[],
+  origin: { sameIp: SameIpSummary | null; blocked: OrderDto["blocked"] } = {
+    sameIp: null,
+    blocked: null,
+  },
 ): OrderDto {
   return {
     ...listFields(row),
     address: row.address,
+    customerIp: row.customerIp,
+    sameIp: origin.sameIp,
+    blocked: origin.blocked,
     internalNotes: row.internalNotes,
     cancellationReason: row.cancellationReason,
     version: row.version,

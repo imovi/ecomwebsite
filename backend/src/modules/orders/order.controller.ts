@@ -3,6 +3,7 @@ import { sendCreated, sendNoContent, sendPaginated, sendSuccess } from "../../co
 import { NotFoundError, UnauthorizedError } from "../../core/errors.js";
 import { validated } from "../../middleware/validate.js";
 import { searchAreas } from "../../lib/geo/delivery-zone.js";
+import { clientIp } from "../../lib/net/client-ip.js";
 import * as checkout from "./checkout.service.js";
 import * as orderService from "./order.service.js";
 import {
@@ -66,7 +67,12 @@ export const placeOrder: RequestHandler = async (req, res) => {
 
   const result = await checkout.placeOrder(body, {
     idempotencyKey: idempotencyKey || undefined,
-    ipAddress: req.ip,
+    /* Through the shared resolver, not `req.ip`. The latter happens to be
+       correct today only because the storefront forwards a single-entry
+       X-Forwarded-For and TRUST_PROXY_HOPS is 1 — an incidental alignment that
+       a future proxy change would break silently, poisoning the fraud trail and
+       Meta's attribution with it. */
+    ipAddress: clientIp(req) ?? undefined,
     userAgent: req.get("user-agent"),
   });
 

@@ -18,6 +18,7 @@ import {
   countOrdersByStatus,
   findOrderById,
   findOrderDetail,
+  findOrdersSharingIp,
   findOrderItemById,
   listOrderItems,
   listOrders,
@@ -27,6 +28,7 @@ import {
   type OrderFilters,
   type OrderSort,
 } from "./order.repository.js";
+import { findLiveBlockFor } from "../security/blocked-ip.service.js";
 import {
   listOrderEvents,
   recordEvent,
@@ -195,7 +197,32 @@ export async function getByIdentifier(
   });
 
   if (!detail) throw new NotFoundError("Order not found.");
-  return toOrderDto(detail.order, detail.items, detail.events);
+
+  /* Where it came from, and what else came from there. Only when an address
+     was recorded — orders placed before the forwarding fix have none, and
+     there is nothing to look up for them. */
+  const ip = detail.order.customerIp;
+
+  if (!ip) return toOrderDto(detail.order, detail.items, detail.events);
+
+  const [sameIp, blocked] = await Promise.all([
+    findOrdersSharingIp(ip, detail.order.id),
+    findLiveBlockFor(ip),
+  ]);
+
+  return toOrderDto(detail.order, detail.items, detail.events, {
+    sameIp: {
+      total: sameIp.total,
+      distinctPhones: sameIp.distinctPhones,
+      recent: sameIp.recent.map((row) => ({
+        ...row,
+        createdAt: row.createdAt.toISOString(),
+      })),
+    },
+    blocked: blocked
+      ? { id: blocked.id, reason: blocked.reason, expiresAt: blocked.expiresAt }
+      : null,
+  });
 }
 
 /* -------------------------------------------------------------------------- */

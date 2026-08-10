@@ -308,8 +308,47 @@ export interface ApiOrderEvent {
   createdAt: string;
 }
 
+/** Another order that arrived from the same address. */
+export interface ApiSameIpOrder {
+  orderNumber: string;
+  customerName: string;
+  phone: string;
+  status: ApiOrderStatus;
+  grandTotal: number;
+  createdAt: string;
+}
+
+export interface ApiBlockedIp {
+  id: string;
+  ip: string;
+  reason: string;
+  expiresAt: string | null;
+  hitCount: number;
+  lastHitAt: string | null;
+  unblockedAt: string | null;
+  createdAt: string;
+  /** Neither lifted nor expired. */
+  active: boolean;
+}
+
 export interface ApiOrderDetail extends ApiOrderListItem {
   address: string;
+  /** Where the order came from. Admin responses only. */
+  customerIp: string | null;
+  /**
+   * What else arrived from that address.
+   *
+   * `distinctPhones` is the number to read first: in Bangladesh one public
+   * address fronts hundreds of real customers on carrier NAT, so four orders
+   * from ONE phone is abuse and four orders from FOUR phones is a mobile tower.
+   */
+  sameIp: {
+    total: number;
+    distinctPhones: number;
+    recent: ApiSameIpOrder[];
+  } | null;
+  /** The live block covering this address, if any. */
+  blocked: { id: string; reason: string; expiresAt: string | null } | null;
   internalNotes: string | null;
   cancellationReason: string | null;
   version: number;

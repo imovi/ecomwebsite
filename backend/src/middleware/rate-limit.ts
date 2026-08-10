@@ -2,6 +2,7 @@ import { ipKeyGenerator, rateLimit, type Options } from "express-rate-limit";
 import type { Request, RequestHandler } from "express";
 import { config } from "../config/index.js";
 import { TooManyRequestsError } from "../core/errors.js";
+import { clientIp, isPrivateAddress } from "../lib/net/client-ip.js";
 
 /**
  * Rate limiting.
@@ -53,17 +54,6 @@ const shared = {
   keyGenerator,
 } satisfies Partial<Options>;
 
-/** Loopback, RFC1918 and IPv6 unique-local, including IPv4-mapped forms. */
-function isPrivateAddress(address: string): boolean {
-  const ip = address.startsWith("::ffff:") ? address.slice(7) : address;
-  if (ip === "::1" || ip === "localhost") return true;
-  if (/^f[cd][0-9a-f]{2}:/i.test(ip)) return true;
-  if (/^127\./.test(ip)) return true;
-  if (/^10\./.test(ip)) return true;
-  if (/^192\.168\./.test(ip)) return true;
-  return /^172\.(1[6-9]|2[0-9]|3[01])\./.test(ip);
-}
-
 /**
  * The storefront's own server-side calls, which must not be counted.
  *
@@ -89,9 +79,6 @@ function isInternalCaller(req: Request): boolean {
   return isPrivateAddress(req.socket.remoteAddress ?? "");
 }
 
-/** The storefront names the shopper it is acting for. See `customerKey`. */
-const CUSTOMER_IP_HEADER = "x-customer-ip";
-
 /**
  * The bucket a PUBLIC endpoint should count against.
  *
@@ -114,13 +101,13 @@ const CUSTOMER_IP_HEADER = "x-customer-ip";
  * global limit this file already exempts it from.
  */
 export function customerKey(req: Request): string {
-  const declared = req.headers[CUSTOMER_IP_HEADER];
-  if (typeof declared === "string" && declared.trim() !== "") {
-    if (isPrivateAddress(req.socket.remoteAddress ?? "")) {
-      return ipKeyGenerator(declared.trim());
-    }
-  }
-  return ipKey(req);
+  /* Delegated so that "which address is this shopper" is decided in exactly
+     one place — shared with `orders.customer_ip` and the block guard. Three
+     opinions about the client address is how one of them ends up wrong without
+     anyone noticing. The bucketing (IPv6 collapsed to a /64) stays here,
+     because it is a rate-limiting concern rather than an identity one. */
+  const resolved = clientIp(req);
+  return resolved ? ipKeyGenerator(resolved) : ipKey(req);
 }
 
 /** Applied to the whole API. */

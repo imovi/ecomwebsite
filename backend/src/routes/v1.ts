@@ -30,6 +30,7 @@ import { courierAdminRouter } from "../modules/courier/courier.routes.js";
 import { webhookRouter } from "../modules/courier/webhook.routes.js";
 import { marketingAdminRouter } from "../modules/marketing/marketing.routes.js";
 import { settingsAdminRouter } from "../modules/settings/settings.routes.js";
+import { blockedIpAdminRouter } from "../modules/security/blocked-ip.routes.js";
 
 /**
  * API v1.
@@ -87,6 +88,12 @@ v1Router.use("/checkout", abandonedPublicRouter);
 v1Router.use("/storefront", storefrontRouter);
 
 v1Router.use("/admin/orders", orderAdminRouter);
+
+/* --- Refusing an address --------------------------------------------------
+   The block list behind the order page's "block this address" button. `admin`
+   and above — see the router. Read the schema before touching it: in this
+   country one address can be a carrier's worth of real customers. */
+v1Router.use("/admin/ips", blockedIpAdminRouter);
 v1Router.use("/admin/settings", settingsAdminRouter);
 
 /* --- Team ----------------------------------------------------------------

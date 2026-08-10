@@ -169,6 +169,13 @@
       "when": 1785436692218,
       "tag": "0023_one_live_reset_code",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1785436752218,
+      "tag": "0024_customer_ip_and_blocking",
+      "breakpoints": true
     }
   ]
 }

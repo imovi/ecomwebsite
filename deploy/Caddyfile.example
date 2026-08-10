@@ -30,6 +30,19 @@ gng.com.bd {
 		# Behind Cloudflare or another proxy, take its trusted header instead:
 		#   header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
 		header_up X-Forwarded-For {http.request.remote.host}
+
+		# Deleted, never forwarded. `X-Customer-Ip` is a name only the storefront
+		# and the API use between themselves: the storefront reads the address
+		# Caddy recorded above and re-sends it under this name, and the API
+		# honours it only from a caller on the private network.
+		#
+		# Nothing stops a visitor putting that header on their own request. It
+		# would not be trusted today — no public route reaches the code that
+		# reads it — but that is an invariant held together by this file and the
+		# Express routers agreeing, not by anything that would fail loudly if
+		# someone later exposed one more path. Stripping it at the edge makes the
+		# guarantee structural: the header cannot arrive from outside at all.
+		header_up -X-Customer-Ip
 	}
 
 	encode gzip zstd
@@ -74,6 +87,8 @@ api.gng.com.bd {
 			# key on the caller's address — a forgeable one would let an
 			# anonymous caller guess at the secret without ever being throttled.
 			header_up X-Forwarded-For {http.request.remote.host}
+			# See the storefront block above.
+			header_up -X-Customer-Ip
 		}
 
 		header {

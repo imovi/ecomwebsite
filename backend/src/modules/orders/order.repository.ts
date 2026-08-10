@@ -8,6 +8,7 @@ import {
   isNotNull,
   isNull,
   lte,
+  ne,
   or,
   sql,
   type SQL,
@@ -496,4 +497,78 @@ export async function findRecentOrdersByPhone(
     )
     .orderBy(desc(orders.createdAt))
     .limit(5);
+}
+
+/**
+ * The other orders that came from one address.
+ *
+ * Two numbers and a short list, from a single indexed range scan over
+ * `orders_customer_ip_idx`. The current order is excluded from ALL of it, so
+ * opening an order never inflates its own address's statistics by one.
+ *
+ * `count(distinct phone)` is deliberately NOT done with a window function —
+ * PostgreSQL does not implement DISTINCT inside window aggregates, so the
+ * house `count(*) over()` trick from `listOrders` cannot be reused here.
+ * Everything is derived from one CTE instead, which also guarantees the list
+ * and the counts can never disagree about which rows they describe.
+ */
+export async function findOrdersSharingIp(
+  ip: string,
+  excludeOrderId: string,
+  limit = 5,
+  executor: DatabaseExecutor = getDb(),
+): Promise<{
+  total: number;
+  distinctPhones: number;
+  recent: {
+    orderNumber: string;
+    customerName: string;
+    phone: string;
+    status: OrderStatus;
+    grandTotal: number;
+    createdAt: Date;
+  }[];
+}> {
+  const rows = await executor
+    .select({
+      orderNumber: orders.orderNumber,
+      customerName: orders.customerName,
+      phone: orders.phone,
+      status: orders.status,
+      grandTotal: orders.grandTotal,
+      createdAt: orders.createdAt,
+      total: sql<number>`count(*) over()`.mapWith(Number),
+      distinctPhones: sql<number>`(
+        select count(distinct o2.phone)
+          from ${orders} o2
+         where o2.customer_ip = ${ip}::inet
+           and o2.deleted_at is null
+           and o2.id <> ${excludeOrderId}
+      )`.mapWith(Number),
+    })
+    .from(orders)
+    .where(
+      and(
+        sql`${orders.customerIp} = ${ip}::inet`,
+        isNull(orders.deletedAt),
+        ne(orders.id, excludeOrderId),
+      ),
+    )
+    /* `id` as tiebreak, matching `buildOrderBy` — two orders can share a
+       timestamp, and without it the "recent" rows shuffle between views. */
+    .orderBy(desc(orders.createdAt), desc(orders.id))
+    .limit(limit);
+
+  return {
+    total: rows[0]?.total ?? 0,
+    distinctPhones: rows[0]?.distinctPhones ?? 0,
+    recent: rows.map((row) => ({
+      orderNumber: row.orderNumber,
+      customerName: row.customerName,
+      phone: row.phone,
+      status: row.status,
+      grandTotal: row.grandTotal,
+      createdAt: row.createdAt,
+    })),
+  };
 }

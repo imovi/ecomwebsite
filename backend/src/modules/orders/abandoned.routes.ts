@@ -4,6 +4,7 @@ import { z } from "zod";
 import { config } from "../../config/index.js";
 import { authenticate, requireRole } from "../../middleware/authenticate.js";
 import { customerKey } from "../../middleware/rate-limit.js";
+import { blockGuard } from "../../middleware/block-guard.js";
 import { validate, validated } from "../../middleware/validate.js";
 import { sendNoContent, sendSuccess } from "../../core/response.js";
 import { TooManyRequestsError } from "../../core/errors.js";
@@ -87,9 +88,13 @@ const record: RequestHandler = async (req, res) => {
   sendNoContent(res);
 };
 
+/* Blocked addresses are refused here too — a blocked customer filling the call
+   list with leads nobody should ring is the same abuse wearing a different
+   shape. After the rate limiter, for the reason spelled out in `blockGuard`. */
 abandonedPublicRouter.post(
   "/incomplete",
   recordRateLimit,
+  blockGuard,
   validate({ body: recordSchema }),
   record,
 );

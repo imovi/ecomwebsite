@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   check,
   index,
+  inet,
   integer,
   pgTable,
   text,
@@ -83,8 +84,17 @@ export const orders = pgTable(
      */
     idempotencyKey: text("idempotency_key"),
 
-    /* Captured for forensics on a store where refused COD parcels cost money. */
-    customerIp: text("customer_ip"),
+    /**
+     * Where the order was placed from. Captured for forensics on a store where
+     * a refused cash-on-delivery parcel costs real money.
+     *
+     * `inet`, not text. IPv6 has several valid spellings of one address, so
+     * text comparison silently misses matches, and a text prefix does not
+     * express a /64 boundary at all — which is what blocking an IPv6 customer
+     * actually means. `inet` canonicalises on the way in and gives real
+     * containment operators to match against `blocked_ips`.
+     */
+    customerIp: inet("customer_ip"),
     userAgent: text("user_agent"),
 
     /**
@@ -150,6 +160,18 @@ export const orders = pgTable(
     /* Search. Phone is exact or prefix; name is prefix — `text_pattern_ops`
        is what lets a btree serve `lower(name) like 'rah%'`. */
     index("orders_phone_idx").on(table.phone),
+
+    /**
+     * "Every other order from this address", which the order page asks on every
+     * view — so this one is not optional polish.
+     *
+     * Partial on both predicates: an equality lookup can never match NULL, and
+     * every list in this file already filters out the trash. `created_at DESC`
+     * second, so the recent-orders panel needs no sort step.
+     */
+    index("orders_customer_ip_idx")
+      .on(table.customerIp, table.createdAt.desc())
+      .where(sql`${table.deletedAt} is null and ${table.customerIp} is not null`),
     index("orders_customer_name_idx").on(sql`lower(${table.customerName}) text_pattern_ops`),
 
     /* Filters. */

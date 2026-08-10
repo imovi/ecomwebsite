@@ -5,6 +5,7 @@ import { authenticate, requireRole } from "../../middleware/authenticate.js";
 import { validate } from "../../middleware/validate.js";
 import { TooManyRequestsError } from "../../core/errors.js";
 import { customerKey } from "../../middleware/rate-limit.js";
+import { blockGuard } from "../../middleware/block-guard.js";
 import * as controller from "./order.controller.js";
 import {
   areaSearchQuerySchema,
@@ -88,9 +89,14 @@ checkoutPublicRouter.post(
   controller.quote,
 );
 
+/* `blockGuard` sits AFTER the rate limiter, deliberately. In front, a blocked
+   caller's flood would bypass the limiter and reach the guard's hit counter on
+   every request. Quoting a cart is left alone — a blocked shopper can still
+   browse and price things; only placing the order is refused. */
 checkoutPublicRouter.post(
   "/order",
   checkoutRateLimit,
+  blockGuard,
   validate({ body: placeOrderSchema }),
   controller.placeOrder,
 );

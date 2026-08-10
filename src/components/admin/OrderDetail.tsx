@@ -10,6 +10,7 @@ import { copy } from "@/lib/copy";
 import { toast } from "@/lib/stores/toast-store";
 import type { ApiOrderDetail, ApiOrderStatus } from "@/lib/api/types";
 import { AdminShell } from "./AdminShell";
+import { OriginCard } from "./OriginCard";
 import { AsyncState, Card, CardHeader, ErrorBanner, PageBody } from "./ui";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -225,6 +226,8 @@ export function OrderDetail({ identifier }: { identifier: string }) {
         />
 
         <CustomerCard order={order} busy={busy} mutate={mutate} />
+
+        <OriginCard order={order} busy={busy} mutate={mutate} />
 
         <Card>
           <CardHeader title="Items" />

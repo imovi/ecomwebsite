@@ -10,6 +10,7 @@ export * from "./enums.js";
 export * from "./admins.js";
 export * from "./refresh-tokens.js";
 export * from "./admin-password-resets.js";
+export * from "./blocked-ips.js";
 
 /* Phase 2 — catalog */
 export * from "./catalog-enums.js";

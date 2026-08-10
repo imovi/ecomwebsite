@@ -44,6 +44,7 @@ const NAV: NavItem[] = [
   { href: "/admin/branding", label: "Branding", icon: "camera" },
   { href: "/admin/marketing", label: "Marketing", icon: "bolt" },
   { href: "/admin/integrations", label: "Alerts", icon: "alert" },
+  { href: "/admin/ips", label: "Blocked IPs", icon: "shield" },
   { href: "/admin/team", label: "Team", icon: "users" },
   { href: "/admin/settings", label: "Settings", icon: "settings" },
 ];

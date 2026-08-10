@@ -6,6 +6,7 @@ import { logger } from "./core/logger.js";
 import { initStorage } from "./lib/storage/index.js";
 import { registerMetaTracking } from "./modules/marketing/meta.subscriber.js";
 import { registerOrderIntegrations } from "./modules/integrations/integrations.subscriber.js";
+import { isDeliveryConfigured } from "./modules/auth/reset-code.delivery.js";
 import { startCourierSync, stopCourierSync } from "./modules/courier/courier.sync.js";
 import {
   startMetricsScheduler,
@@ -60,6 +61,27 @@ async function start(): Promise<void> {
         "certificate are in place.",
     );
   }
+
+  /**
+   * Said at boot, because the day it matters is the day nobody can log in to
+   * find out.
+   *
+   * A shop with no SMTP host and no Telegram credentials has no way to deliver
+   * a password-reset code, and nothing about that is visible until an owner is
+   * already locked out — at which point the only remaining route in is SSH and
+   * a hand-written UPDATE. The rest of this file already shouts about
+   * misconfiguration this consequential; recovery deserves the same.
+   */
+  void isDeliveryConfigured().then((configured) => {
+    if (!configured) {
+      logger.warn(
+        "No SMTP host and no Telegram credentials — admin password-reset codes " +
+          "cannot be delivered. If an owner forgets their password there is no way " +
+          "back in through the panel. Set SMTP_* in the environment, or configure " +
+          "Telegram in the admin dashboard.",
+      );
+    }
+  });
 
   const app = createApp();
 

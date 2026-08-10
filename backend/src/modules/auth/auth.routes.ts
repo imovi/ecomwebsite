@@ -5,9 +5,11 @@ import { validate } from "../../middleware/validate.js";
 import * as controller from "./auth.controller.js";
 import {
   changePasswordSchema,
+  forgotPasswordSchema,
   loginSchema,
   logoutSchema,
   refreshSchema,
+  resetPasswordSchema,
 } from "./auth.validation.js";
 
 /**
@@ -64,4 +66,39 @@ authRouter.post(
   authenticate,
   validate({ body: changePasswordSchema }),
   controller.changePassword,
+);
+
+/**
+ * Public. Asks for a one-time code.
+ *
+ * `authRateLimit` keys on address AND submitted email, which is the right shape
+ * here for the same reason it is on login: one attacker must not be able to
+ * exhaust a real owner's allowance from many addresses, and one address must
+ * not be able to walk through many accounts.
+ *
+ * The service adds a per-account cooldown underneath, because the limiter alone
+ * would still let this endpoint be used to send the owner a message every few
+ * seconds — with the shop's own mail credentials, which is how a sending domain
+ * ends up on a blocklist.
+ */
+authRouter.post(
+  "/forgot-password",
+  authRateLimit,
+  validate({ body: forgotPasswordSchema }),
+  controller.forgotPassword,
+);
+
+/**
+ * Public. Spends the code and sets the new password.
+ *
+ * Rate limited like `/login`: this verifies a secret, and a six-digit one at
+ * that. The per-code attempt ceiling in the service is the real defence — the
+ * limiter keys on an address, and an attacker with many addresses has many
+ * buckets — but there is no reason to make the first thousand guesses cheap.
+ */
+authRouter.post(
+  "/reset-password",
+  authRateLimit,
+  validate({ body: resetPasswordSchema }),
+  controller.resetPassword,
 );

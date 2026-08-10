@@ -116,6 +116,22 @@ function build(env: Env) {
       },
     },
 
+    /**
+     * Outbound email — the password-reset code, and nothing else.
+     *
+     * `host` empty means "not configured", which is a supported state: the code
+     * still reaches the owner over Telegram. See `lib/mail/mailer.ts`.
+     */
+    mail: {
+      host: env.SMTP_HOST.trim(),
+      port: env.SMTP_PORT,
+      user: env.SMTP_USER.trim(),
+      password: env.SMTP_PASSWORD,
+      /* Falls back to the authenticating account, which is what a provider
+         would rewrite an unset sender to anyway. */
+      from: env.SMTP_FROM.trim() || env.SMTP_USER.trim(),
+    },
+
     upload: {
       driver: env.STORAGE_DRIVER,
       dir: path.resolve(rootDir, env.UPLOAD_DIR),

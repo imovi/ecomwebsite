@@ -57,3 +57,34 @@ export const changePasswordSchema = z
   .strict();
 
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+
+/** Asking for a code. Nothing but the address — see the controller on why the
+ *  answer is the same whether or not it exists. */
+export const forgotPasswordSchema = z
+  .object({
+    email: emailSchema,
+  })
+  .strict();
+
+export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
+
+/**
+ * Spending the code.
+ *
+ * The code is six digits and is checked for exactly that here, so a malformed
+ * value is a 422 that never reaches an Argon2 verification — one fewer way to
+ * spend the server's CPU from outside. It stays a string: leading zeros are
+ * significant, and `000123` parsed as a number is `123`.
+ */
+export const resetPasswordSchema = z
+  .object({
+    email: emailSchema,
+    code: z
+      .string()
+      .trim()
+      .regex(/^\d{6}$/, "Enter the 6-digit code."),
+    newPassword: passwordSchema,
+  })
+  .strict();
+
+export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;

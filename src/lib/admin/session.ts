@@ -194,6 +194,83 @@ export async function login(email: string, password: string): Promise<LoginOutco
   return { ok: true, admin: body.data.admin };
 }
 
+/* -------------------------------------------------------------------------- */
+/* Forgotten password                                                         */
+/* -------------------------------------------------------------------------- */
+
+export type ResetOutcome =
+  | {
+      ok: true;
+      message: string;
+      /**
+       * False when the server has no email or Telegram channel configured.
+       *
+       * Not an account fact — it is the same answer for every address — so it
+       * carries no enumeration risk. The client needs it so it does not move on
+       * to the code screen and ask for a code that cannot be sent.
+       */
+      canDeliver: boolean;
+    }
+  | { ok: false; error: string };
+
+/**
+ * Calls an unauthenticated auth endpoint and returns its message either way.
+ *
+ * Both reset endpoints answer in the same envelope and neither returns a
+ * session, so there is nothing to store — this only relays what the API said.
+ * The API's wording is passed through unchanged on purpose: `/forgot-password`
+ * deliberately answers identically for an address that exists and one that does
+ * not, and rewriting the message here is how that property gets lost.
+ */
+async function postAuth(path: string, body: unknown): Promise<ResetOutcome> {
+  let response: Response;
+
+  try {
+    response = await fetch(`${apiConfig.baseUrl}/api/v1/auth/${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+      cache: "no-store",
+      signal: AbortSignal.timeout(apiConfig.timeoutMs),
+    });
+  } catch {
+    return { ok: false, error: "Could not reach the server. Please try again." };
+  }
+
+  const envelope = (await response.json().catch(() => null)) as ApiEnvelope<{
+    message: string;
+    canDeliver?: boolean;
+  }> | null;
+
+  if (!response.ok || !envelope || !envelope.success) {
+    return {
+      ok: false,
+      error:
+        envelope && !envelope.success
+          ? envelope.error.message
+          : "Something went wrong. Please try again.",
+    };
+  }
+
+  /* Absent on /reset-password, which has no delivery step — default true so
+     that endpoint is never mistaken for an unconfigured server. */
+  return { ok: true, message: envelope.data.message, canDeliver: envelope.data.canDeliver ?? true };
+}
+
+/** Asks the API to send a one-time code. */
+export async function requestResetCode(email: string): Promise<ResetOutcome> {
+  return postAuth("forgot-password", { email });
+}
+
+/** Spends the code and sets the new password. */
+export async function submitResetCode(input: {
+  email: string;
+  code: string;
+  newPassword: string;
+}): Promise<ResetOutcome> {
+  return postAuth("reset-password", input);
+}
+
 /**
  * Exchanges the stored refresh token for a fresh access token.
  *

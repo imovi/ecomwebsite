@@ -149,7 +149,7 @@ export async function resetAdminCredentials(
 export async function updatePasswordHash(
   id: string,
   passwordHash: string,
-  options: { markPasswordChanged: boolean } = { markPasswordChanged: false },
+  options: { markPasswordChanged?: boolean; clearLockout?: boolean } = {},
   executor: DatabaseExecutor = getDb(),
 ): Promise<void> {
   await executor
@@ -157,6 +157,13 @@ export async function updatePasswordHash(
     .set({
       passwordHash,
       ...(options.markPasswordChanged ? { passwordChangedAt: sql`now()` } : {}),
+      /* Opt-in, and used by the one-time-code reset. Being locked out by
+         somebody else's failed guesses is a reason people reset their password,
+         and a reset that left the lock standing would hand back a working
+         credential that still cannot be used to sign in. Not the default:
+         changing a password while signed in says nothing about whether a
+         lockout somewhere else should be forgiven. */
+      ...(options.clearLockout ? { failedLoginAttempts: 0, lockedUntil: null } : {}),
       updatedAt: sql`now()`,
     })
     .where(eq(admins.id, id));

@@ -193,6 +193,26 @@ export const envSchema = z
     UPLOAD_MAX_FILE_SIZE_MB: integer(5, 1, 100),
     UPLOAD_MAX_FILES: integer(10, 1, 50),
 
+    /* --- Outbound email ---------------------------------------------------
+       Used for exactly one message: the admin password-reset code.
+
+       Here rather than in store settings on purpose. This is the way back INTO
+       the panel, so its configuration must not live behind the panel — one bad
+       edit to an SMTP field would otherwise remove the only route back in, and
+       fixing it would require the login you no longer have. See lib/mail.
+
+       All optional. With no host the reset code still goes out over Telegram,
+       which is already running on this shop; email is the second channel, not
+       the only one. */
+    SMTP_HOST: z.string().default(""),
+    SMTP_PORT: integer(587, 1, 65_535),
+    SMTP_USER: z.string().default(""),
+    SMTP_PASSWORD: z.string().default(""),
+    /* What the recipient sees in "From". Gmail and most providers rewrite this
+       to the authenticated account anyway, so a mismatch is not fatal — but a
+       plain address here is what keeps the message out of a spam folder. */
+    SMTP_FROM: z.string().default(""),
+
     // --- Seeding ---------------------------------------------------------
     SEED_ADMIN_EMAIL: z.email().optional(),
 

@@ -34,6 +34,22 @@ export function proxy(request: NextRequest): NextResponse {
 
   const hasSession = SESSION_COOKIES.some((name) => request.cookies.has(name));
 
+  /**
+   * Password recovery, and the one page under /admin that must be reachable
+   * with no session at all.
+   *
+   * Without this line the guard below would bounce it to /admin/login — which
+   * is where the person already was, unable to get in. The page it sends them
+   * to would be the page they came from.
+   *
+   * Allowed through even WITH a session, deliberately. Someone who thinks
+   * their session has been stolen should be able to reset from it, and the
+   * reset revokes every session for the account including that one.
+   */
+  if (pathname === "/admin/forgot-password") {
+    return NextResponse.next();
+  }
+
   if (pathname === "/admin/login") {
     /* Already signed in — skip the form, but honour where they were headed.
        Forgetting the destination here would silently strand anyone who followed

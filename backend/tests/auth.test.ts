@@ -445,3 +445,402 @@ describe("seed credential handling", () => {
     );
   });
 });
+
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Forgotten password — the one-time code flow.
+ *
+ * The code is not knowable from outside: it goes out over email and Telegram,
+ * neither of which exists in a test, and only its Argon2 digest is stored. So
+ * these tests overwrite `code_hash` with the digest of a code the test picks.
+ * That is not a shortcut around the logic — everything after "is this the right
+ * code" runs for real: consumption, the password write, the session
+ * revocation, the lockout clear.
+ */
+describe("auth — forgot password", () => {
+  let seq = 0;
+
+  /** A fresh address per test, so the per-account cooldown never bleeds. */
+  function nextEmail(): string {
+    seq += 1;
+    return `forgot${seq}@example.com`;
+  }
+
+  /**
+   * Turns the Telegram channel on or off.
+   *
+   * The endpoint now refuses to pretend when the server has no way to deliver
+   * anything, so every test that expects a code to be issued needs at least one
+   * channel configured. Telegram is the one a test can switch, since it lives in
+   * the settings row rather than in the frozen environment.
+   *
+   * The token is fake, so the background send fails — which is fine and is
+   * exactly the point of not awaiting delivery: nothing the tests assert
+   * depends on it, and `callTelegram` bounds itself with a timeout.
+   */
+  async function setTelegramConfigured(configured: boolean): Promise<void> {
+    const { getDb } = await import("../src/db/client.js");
+    const { storeSettings } = await import("../src/db/schema/store-settings.js");
+    const { eq } = await import("drizzle-orm");
+
+    await getDb()
+      .update(storeSettings)
+      .set({
+        telegramBotToken: configured ? "000000:test-token-not-real" : "",
+        telegramChatId: configured ? "-100000000" : "",
+      })
+      .where(eq(storeSettings.id, 1));
+  }
+
+  before(async () => {
+    await setTelegramConfigured(true);
+  });
+
+  async function resetRowsFor(email: string) {
+    const { getDb } = await import("../src/db/client.js");
+    const { adminPasswordResets } = await import("../src/db/schema/admin-password-resets.js");
+    const { admins } = await import("../src/db/schema/admins.js");
+    const { desc, eq } = await import("drizzle-orm");
+
+    const [admin] = await getDb().select().from(admins).where(eq(admins.email, email));
+    if (!admin) return [];
+
+    return getDb()
+      .select()
+      .from(adminPasswordResets)
+      .where(eq(adminPasswordResets.adminId, admin.id))
+      .orderBy(desc(adminPasswordResets.createdAt));
+  }
+
+  /** Replaces the stored digest, so the test knows the code. */
+  async function plantCode(email: string, code: string): Promise<void> {
+    const { getDb } = await import("../src/db/client.js");
+    const { adminPasswordResets } = await import("../src/db/schema/admin-password-resets.js");
+    const { hashPassword } = await import("../src/lib/security/password.js");
+    const { eq } = await import("drizzle-orm");
+
+    const rows = await resetRowsFor(email);
+    await getDb()
+      .update(adminPasswordResets)
+      .set({ codeHash: await hashPassword(code) })
+      .where(eq(adminPasswordResets.id, rows[0]!.id));
+  }
+
+  function forgot(email: string) {
+    return api<Envelope<{ message: string }>>(ctx.baseUrl, "/api/v1/auth/forgot-password", {
+      method: "POST",
+      body: { email },
+    });
+  }
+
+  function reset(email: string, code: string, newPassword: string) {
+    return api<Envelope<{ message: string }>>(ctx.baseUrl, "/api/v1/auth/reset-password", {
+      method: "POST",
+      body: { email, code, newPassword },
+    });
+  }
+
+  function login(email: string, password: string) {
+    return api<Envelope<LoginData>>(ctx.baseUrl, "/api/v1/auth/login", {
+      method: "POST",
+      body: { email, password },
+    });
+  }
+
+  it("says so plainly when the server has no way to deliver a code", async () => {
+    const email = nextEmail();
+    await seedAdmin({ email, password: PASSWORD });
+
+    await setTelegramConfigured(false);
+    try {
+      const res = await forgot(email);
+
+      assert.equal(res.status, 200);
+      assert.match(
+        res.body.data.message,
+        /not set up/i,
+        "a shop with no channel configured must not be told a code is on its way",
+      );
+      assert.equal(
+        (await resetRowsFor(email)).length,
+        0,
+        "and no code should be minted that nobody can receive",
+      );
+    } finally {
+      await setTelegramConfigured(true);
+    }
+  });
+
+  it("gives that same answer for an address that does not exist", async () => {
+    await setTelegramConfigured(false);
+    try {
+      const real = await forgot("someone-real@example.com");
+      const fake = await forgot("no-such-person@example.com");
+
+      assert.equal(
+        real.body.data.message,
+        fake.body.data.message,
+        "the not-configured answer must not depend on the address either",
+      );
+    } finally {
+      await setTelegramConfigured(true);
+    }
+  });
+
+  it("answers identically for a real account and one that does not exist", async () => {
+    const real = nextEmail();
+    await seedAdmin({ email: real, password: PASSWORD });
+
+    const known = await forgot(real);
+    const unknown = await forgot("nobody-at-all@example.com");
+
+    assert.equal(known.status, 200);
+    assert.equal(unknown.status, 200);
+    assert.equal(
+      known.body.data.message,
+      unknown.body.data.message,
+      "a different message would be an account enumeration oracle",
+    );
+  });
+
+  it("issues a code for a real account and none for an unknown one", async () => {
+    const email = nextEmail();
+    await seedAdmin({ email, password: PASSWORD });
+
+    await forgot(email);
+    assert.equal((await resetRowsFor(email)).length, 1);
+
+    await forgot("still-nobody@example.com");
+    assert.equal((await resetRowsFor("still-nobody@example.com")).length, 0);
+  });
+
+  it("issues no code for a disabled account", async () => {
+    const email = nextEmail();
+    await seedAdmin({ email, password: PASSWORD, isActive: false });
+
+    const res = await forgot(email);
+
+    assert.equal(res.status, 200, "still answers the same way");
+    assert.equal(
+      (await resetRowsFor(email)).length,
+      0,
+      "a reset must not undo an account somebody disabled on purpose",
+    );
+  });
+
+  it("will not send a second code straight away", async () => {
+    const email = nextEmail();
+    await seedAdmin({ email, password: PASSWORD });
+
+    await forgot(email);
+    await forgot(email);
+
+    assert.equal(
+      (await resetRowsFor(email)).length,
+      1,
+      "without a cooldown this is a way to flood the owner using the shop's own mail credentials",
+    );
+  });
+
+  it("rejects a wrong code and counts the attempt", async () => {
+    const email = nextEmail();
+    await seedAdmin({ email, password: PASSWORD });
+    await forgot(email);
+    await plantCode(email, "123456");
+
+    const res = await reset(email, "999999", "BrandNewPass123");
+
+    assert.equal(res.status, 401);
+    assert.equal((await resetRowsFor(email))[0]!.attempts, 1);
+  });
+
+  it("kills the code once its attempts are spent", async () => {
+    const { getDb } = await import("../src/db/client.js");
+    const { adminPasswordResets } = await import("../src/db/schema/admin-password-resets.js");
+    const { eq } = await import("drizzle-orm");
+
+    const email = nextEmail();
+    await seedAdmin({ email, password: PASSWORD });
+    await forgot(email);
+    await plantCode(email, "123456");
+
+    /* The five wrong guesses are written straight to the row rather than driven
+       over HTTP. `AUTH_RATE_LIMIT_MAX` is 5 in this harness, so six requests
+       would be refused by the limiter and the test would pass for the wrong
+       reason — proving the rate limiter works, which another test already does,
+       while never reaching the per-code ceiling this one is about. */
+    const rows = await resetRowsFor(email);
+    await getDb()
+      .update(adminPasswordResets)
+      .set({ attempts: 5 })
+      .where(eq(adminPasswordResets.id, rows[0]!.id));
+
+    /* The RIGHT code, and it no longer works — which is the point. */
+    assert.equal((await reset(email, "123456", "BrandNewPass123")).status, 401);
+    assert.equal((await login(email, PASSWORD)).status, 200, "the original password still works");
+  });
+
+  it("says the code expired, rather than that it is wrong", async () => {
+    const { getDb } = await import("../src/db/client.js");
+    const { adminPasswordResets } = await import("../src/db/schema/admin-password-resets.js");
+    const { eq } = await import("drizzle-orm");
+
+    const email = nextEmail();
+    await seedAdmin({ email, password: PASSWORD });
+    await forgot(email);
+    await plantCode(email, "123456");
+
+    const rows = await resetRowsFor(email);
+    await getDb()
+      .update(adminPasswordResets)
+      .set({ expiresAt: new Date(Date.now() - 1000) })
+      .where(eq(adminPasswordResets.id, rows[0]!.id));
+
+    const res = await reset(email, "123456", "BrandNewPass123");
+
+    assert.equal(res.status, 401);
+    assert.match(
+      res.body.error!.message,
+      /expired/i,
+      "the fix is to ask for another code, so say that rather than 'wrong code'",
+    );
+  });
+
+  it("changes the password, and the old one stops working", async () => {
+    const email = nextEmail();
+    await seedAdmin({ email, password: PASSWORD });
+    await forgot(email);
+    await plantCode(email, "123456");
+
+    const res = await reset(email, "123456", "BrandNewPass123");
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+
+    assert.equal((await login(email, PASSWORD)).status, 401, "the old password must be dead");
+    assert.equal((await login(email, "BrandNewPass123")).status, 200, "the new one works");
+  });
+
+  it("spends the code — the same one cannot reset twice", async () => {
+    const email = nextEmail();
+    await seedAdmin({ email, password: PASSWORD });
+    await forgot(email);
+    await plantCode(email, "123456");
+
+    assert.equal((await reset(email, "123456", "BrandNewPass123")).status, 200);
+
+    assert.equal(
+      (await reset(email, "123456", "AnotherPass456")).status,
+      401,
+      "a used code is not a standing key to the account",
+    );
+  });
+
+  it("unlocks an account that failed logins had locked", async () => {
+    const email = nextEmail();
+    await seedAdmin({ email, password: PASSWORD });
+
+    /* Somebody hammers the login until the account locks. This is one of the
+       two reasons an owner ends up on the forgot-password page at all.
+       Exactly `LOGIN_MAX_FAILED_ATTEMPTS` (3 in this harness) — the auth
+       limiter allows 5 failures per address-and-email, and spending them here
+       would make `forgot` answer 429 and the test fail for the wrong reason. */
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await login(email, "WrongPassword123");
+    }
+
+    const locked = await login(email, PASSWORD);
+    assert.equal(locked.status, 403, "precondition: the right password is refused while locked");
+
+    await forgot(email);
+    await plantCode(email, "123456");
+    assert.equal((await reset(email, "123456", "BrandNewPass123")).status, 200);
+
+    assert.equal(
+      (await login(email, "BrandNewPass123")).status,
+      200,
+      "a reset that left the lockout standing hands back a password that still cannot be used",
+    );
+  });
+
+  /**
+   * The attempt ceiling used to be read-compare-then-increment with an Argon2
+   * verification sitting in the gap, so requests fired together all saw the
+   * same stale count and all got to guess.
+   *
+   * Honest caveat: PGlite is single-connection, so these requests serialise at
+   * the database rather than truly racing. What this pins down is the
+   * accounting — the ceiling is enforced by the same statement that increments,
+   * so the total can never overshoot. A regression to the old pattern would
+   * still be caught here in the common case.
+   */
+  it("never lets the attempt count overshoot its ceiling", async () => {
+    const { getDb } = await import("../src/db/client.js");
+    const { adminPasswordResets } = await import("../src/db/schema/admin-password-resets.js");
+    const { eq } = await import("drizzle-orm");
+
+    const email = nextEmail();
+    await seedAdmin({ email, password: PASSWORD });
+    await forgot(email);
+    await plantCode(email, "123456");
+
+    /* One guess left of the five. */
+    const rows = await resetRowsFor(email);
+    await getDb()
+      .update(adminPasswordResets)
+      .set({ attempts: 4 })
+      .where(eq(adminPasswordResets.id, rows[0]!.id));
+
+    await Promise.all([
+      reset(email, "000000", "BrandNewPass123"),
+      reset(email, "000001", "BrandNewPass123"),
+      reset(email, "000002", "BrandNewPass123"),
+    ]);
+
+    assert.equal(
+      (await resetRowsFor(email))[0]!.attempts,
+      5,
+      "three guesses against one remaining attempt must spend one, not three",
+    );
+
+    /* And the code is genuinely dead, not merely over budget on paper. */
+    assert.equal((await reset(email, "123456", "BrandNewPass123")).status, 401);
+  });
+
+  it("never leaves two live codes for one account", async () => {
+    const email = nextEmail();
+    await seedAdmin({ email, password: PASSWORD });
+
+    /* Two requests at once — a double-tapped button, or a client retrying. Both
+       answer 200 either way; what matters is what lands in the table. Enforced
+       by a partial unique index, so this holds even when the application's
+       invalidate-then-insert is interleaved. */
+    await Promise.all([forgot(email), forgot(email)]);
+
+    const live = (await resetRowsFor(email)).filter((row) => row.consumedAt === null);
+
+    assert.equal(
+      live.length,
+      1,
+      "two live codes would mean two independent five-attempt budgets",
+    );
+  });
+
+  it("rejects a malformed code before it costs an Argon2 verification", async () => {
+    const email = nextEmail();
+    await seedAdmin({ email, password: PASSWORD });
+
+    for (const code of ["12345", "1234567", "abcdef", ""]) {
+      const res = await reset(email, code, "BrandNewPass123");
+      assert.equal(res.status, 422, `expected 422 for ${JSON.stringify(code)}`);
+    }
+  });
+
+  it("holds the new password to the same policy as any other", async () => {
+    const email = nextEmail();
+    await seedAdmin({ email, password: PASSWORD });
+    await forgot(email);
+    await plantCode(email, "123456");
+
+    assert.equal((await reset(email, "123456", "short")).status, 422);
+  });
+});

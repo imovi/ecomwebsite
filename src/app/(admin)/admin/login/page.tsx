@@ -25,11 +25,19 @@ export const metadata: Metadata = {
  * Deliberately outside the admin shell — no navigation, no store branding
  * beyond the wordmark. Nothing here should hint at what the panel contains.
  */
-export default async function AdminLoginPage() {
+export default async function AdminLoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   /* Where the proxy was taking this admin before it found no session. Read here
      rather than in the form so the destination survives a submission without
      JavaScript — it goes into the form as a hidden field. */
   const returnTo = safeReturnTo((await cookies()).get(RETURN_TO_COOKIE)?.value);
+
+  /* Set by the password-reset redirect. A flag only — it changes one line of
+     copy and grants nothing, so there is nothing here worth forging. */
+  const justReset = (await searchParams).reset === "1";
 
   return (
     <main className="flex min-h-dvh items-center justify-center bg-surface px-5 py-12">
@@ -40,7 +48,7 @@ export default async function AdminLoginPage() {
         </div>
 
         <div className="rounded-md border border-line bg-white p-6 shadow-card">
-          <LoginForm returnTo={returnTo} />
+          <LoginForm returnTo={returnTo} justReset={justReset} />
         </div>
 
         <p className="mt-6 text-center text-micro text-muted">

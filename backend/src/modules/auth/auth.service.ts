@@ -1,5 +1,6 @@
-import { randomUUID } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 import { config } from "../../config/index.js";
+import { getDb } from "../../db/client.js";
 import { createLogger } from "../../core/logger.js";
 import { ErrorCode } from "../../core/http-status.js";
 import { ForbiddenError, UnauthorizedError } from "../../core/errors.js";
@@ -30,6 +31,15 @@ import {
   revokeRefreshToken,
   revokeTokenFamily,
 } from "./refresh-token.repository.js";
+import {
+  consumeReset,
+  findLatestLiveReset,
+  findLatestReset,
+  insertPasswordReset,
+  invalidateResetsForAdmin,
+  reserveResetAttempt,
+} from "./password-reset.repository.js";
+import { deliverResetCode } from "./reset-code.delivery.js";
 import type { AdminRow } from "../../db/schema/admins.js";
 
 /**
@@ -306,6 +316,266 @@ export async function changePassword(
   await revokeAllForAdmin(admin.id, "password changed by the account holder");
 
   log.info({ adminId: admin.id }, "Admin changed their own password");
+}
+
+/* -------------------------------------------------------------------------- */
+/* Forgotten password                                                         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * How long a code lives. Long enough to find a message that went to spam,
+ * short enough that a code left on a screen is not a standing key.
+ */
+const RESET_CODE_TTL_MINUTES = 15;
+
+/**
+ * Wrong guesses before the code dies.
+ *
+ * The real defence against guessing a six-digit number, because the rate
+ * limiter keys on an address and an attacker with a botnet has many. Past this
+ * the code is dead and a new one must be requested — which puts them back
+ * through a channel only the owner can read.
+ */
+const RESET_MAX_ATTEMPTS = 5;
+
+/**
+ * Minimum gap between requests for one account.
+ *
+ * Without it, `/forgot-password` is a button anybody on the internet can use to
+ * send the owner unlimited email and Telegram messages, using the shop's own
+ * credentials to do it — which ends with the sending domain in a spam list.
+ */
+const RESET_RESEND_COOLDOWN_SECONDS = 60;
+
+/** Six digits, from the CSPRNG. `Math.random` is predictable and this is a key. */
+function generateResetCode(): string {
+  return randomInt(0, 1_000_000).toString().padStart(6, "0");
+}
+
+export interface ResetRequestOutcome {
+  /**
+   * Whether a code was created and handed to the delivery layer.
+   *
+   * Deliberately NOT "was it delivered". Delivery is no longer awaited — see
+   * the comment at the send site — so nothing here can honestly report it. The
+   * caller must not turn this into a different HTTP answer either: whether a
+   * given address has an account is exactly what this endpoint hides.
+   */
+  issued: boolean;
+}
+
+/**
+ * Starts a password reset.
+ *
+ * ENUMERATION
+ * -----------
+ * The HTTP layer answers identically whether or not the address exists — see
+ * the controller. This function still reports what really happened, because the
+ * server's own logs should record the truth even when the response does not.
+ *
+ * WHAT IS DELIBERATELY NOT CHECKED
+ * --------------------------------
+ * A locked account. Being locked out by someone else's failed guesses is one of
+ * the two reasons an owner ends up here, and refusing to help them because an
+ * attacker has been hammering their account would hand that attacker a way to
+ * deny recovery permanently. The reset itself clears the lock.
+ *
+ * A disabled account is different and IS refused: that is a decision somebody
+ * made on purpose, and a password reset must not undo it.
+ */
+export async function requestPasswordReset(
+  email: string,
+  context: SessionContext,
+): Promise<ResetRequestOutcome> {
+  const nothing: ResetRequestOutcome = { issued: false };
+
+  const admin = await findAdminByEmail(email);
+
+  if (!admin) {
+    log.warn({ email }, "Password reset requested for unknown account");
+    return await sameCostAsIssuing(nothing);
+  }
+
+  if (!admin.isActive) {
+    log.warn({ adminId: admin.id }, "Password reset requested for a disabled account");
+    return await sameCostAsIssuing(nothing);
+  }
+
+  const previous = await findLatestReset(admin.id);
+  if (previous) {
+    const sinceSeconds = (Date.now() - previous.createdAt.getTime()) / 1000;
+    if (sinceSeconds < RESET_RESEND_COOLDOWN_SECONDS) {
+      /* Silent. Telling the caller to wait would confirm the account exists,
+         and the owner who double-tapped Send already has a live code. */
+      log.warn({ adminId: admin.id }, "Password reset rate limited by cooldown");
+      return await sameCostAsIssuing(nothing);
+    }
+  }
+
+  const code = generateResetCode();
+  const codeHash = await hashPassword(code);
+
+  try {
+    /* One transaction, so "retire the old code, issue the new one" cannot be
+       observed half-done. The partial unique index is the real guarantee — see
+       the catch below — and this keeps the common case from ever reaching it. */
+    await getDb().transaction(async (tx) => {
+      await invalidateResetsForAdmin(admin.id, tx);
+      await insertPasswordReset(
+        {
+          adminId: admin.id,
+          codeHash,
+          expiresAt: new Date(Date.now() + RESET_CODE_TTL_MINUTES * 60_000),
+          requestedIp: context.ipAddress ?? null,
+        },
+        tx,
+      );
+    });
+  } catch (error) {
+    /* `admin_password_resets_one_live_idx` refused a second live code, which
+       means a concurrent request won the race and has already sent one. The
+       caller wanted a code delivered to this account, and one was — answer as
+       if this request had done it. Anything else would be a second code, which
+       is the exact thing the index exists to prevent. */
+    log.warn({ adminId: admin.id, err: error }, "Concurrent password reset request lost the race");
+    return nothing;
+  }
+
+  /* NOT awaited, deliberately.
+     ---------------------------------------------------------------------
+     Delivery means an SMTP transaction and a Telegram HTTP call. Awaited, the
+     response time would depend on them — and only the "this is a real, active
+     account" path pays that cost, while every other path returns after one
+     cheap SELECT. That is an account-enumeration oracle readable from a single
+     request: fast means no such admin, slow means here is the address worth
+     attacking. Handing back the answer first makes the reply the same shape
+     whatever it is.
+     It also means a stalling mail server can no longer hold the shopkeeper's
+     browser past its own timeout and leave them reading "could not reach the
+     server" about a code that has already arrived on Telegram. */
+  void deliverResetCode({
+    email: admin.email,
+    name: admin.name,
+    code,
+    expiresInMinutes: RESET_CODE_TTL_MINUTES,
+  })
+    .then((delivery) => {
+      log.info({ adminId: admin.id, ...delivery }, "Password reset code issued");
+    })
+    .catch((error: unknown) => {
+      /* Nothing above can throw today. This is here so that if that ever
+         changes, it is a logged failure rather than an unhandled rejection —
+         which in current Node takes the whole API process down. */
+      log.error({ adminId: admin.id, err: error }, "Password reset delivery threw");
+    });
+
+  return { issued: true };
+}
+
+/**
+ * Burns roughly what issuing a code would have, before answering "no".
+ *
+ * The paths that decline — no such account, disabled, still inside the resend
+ * cooldown — otherwise return after a single indexed SELECT, while the path
+ * that proceeds spends an Argon2 hash. One request is enough to tell those
+ * apart by the clock, which is the enumeration this endpoint is built to
+ * prevent. The same defence `login` uses, for the same reason.
+ *
+ * The network side of the cost is handled differently — by not awaiting
+ * delivery at all, so no path waits for it.
+ */
+async function sameCostAsIssuing(outcome: ResetRequestOutcome): Promise<ResetRequestOutcome> {
+  await simulatePasswordVerification(generateResetCode());
+  return outcome;
+}
+
+/**
+ * Finishes a reset: verifies the code and sets the new password.
+ *
+ * One endpoint rather than "verify the code, then set a password with the token
+ * that gives you". A verify-only step is a free oracle — an attacker could test
+ * codes without ever committing to a password, and each test would be cheap.
+ * Here every guess costs a full submission and burns one of five attempts.
+ *
+ * Every failure below returns the same message. The exception is an expired
+ * code, which the owner needs to be told about because the fix is "ask for
+ * another one" rather than "look at the number again".
+ */
+export async function resetPasswordWithCode(input: {
+  email: string;
+  code: string;
+  newPassword: string;
+}): Promise<void> {
+  const genericFailure = new UnauthorizedError(
+    "That code is not valid. Request a new one.",
+    ErrorCode.INVALID_CREDENTIALS,
+  );
+
+  const admin = await findAdminByEmail(input.email);
+
+  if (!admin || !admin.isActive) {
+    /* Same dummy verification as login, for the same reason: without it, an
+       unknown address answers noticeably faster than a real one. */
+    await simulatePasswordVerification(input.code);
+    throw genericFailure;
+  }
+
+  const reset = await findLatestLiveReset(admin.id);
+  if (!reset) {
+    await simulatePasswordVerification(input.code);
+    throw genericFailure;
+  }
+
+  if (reset.expiresAt.getTime() <= Date.now()) {
+    throw new UnauthorizedError(
+      "That code has expired. Request a new one.",
+      ErrorCode.TOKEN_EXPIRED,
+    );
+  }
+
+  /* Charge the guess BEFORE checking it, in one statement that both increments
+     and enforces the ceiling. Reading the count, comparing it here, and
+     incrementing after the Argon2 verification left a hundred-millisecond gap
+     in which every concurrent request saw the same stale number and every one
+     of them got to guess — so the limit was not five, it was however many an
+     attacker could run at once. Null means the budget is gone, and the code is
+     dead without spending a hash on it. */
+  const attempts = await reserveResetAttempt(reset.id, RESET_MAX_ATTEMPTS);
+
+  if (attempts === null) {
+    log.warn({ adminId: admin.id }, "Password reset code exhausted its attempts");
+    throw genericFailure;
+  }
+
+  const matches = await verifyPassword(reset.codeHash, input.code);
+
+  if (!matches) {
+    log.warn({ adminId: admin.id, attempts }, "Wrong password reset code");
+    throw genericFailure;
+  }
+
+  /* Claim it before changing anything. Conditional on `consumed_at is null`, so
+     two requests carrying the same correct code cannot both reset the
+     password — the loser is told the code is spent, which by then it is. */
+  const claimed = await consumeReset(reset.id);
+  if (!claimed) throw genericFailure;
+
+  await updatePasswordHash(admin.id, await hashPassword(input.newPassword), {
+    markPasswordChanged: true,
+    /* The other reason an owner is on this page. Someone hammering the login
+       leaves the account locked, and a reset that left the lock in place would
+       hand back a working password that still cannot be used. */
+    clearLockout: true,
+  });
+
+  /* Anything still signed in as this admin is now suspect — the reason for
+     resetting may well be that somebody else got in. */
+  await revokeAllForAdmin(admin.id, "password reset with a one-time code");
+
+  /* Belt and braces: any code issued between the read above and here. */
+  await invalidateResetsForAdmin(admin.id);
+
+  log.info({ adminId: admin.id }, "Password reset completed with a one-time code");
 }
 
 /* -------------------------------------------------------------------------- */

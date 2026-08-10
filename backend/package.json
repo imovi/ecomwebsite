@@ -2,7 +2,7 @@
   "name": "gng-backend",
   "version": "1.0.0",
   "private": true,
-  "description": "gng e-commerce backend \u2014 Phase 1 foundation",
+  "description": "gng e-commerce backend — Phase 1 foundation",
   "type": "module",
   "engines": {
     "node": ">=20.9.0"
@@ -34,6 +34,7 @@
     "helmet": "^8.1.0",
     "jose": "^6.1.0",
     "multer": "^2.0.2",
+    "nodemailer": "^9.0.5",
     "pg": "^8.16.3",
     "pino": "^9.13.1",
     "pino-http": "^10.5.0",
@@ -48,6 +49,7 @@
     "@types/express": "^5.0.5",
     "@types/multer": "^2.0.0",
     "@types/node": "^24.10.1",
+    "@types/nodemailer": "^8.0.1",
     "@types/pg": "^8.15.6",
     "drizzle-kit": "^0.31.6",
     "eslint": "^10.8.0",

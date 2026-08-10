@@ -5,11 +5,14 @@ import { UnauthorizedError } from "../../core/errors.js";
 import { ErrorCode } from "../../core/http-status.js";
 import { validated } from "../../middleware/validate.js";
 import * as authService from "./auth.service.js";
+import { isDeliveryConfigured } from "./reset-code.delivery.js";
 import type {
   ChangePasswordInput,
+  ForgotPasswordInput,
   LoginInput,
   LogoutInput,
   RefreshInput,
+  ResetPasswordInput,
 } from "./auth.validation.js";
 
 /**
@@ -165,4 +168,76 @@ export const changePassword: RequestHandler = async (req, res) => {
   clearRefreshCookie(res);
 
   sendSuccess(res, { message: "Password changed. Please sign in again." });
+};
+
+/**
+ * POST /auth/forgot-password
+ *
+ * Answers the same way for every address: one that exists, one that never did,
+ * one that was disabled last week. Anything else is an account-enumeration
+ * oracle on an admin panel, which is a list of exactly whom to phish.
+ *
+ * That includes the timing of the answer: the service burns a dummy Argon2 hash
+ * on the paths where there is nothing real to do, and delivery is not awaited
+ * at all, so no branch is distinguishable by how long it takes.
+ *
+ * THE ONE THING THIS DOES REPORT
+ * ------------------------------
+ * Whether this SERVER can send anything at all. That is not an account fact —
+ * the answer is identical for a real admin address, an invented one, and an
+ * empty string, because it depends only on configuration — so saying it leaks
+ * nothing, and it is checked BEFORE the account is even looked up so no timing
+ * difference is introduced either.
+ *
+ * It has to be said, because the alternative is silence in the one case that
+ * matters most: Telegram is configured from the panel the owner is locked out
+ * of, so a shop with neither channel set up would otherwise answer "a code is
+ * on its way" forever, about a code that cannot exist.
+ *
+ * The message says "if" on purpose, and names both channels, so the owner knows
+ * to check Telegram when the email does not arrive.
+ */
+export const forgotPassword: RequestHandler = async (req, res) => {
+  const { body } = validated<ForgotPasswordInput>(req);
+
+  if (!(await isDeliveryConfigured())) {
+    /* `canDeliver` is read by the client, which must NOT move on to the
+       code-entry screen and ask for something that can never arrive. Safe to
+       send: it describes the server, not the account, so it is identical for
+       every address — including ones that do not exist. */
+    sendSuccess(res, {
+      canDeliver: false,
+      message:
+        "Password reset is not set up on this server — no email or Telegram delivery is configured. Ask whoever administers it to set one up.",
+    });
+    return;
+  }
+
+  await authService.requestPasswordReset(body.email, sessionContext(req));
+
+  sendSuccess(res, {
+    canDeliver: true,
+    message:
+      "If that email belongs to an admin account, a 6-digit code is on its way — check your inbox, your spam folder, and Telegram.",
+  });
+};
+
+/**
+ * POST /auth/reset-password
+ *
+ * Takes the code and the new password together. There is deliberately no
+ * "check my code" endpoint: that would let an attacker test codes for free,
+ * while here every guess costs a full submission and one of five attempts.
+ */
+export const resetPassword: RequestHandler = async (req, res) => {
+  const { body } = validated<ResetPasswordInput>(req);
+
+  await authService.resetPasswordWithCode(body);
+
+  /* Every session for this account was just revoked, including — if the reset
+     was done from a browser that still held one — this one. Clearing the cookie
+     stops the client from presenting a token that is already dead. */
+  clearRefreshCookie(res);
+
+  sendSuccess(res, { message: "Password updated. You can sign in now." });
 };

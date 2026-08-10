@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
+import Link from "next/link";
 import { loginAction, type LoginFormState } from "@/lib/admin/actions";
 import { Input } from "@/components/ui/Field";
 import { Button } from "@/components/ui/Button";
@@ -12,7 +13,7 @@ import { Button } from "@/components/ui/Button";
  * A server action rather than a fetch: the response has to set an httpOnly
  * cookie, and this way the form also submits without JavaScript.
  */
-export function LoginForm({ returnTo }: { returnTo: string }) {
+export function LoginForm({ returnTo, justReset }: { returnTo: string; justReset?: boolean }) {
   const [state, formAction] = useActionState<LoginFormState, FormData>(loginAction, {});
 
   return (
@@ -21,6 +22,14 @@ export function LoginForm({ returnTo }: { returnTo: string }) {
           lib/admin/return-to.ts. Still validated in the action: a hidden field
           is a field, and anyone can post their own. */}
       <input type="hidden" name="next" value={returnTo} />
+
+      {/* Arriving straight from a completed reset. Without it the redirect
+          lands on a bare sign-in form that looks identical to a failure. */}
+      {justReset && (
+        <p className="rounded-sm bg-surface px-3 py-2 text-caption text-ink">
+          Password updated. Sign in with your new password.
+        </p>
+      )}
 
       <Input
         label="Email"
@@ -47,6 +56,13 @@ export function LoginForm({ returnTo }: { returnTo: string }) {
       )}
 
       <SubmitButton />
+
+      <Link
+        href="/admin/forgot-password"
+        className="text-center text-caption text-muted underline underline-offset-4 hover:text-ink"
+      >
+        Forgot your password?
+      </Link>
     </form>
   );
 }

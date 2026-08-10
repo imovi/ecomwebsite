@@ -39,23 +39,26 @@ import { bdPhoneSchema } from "./order.validation.js";
  */
 
 /**
- * Deliberately tighter than checkout: this endpoint is a lookup against a
- * guessable identifier, so the budget assumes a human checking their order a
- * handful of times, not a script walking the sequence.
+ * The tightest of the customer-facing limits: this is a lookup against a
+ * guessable identifier, so the budget has to bound a script walking the
+ * sequence.
  *
  * Keyed by the SHOPPER rather than by whoever connected. Nothing on the
  * storefront reaches this API directly — a customer tracking a parcel posts to
  * the Next.js server, which calls us over the Docker network — so `req.ip` is
- * the storefront container for every customer alive. Keyed on that, thirty in
- * fifteen minutes is not a per-visitor limit at all but a ceiling for the whole
- * shop, and on any ordinary afternoon the thirty-first customer to check their
- * order is told to slow down for something the thirty before them did. See
+ * the storefront container for every customer alive. Keyed on that it would not
+ * be a per-visitor limit at all but a ceiling for the whole shop. See
  * `customerKey`, which honours the forwarded address only from a caller on the
  * private network.
+ *
+ * The number itself was thirty, written into this file. That was two mistakes:
+ * a limit nobody could change without a deploy, and a limit sized for one
+ * person when the address it keys on is shared by a carrier's worth of them —
+ * see the rate-limiting note in `config/env.ts`.
  */
 const trackRateLimit: RequestHandler = rateLimit({
   windowMs: config.rateLimit.checkout.windowMs,
-  limit: 30,
+  limit: config.rateLimit.checkout.trackMax,
   standardHeaders: "draft-8",
   legacyHeaders: false,
   keyGenerator: (req) => `track:${customerKey(req)}`,

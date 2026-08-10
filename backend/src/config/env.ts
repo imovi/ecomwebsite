@@ -120,16 +120,65 @@ export const envSchema = z
      */
     ALLOW_INSECURE_COOKIES: booleanish(false),
 
-    // --- Rate limiting ---------------------------------------------------
+    /* --- Rate limiting -----------------------------------------------------
+     *
+     * AN ADDRESS IS NOT A PERSON HERE.
+     *
+     * Every public limiter keys on the shopper's IP. In most countries that is
+     * near enough to "one visitor". In Bangladesh it is not: the mobile carriers
+     * almost all run carrier-grade NAT, so hundreds of real customers on
+     * Grameenphone or Robi reach this shop from a handful of public addresses.
+     * On a store whose traffic arrives from a Facebook ad, on phones, that is
+     * the normal case rather than the exception.
+     *
+     * So these ceilings are sized for a SHARED address carrying many genuine
+     * shoppers at once, not for one. Sizing them per-person is what turns a
+     * successful ad into a wall of "too many requests" for customers who did
+     * nothing wrong — and it fails at the worst possible moment, because the
+     * endpoints that count are the ones at the end of the funnel: pricing a
+     * cart, placing the order.
+     *
+     * WHAT ACTUALLY COUNTS. Browsing does not: catalogue reads reach the API
+     * from the storefront container with no forwarded address, and the global
+     * limiter exempts them as infrastructure. Only the five endpoints the
+     * storefront forwards a shopper address for are counted — search, quote,
+     * the incomplete-checkout save, placing an order, and order tracking.
+     *
+     * THE ARITHMETIC. One heavy shopper spends roughly 70 of those in fifteen
+     * minutes and an extreme one about 150 — the checkout re-quotes on load and
+     * on every address change, and the lead record saves on a debounce while
+     * they type. Assume up to ~25 such shoppers behind one carrier address at
+     * peak and the defaults below follow, with headroom on top.
+     *
+     * WHAT STILL BOUNDS ABUSE. Order spam is not held back by this number and
+     * never was — an attacker rotates addresses. It is held back by the
+     * idempotency key, by stock that is really reserved, and by the fact that
+     * every order is confirmed by a phone call before it ships. Rejecting real
+     * buyers to slow down a spammer who is not slowed down is a bad trade.
+     */
     RATE_LIMIT_WINDOW_MINUTES: integer(15, 1),
-    RATE_LIMIT_MAX: integer(300, 1),
+    /* A backstop, not a business rule. Catalogue traffic never reaches it. */
+    RATE_LIMIT_MAX: integer(4_000, 1),
+
+    /* Credentials are the exception: keyed by address AND submitted email, so
+       it is effectively per-account, and a shared carrier address cannot push a
+       real admin over it. Tight is right here. */
     AUTH_RATE_LIMIT_WINDOW_MINUTES: integer(15, 1),
     AUTH_RATE_LIMIT_MAX: integer(10, 1),
-    /* Checkout is the only unauthenticated write in the API, so it gets its
-       own budget: tighter than general traffic, looser than login. */
+
+    /* Checkout is the only unauthenticated write in the API. The ceiling is a
+       hundred and fifty orders from ONE address in fifteen minutes — far beyond
+       anything this shop has done in a day, and still a bound. */
     CHECKOUT_RATE_LIMIT_WINDOW_MINUTES: integer(15, 1),
-    CHECKOUT_RATE_LIMIT_MAX: integer(20, 1),
-    QUOTE_RATE_LIMIT_MAX: integer(120, 1),
+    CHECKOUT_RATE_LIMIT_MAX: integer(150, 1),
+    /* Shared by three read-ish endpoints, each with its own budget: pricing a
+       cart, searching, and the incomplete-checkout save. Pricing is the busiest
+       — a shopper correcting their address re-quotes each time. */
+    QUOTE_RATE_LIMIT_MAX: integer(600, 1),
+    /* Order tracking. A lookup against a guessable number, so it stays the
+       tightest of the customer-facing limits — but not so tight that a carrier
+       full of customers checking their parcels runs it out. */
+    TRACK_RATE_LIMIT_MAX: integer(300, 1),
     /* The integration "test connection" buttons. Each one makes an outbound
        call, so an unbounded button is a way to burn the shop's Google quota or
        have Telegram throttle the bot for everyone. Ten a minute is generous for

@@ -106,6 +106,8 @@ function build(env: Env) {
         windowMs: env.CHECKOUT_RATE_LIMIT_WINDOW_MINUTES * MINUTE * 1000,
         max: env.CHECKOUT_RATE_LIMIT_MAX,
         quoteMax: env.QUOTE_RATE_LIMIT_MAX,
+        /** Order tracking, which shares the checkout window. */
+        trackMax: env.TRACK_RATE_LIMIT_MAX,
       },
       /** Admin-triggered diagnostics that call an outside service. */
       integrationTest: {

@@ -60,6 +60,43 @@ const nextConfig: NextConfig = {
    */
   output: "standalone",
 
+  /**
+   * Which build this is — and the fix for admins being thrown to
+   * "Something went wrong" when they try to sign in.
+   *
+   * THE BUG
+   * -------
+   * A server action's id is a hash generated at build time. The login form is
+   * a server action, so the page a browser is holding carries the id from the
+   * build it was loaded from. Deploy again and the ids change; the next submit
+   * from that already-open tab sends an id this build has never heard of, and
+   * the server answers:
+   *
+   *   Failed to find Server Action "60bcd43f…". This request might be from an
+   *   older or newer deployment.
+   *
+   * Which surfaces as the generic error screen. It hit the admin panel hardest
+   * because that is the page kept open in a background tab and returned to — a
+   * phone restoring sixty tabs is restoring sixty stale bundles.
+   *
+   * And retrying could not help: the error boundary's "Try again" re-renders
+   * with the same stale JavaScript still loaded. Only a full reload fetches the
+   * new build. See `src/app/error.tsx`.
+   *
+   * THE FIX
+   * -------
+   * With this set, Next stamps every asset and navigation with the id and
+   * compares them. On a mismatch it performs a hard navigation instead of a
+   * client-side one, so the tab quietly picks up the new build rather than
+   * calling into a function that no longer exists.
+   *
+   * Supplied per build from the commit — see the Dockerfile. Unset in
+   * development, where there is only ever one build.
+   */
+  ...(process.env.NEXT_DEPLOYMENT_ID
+    ? { deploymentId: process.env.NEXT_DEPLOYMENT_ID }
+    : {}),
+
   images: {
     remotePatterns: imagePatterns(),
 

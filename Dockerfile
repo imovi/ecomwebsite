@@ -40,11 +40,22 @@ ARG NEXT_PUBLIC_SITE_URL
 ARG NEXT_PUBLIC_WHATSAPP_NUMBER
 ARG NEXT_PUBLIC_HOTLINE
 
+# Which build this is. Stamped onto every asset and navigation so a browser
+# still holding the previous build reloads instead of calling a server action
+# that no longer exists — see the note in `next.config.ts`.
+#
+# Must CHANGE on every deploy, or the protection it buys is nil. The deploy
+# passes the commit sha; the fallback only keeps a plain `docker compose build`
+# working, and a build that reuses it is one no client can tell apart from the
+# last.
+ARG NEXT_DEPLOYMENT_ID=dev
+
 ENV API_URL=$API_URL \
     IMAGE_HOST=$IMAGE_HOST \
     NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL \
     NEXT_PUBLIC_WHATSAPP_NUMBER=$NEXT_PUBLIC_WHATSAPP_NUMBER \
-    NEXT_PUBLIC_HOTLINE=$NEXT_PUBLIC_HOTLINE
+    NEXT_PUBLIC_HOTLINE=$NEXT_PUBLIC_HOTLINE \
+    NEXT_DEPLOYMENT_ID=$NEXT_DEPLOYMENT_ID
 
 # Prerendering calls the API for the catalogue. When it is unreachable at build
 # time the reads fall back to empty rather than failing the build, and the pages

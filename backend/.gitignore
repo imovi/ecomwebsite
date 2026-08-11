@@ -5,7 +5,10 @@ dist/
 !.env.example
 
 # Embedded Postgres data directory (local dev only)
-.pglite/
+# Every local PGlite data directory, not just the default one. A throwaway
+# verification database lived in `.pglite-verify` and the old `.pglite/` rule
+# did not match it, so 1,116 database files were staged by a `git add -A`.
+.pglite*/
 
 # Uploaded files — object storage in production, never committed
 uploads/

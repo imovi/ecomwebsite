@@ -98,6 +98,19 @@ export function ProductVariants({
               </ul>
             )}
 
+            {/* An axis with no variants under it is a dead end, and it used to
+                be a silent one — just an "Add variant" button floating under a
+                heading, with no hint that this is where a picture ends up. */}
+            {product.variants.length === 0 && !showAdd && (
+              <p className="rounded-sm bg-surface px-3 py-4 text-caption text-muted">
+                No variants yet. Add one for each combination —{" "}
+                {axes[0]
+                  ? `one per ${axes[0].name.toLowerCase()}, such as ${axes[0].values[0] ?? "the first value"}`
+                  : "one per value"}
+                . Each variant is where its price, stock and picture live.
+              </p>
+            )}
+
             {showAdd ? (
               <VariantCreate
                 axes={axes}
@@ -165,6 +178,7 @@ function AxisEditor({
     })),
   );
   const [dirty, setDirty] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
 
   const update = (
     id: string,
@@ -172,7 +186,12 @@ function AxisEditor({
   ) => {
     setDraft((current) => current.map((axis) => (axis.id === id ? { ...axis, ...patch } : axis)));
     setDirty(true);
+    setProblem(null);
   };
+
+  /* True once any axis is set to show pictures — used to explain where the
+     picture actually goes, which is not here. */
+  const wantsPictures = draft.some((axis) => axis.display === "image");
 
   return (
     <div className="flex flex-col gap-2 rounded-sm bg-surface p-3">
@@ -247,17 +266,34 @@ function AxisEditor({
             size="sm"
             loading={busy}
             onClick={async () => {
-              const parsed = draft
-                .map((axis) => ({
-                  name: axis.name.trim(),
-                  values: axis.values
-                    .split(",")
-                    .map((value) => value.trim())
-                    .filter(Boolean),
-                  display: axis.display,
-                }))
-                .filter((axis) => axis.name !== "" && axis.values.length > 0);
+              const parsed = draft.map((axis) => ({
+                name: axis.name.trim(),
+                values: axis.values
+                  .split(",")
+                  .map((value) => value.trim())
+                  .filter(Boolean),
+                display: axis.display,
+              }));
 
+              /* Say what is wrong instead of dropping the row.
+                 A half-filled row used to be filtered out here and sent as
+                 nothing — the save "succeeded", the row stayed on screen, and
+                 the shop had no option types. Which looks exactly like a
+                 feature that does not work. */
+              const incomplete = parsed.find(
+                (axis) => axis.name === "" || axis.values.length === 0,
+              );
+
+              if (incomplete) {
+                setProblem(
+                  incomplete.name === ""
+                    ? "Give the option type a name — for example Colour."
+                    : `Add the values for ${incomplete.name}, separated by commas — for example Red, Blue.`,
+                );
+                return;
+              }
+
+              setProblem(null);
               if (await onSave(parsed)) setDirty(false);
             }}
           >
@@ -265,6 +301,25 @@ function AxisEditor({
           </Button>
         )}
       </div>
+
+      {problem && (
+        <p role="alert" className="text-caption text-sale">
+          {problem}
+        </p>
+      )}
+
+      {/* Where the picture actually goes.
+          Choosing "Picture" here changes nothing visible, because the picture
+          belongs to a variant, not to the option type — so somebody who picks
+          it and then looks around for an upload box finds none, and reasonably
+          concludes the feature is broken. Say the next step out loud. */}
+      {wantsPictures && (
+        <p className="text-caption text-muted">
+          Save these options, then add a variant for each value below. Each
+          variant gets its own <strong className="text-ink-soft">Picture</strong>{" "}
+          row where you can upload the photo shoppers will tap.
+        </p>
+      )}
     </div>
   );
 }

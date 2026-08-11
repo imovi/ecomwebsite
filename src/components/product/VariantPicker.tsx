@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { isOptionValueAvailable } from "@/lib/catalog-utils";
 import { copy } from "@/lib/copy";
@@ -13,6 +14,32 @@ interface VariantPickerProps {
   onChange: (selection: Selection) => void;
   /** Highlights unchosen axes in red after a failed Buy Now attempt. */
   errorAxes?: VariantOptionName[];
+}
+
+/**
+ * The picture that stands for one value on one axis.
+ *
+ * A variant carries the image, not an option value — and with two axes, "Green"
+ * belongs to Green/128GB and Green/256GB alike. So this takes the first variant
+ * matching the value that actually has a picture, which is what a shopkeeper
+ * means by "the green one": any photograph of the product in green will do, and
+ * the storage tier does not change how it looks.
+ *
+ * Returns null when nothing on that axis has been given a picture, and the
+ * caller falls back to text. Half-configured must degrade to readable rather
+ * than render an empty square.
+ */
+function swatchFor(
+  product: Product,
+  optionName: VariantOptionName,
+  value: string,
+): string | null {
+  const variant = product.variants.find(
+    (candidate) => candidate.options[optionName] === value && candidate.imageIndex !== undefined,
+  );
+
+  if (!variant || variant.imageIndex === undefined) return null;
+  return product.images[variant.imageIndex] ?? null;
 }
 
 export function VariantPicker({
@@ -50,6 +77,61 @@ export function VariantPicker({
                   // soon as one is picked.
                   { ...selection, [option.name]: undefined },
                 );
+
+                /* Only when the axis asks for pictures AND this value has one.
+                   A half-configured axis falls back to its text button rather
+                   than rendering an empty square — readable beats decorative
+                   when a shop owner has assigned three swatches out of four. */
+                const swatch =
+                  option.display === "image" ? swatchFor(product, option.name, value) : null;
+
+                if (swatch) {
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      /* The picture carries no meaning to a screen reader, so
+                         the label does — and it is the same sentence the text
+                         button would have given. */
+                      aria-label={available ? value : `${value} — currently unavailable`}
+                      title={value}
+                      onClick={() => onChange({ ...selection, [option.name]: value })}
+                      className={cn(
+                        "relative size-16 overflow-hidden rounded-sm border-2 bg-white",
+                        "transition-[border-color] duration-150 ease-out",
+                        "active:scale-[0.98]",
+                        selected ? "border-ink" : "border-line hover:border-muted",
+                        hasError && !chosen && "border-sale",
+                      )}
+                    >
+                      {/* The fade goes on the PHOTOGRAPH, not on the button.
+                          CSS opacity applies to an element and everything
+                          inside it as one group, so dimming the button dimmed
+                          the "out of stock" caption with it — 85% white over a
+                          product photo became about 34%, and the words it exists
+                          to say stopped being readable. */}
+                      <Image
+                        src={swatch}
+                        alt=""
+                        fill
+                        sizes="64px"
+                        className={cn(
+                          "object-cover transition-opacity duration-150 ease-out",
+                          /* Faded rather than struck through: a line across a
+                             photograph reads as a rendering fault. */
+                          !available && "opacity-40",
+                        )}
+                      />
+                      {!available && (
+                        <span className="absolute inset-x-0 bottom-0 bg-white/90 py-0.5 text-center text-micro font-medium text-ink">
+                          {copy.product.outOfStock}
+                        </span>
+                      )}
+                    </button>
+                  );
+                }
 
                 return (
                   <button

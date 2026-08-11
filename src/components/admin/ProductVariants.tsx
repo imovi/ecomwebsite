@@ -3,8 +3,9 @@
 import { useState } from "react";
 import { adminApi, AdminApiError } from "@/lib/admin/client";
 import { toast } from "@/lib/stores/toast-store";
-import { formatTaka } from "@/lib/utils";
-import type { ApiProduct, ApiProductVariant } from "@/lib/api/types";
+import { cn, formatTaka } from "@/lib/utils";
+import Image from "next/image";
+import type { ApiProduct, ApiProductImage, ApiProductVariant } from "@/lib/api/types";
 import { Card, CardHeader, ErrorBanner } from "./ui";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
@@ -60,7 +61,16 @@ export function ProductVariants({
       <div className="flex flex-col gap-4 p-4">
         <ErrorBanner message={error} />
 
+        {/* Keyed on the saved axes, so the editor reseeds from the server
+            whenever they actually change.
+            Its draft is seeded from props once and never re-syncs — which is
+            right while somebody is typing, and wrong the moment a save lands
+            or another admin edits the same product: the box would keep showing
+            what was typed here rather than what is stored. The key changes only
+            when the stored value does, so an in-progress edit is never
+            interrupted by an unrelated refetch. */}
         <AxisEditor
+          key={JSON.stringify(axes)}
           axes={axes}
           busy={busy}
           onSave={(variantOptions) =>
@@ -80,6 +90,7 @@ export function ProductVariants({
                     key={variant.id}
                     productId={product.id}
                     variant={variant}
+                    images={product.images}
                     busy={busy}
                     onRun={run}
                   />
@@ -126,6 +137,9 @@ export function ProductVariants({
 /* Rows need an identity that survives reordering. Keying by index would let a
    removal shift every later row onto a different key, carrying focus, cursor
    position and in-progress IME composition into the wrong input. */
+/** One declared axis, as the API takes it. */
+type AxisDraft = { name: string; values: string[]; display?: "text" | "image" };
+
 let axisRowSeq = 0;
 const nextAxisRowId = () => `axis-${(axisRowSeq += 1)}`;
 
@@ -134,9 +148,9 @@ function AxisEditor({
   busy,
   onSave,
 }: {
-  axes: { name: string; values: string[] }[];
+  axes: AxisDraft[];
   busy: boolean;
-  onSave: (axes: { name: string; values: string[] }[]) => Promise<boolean>;
+  onSave: (axes: AxisDraft[]) => Promise<boolean>;
 }) {
   /* Edited as text — "Black, Blue, Titanium" — because that is how someone
      types a list, and parsing it is trivial compared with a chip editor. */
@@ -145,11 +159,17 @@ function AxisEditor({
       id: nextAxisRowId(),
       name: axis.name,
       values: axis.values.join(", "),
+      /* Absent means text, which is what every product saved before swatches
+         existed will have. */
+      display: axis.display ?? ("text" as const),
     })),
   );
   const [dirty, setDirty] = useState(false);
 
-  const update = (id: string, patch: Partial<{ name: string; values: string }>) => {
+  const update = (
+    id: string,
+    patch: Partial<{ name: string; values: string; display: "text" | "image" }>,
+  ) => {
     setDraft((current) => current.map((axis) => (axis.id === id ? { ...axis, ...patch } : axis)));
     setDirty(true);
   };
@@ -174,6 +194,20 @@ function AxisEditor({
             aria-label={`Option ${index + 1} values`}
             className="h-10 flex-1 rounded-sm border border-line bg-white px-3 text-caption text-ink outline-none focus:border-ink"
           />
+          {/* Text or picture, per axis. Colour wants swatches — "Midnight
+              Green" means nothing until you see it — while Storage does not,
+              because there is no photograph of 256GB. */}
+          <select
+            value={axis.display}
+            onChange={(event) =>
+              update(axis.id, { display: event.target.value as "text" | "image" })
+            }
+            aria-label={`Option ${index + 1} shown as`}
+            className="h-10 w-28 shrink-0 rounded-sm border border-line bg-white px-2 text-caption text-ink outline-none focus:border-ink"
+          >
+            <option value="text">Text</option>
+            <option value="image">Picture</option>
+          </select>
           <button
             type="button"
             onClick={() => {
@@ -195,7 +229,10 @@ function AxisEditor({
           size="sm"
           disabled={draft.length >= 4}
           onClick={() => {
-            setDraft((current) => [...current, { id: nextAxisRowId(), name: "", values: "" }]);
+            setDraft((current) => [
+              ...current,
+              { id: nextAxisRowId(), name: "", values: "", display: "text" as const },
+            ]);
             setDirty(true);
           }}
         >
@@ -217,6 +254,7 @@ function AxisEditor({
                     .split(",")
                     .map((value) => value.trim())
                     .filter(Boolean),
+                  display: axis.display,
                 }))
                 .filter((axis) => axis.name !== "" && axis.values.length > 0);
 
@@ -238,11 +276,13 @@ function AxisEditor({
 function VariantRow({
   productId,
   variant,
+  images,
   busy,
   onRun,
 }: {
   productId: string;
   variant: ApiProductVariant;
+  images: ApiProductImage[];
   busy: boolean;
   onRun: (action: () => Promise<unknown>, message: string) => Promise<boolean>;
 }) {
@@ -275,6 +315,63 @@ function VariantRow({
           className="tnum h-9 w-24 rounded-sm border border-line bg-white px-2 text-caption text-ink outline-none focus:border-ink"
         />
       </label>
+
+      {/* The picture that stands for this variant.
+          Two jobs: it swaps the gallery when a shopper picks this variant, and
+          — when its axis is set to "Picture" — it IS the swatch they tap. Only
+          offered once photographs exist, because there is nothing to choose
+          from before that. */}
+      {images.length > 0 && (
+        <div className="flex w-full items-center gap-1.5 pl-0.5">
+          <span className="text-micro text-muted">Picture</span>
+          {images.map((image) => {
+            const chosen = variant.imageUrl === image.url;
+            return (
+              <button
+                key={image.id}
+                type="button"
+                disabled={busy}
+                aria-label={chosen ? `Remove picture from ${label}` : `Use this picture for ${label}`}
+                aria-pressed={chosen}
+                title={chosen ? "Tap again to clear" : "Use for this variant"}
+                onClick={() =>
+                  void onRun(
+                    () =>
+                      adminApi.patch(`admin/products/${productId}/variants/${variant.id}`, {
+                        /* Tapping the chosen one clears it — otherwise a
+                           swatch set by mistake could never be removed. */
+                        imageId: chosen ? null : image.id,
+                      }),
+                    chosen ? "Picture removed" : "Picture set",
+                  )
+                }
+                className={cn(
+                  "relative size-9 shrink-0 overflow-hidden rounded-sm border-2",
+                  chosen ? "border-ink" : "border-line",
+                )}
+              >
+                <Image
+                  src={image.url}
+                  alt=""
+                  fill
+                  sizes="64px"
+                  className={cn("object-cover", !chosen && "opacity-60 hover:opacity-100")}
+                />
+                {/* A visible mark on the chosen one, not only a hover tooltip.
+                    "Tap again to clear" was discoverable by hovering and
+                    waiting — which a touch screen never does, and a keyboard
+                    user never sees. The tick says which one is set; the label
+                    already told a screen reader it can be removed. */}
+                {chosen && (
+                  <span className="absolute inset-x-0 bottom-0 bg-ink/85 text-center text-[9px] font-medium leading-3 text-white">
+                    ✓
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       <label className="flex items-center gap-1 text-micro text-muted">
         Qty

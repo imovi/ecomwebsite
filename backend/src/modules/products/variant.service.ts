@@ -11,7 +11,7 @@ import {
   updateVariantRow,
   variantSkuExists,
 } from "./variant.repository.js";
-import { listImages } from "./image.repository.js";
+import { imagesBelongToProduct, listImages } from "./image.repository.js";
 import { toVariantDto, type ProductVariantDto } from "./product.types.js";
 import type { CreateVariantInput, UpdateVariantInput } from "./product.validation.js";
 import type { ProductOptionDefinition } from "../../db/schema/products.js";
@@ -118,6 +118,13 @@ export async function create(
     );
   }
 
+  /* Resolved BEFORE the transaction opens, deliberately. It reads the images
+     table on the pool's own connection, and issuing that from inside an open
+     transaction asks for a second connection while the first is held — which
+     on a single-connection driver simply never returns, and on a pool is one
+     step from exhausting it. Validation belongs before the write anyway. */
+  const imageId = await resolveVariantImage(productId, input.imageId);
+
   await getDb().transaction(async (tx) => {
     await insertVariants(
       [
@@ -131,6 +138,7 @@ export async function create(
           stockQuantity: input.stockQuantity,
           isActive: input.isActive,
           sortOrder: input.sortOrder || existing.length,
+          imageId,
         },
       ],
       tx,
@@ -188,6 +196,13 @@ export async function update(
     ]);
   }
 
+  /* Same reason as in `create`: this reads another table, so it must not run
+     while a transaction is holding the connection. */
+  const nextImageId =
+    input.imageId === undefined
+      ? undefined
+      : await resolveVariantImage(productId, input.imageId);
+
   await getDb().transaction(async (tx) => {
     await updateVariantRow(
       variantId,
@@ -200,6 +215,9 @@ export async function update(
         ...(input.stockQuantity !== undefined ? { stockQuantity: input.stockQuantity } : {}),
         ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
         ...(input.sortOrder !== undefined ? { sortOrder: input.sortOrder } : {}),
+        /* `null` clears the picture; omitted leaves it alone. Both are
+           meaningful here, so the check is on `undefined`, not falsiness. */
+        ...(nextImageId !== undefined ? { imageId: nextImageId } : {}),
       },
       tx,
     );
@@ -223,4 +241,31 @@ export async function remove(productId: string, variantId: string): Promise<Prod
 
   log.info({ productId, variantId }, "Variant deleted");
   return toDtos(productId);
+}
+
+/**
+ * Confirms a chosen picture actually belongs to this product.
+ *
+ * A schema cannot check this — it would need to see the parent, which it does
+ * not have at that depth. Without the check an admin (or a mistyped id) could
+ * point a variant at another product's photograph: the wrong picture would
+ * appear on the page, and it would vanish the moment that unrelated product's
+ * image was deleted, with nothing on this product to explain why.
+ *
+ * `null` and `undefined` both mean "no picture" and pass straight through, so
+ * clearing a swatch never touches the database for a lookup it does not need.
+ */
+async function resolveVariantImage(
+  productId: string,
+  imageId: string | null | undefined,
+): Promise<string | null> {
+  if (!imageId) return null;
+
+  if (!(await imagesBelongToProduct(productId, [imageId]))) {
+    throw new ValidationError([
+      { field: "body.imageId", message: "That picture does not belong to this product." },
+    ]);
+  }
+
+  return imageId;
 }

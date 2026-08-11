@@ -296,6 +296,11 @@ export async function create(input: CreateProductInput): Promise<ProductDto> {
           stockQuantity: variant.stockQuantity,
           isActive: variant.isActive,
           sortOrder: variant.sortOrder || index,
+          /* Always null here, and it has to be: photographs are uploaded
+             against a product that already exists, so at the moment a product
+             is created there is no image for a variant to point at. The swatch
+             is assigned afterwards, through the variant update endpoint. */
+          imageId: null,
         })),
         tx,
       );

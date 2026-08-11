@@ -130,7 +130,8 @@ export interface ApiProduct extends Omit<ApiProductListItem, "featuredImage"> {
   specifications: { label: string; value: string }[];
   whatsIncluded: string[];
   warranty: string | null;
-  variantOptions: { name: string; values: string[] }[];
+  /** `display` absent means text — see `VariantOption` in `@/types`. */
+  variantOptions: { name: string; values: string[]; display?: "text" | "image" }[];
   featuredImage: ApiProductImage | null;
   images: ApiProductImage[];
   variants: ApiProductVariant[];

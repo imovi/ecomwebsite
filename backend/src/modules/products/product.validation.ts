@@ -128,6 +128,12 @@ const optionDefinitionSchema = z
         (values) => new Set(values.map((v) => v.toLowerCase())).size === values.length,
         "Option values must be unique.",
       ),
+    /**
+     * How the shopper picks on this axis. Omitted means text, which is what
+     * every product saved before this existed will send — and they must keep
+     * rendering exactly as they do now.
+     */
+    display: z.enum(["text", "image"]).optional(),
   })
   .strict();
 
@@ -145,6 +151,20 @@ const variantInputSchema = z
     stockQuantity: z.number().int().min(0).max(1_000_000).default(0),
     isActive: z.boolean().default(true),
     sortOrder: z.number().int().min(0).max(9999).default(0),
+    /**
+     * Which of the product's own photographs shows this variant.
+     *
+     * The column has existed since the table was created and nothing has ever
+     * been able to set it — it was accepted nowhere in this schema, so the
+     * feature was a dead foreign key. This is what makes an image swatch
+     * possible: the picture the shopper taps to choose "Green" is this one.
+     *
+     * Checked in the service against the parent product's images, because a
+     * schema cannot see the sibling field it would need to. Pointing a variant
+     * at another product's photograph would put the wrong picture on the page
+     * and break the moment that image is deleted.
+     */
+    imageId: uuidSchema.nullish(),
   })
   .strict()
   .refine(
@@ -289,6 +309,14 @@ export const updateVariantSchema = z
     stockQuantity: z.number().int().min(0).max(1_000_000).optional(),
     isActive: z.boolean().optional(),
     sortOrder: z.number().int().min(0).max(9999).optional(),
+    /**
+     * The picture that shows this variant — see `variantInputSchema`.
+     *
+     * `nullish`, so `null` explicitly clears the swatch while omitting the key
+     * leaves it alone. On a partial update those are genuinely different
+     * intentions, and collapsing them would make a swatch impossible to remove.
+     */
+    imageId: uuidSchema.nullish(),
   })
   .strict()
   .refine((value) => Object.keys(value).length > 0, {

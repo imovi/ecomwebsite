@@ -51,6 +51,7 @@ interface Variant {
   price: number;
   stockQuantity: number;
   discountPercent: number;
+  imageUrl: string | null;
 }
 
 interface Product {
@@ -1757,5 +1758,148 @@ describe("branding — banners", () => {
       body: {},
     });
     assert.equal(managerWrite.status, 403);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Picking a variant by picture instead of by word.
+ *
+ * The column behind this has existed since the variants table was created and
+ * nothing could ever write to it — `imageId` was accepted by no schema, so the
+ * foreign key was dead. These tests cover the path that brings it to life, and
+ * the ownership rule that keeps one product's photograph off another's page.
+ */
+describe("products — variant pictures", () => {
+  let imageId = "";
+  let variantId = "";
+
+  before(async () => {
+    const uploaded = await uploadFiles<Envelope<{ images: ProductImage[] }>>(
+      ctx.baseUrl,
+      `/api/v1/admin/products/${flagshipId}/images`,
+      [{ field: "images", buffer: await makeTestImage(500, 500), filename: "swatch.png" }],
+      { accessToken: adminToken },
+    );
+    imageId = uploaded.body.data.images.at(-1)!.id;
+
+    const variants = await api<Envelope<{ variants: Variant[] }>>(
+      ctx.baseUrl,
+      `/api/v1/admin/products/${flagshipId}/variants`,
+      { accessToken: adminToken },
+    );
+    variantId = variants.body.data.variants[0]!.id;
+  });
+
+  it("gives a variant a picture, and returns it to the storefront", async () => {
+    const res = await api<Envelope<{ variants: Variant[] }>>(
+      ctx.baseUrl,
+      `/api/v1/admin/products/${flagshipId}/variants/${variantId}`,
+      { method: "PATCH", accessToken: adminToken, body: { imageId } },
+    );
+
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+
+    const updated = res.body.data.variants.find((variant) => variant.id === variantId);
+    assert.ok(updated?.imageUrl, "the variant now carries a picture");
+
+    /* And the public product carries it too — the swatch is rendered from the
+       storefront payload, not from an admin-only field. */
+    const shown = await api<Envelope<{ product: { variants: Variant[] } }>>(
+      ctx.baseUrl,
+      `/api/v1/products/${flagshipSlug}`,
+    );
+    const publicVariant = shown.body.data.product.variants.find((v) => v.id === variantId);
+    assert.ok(publicVariant?.imageUrl, "and the shopper's copy has it");
+  });
+
+  it("clears the picture when sent null", async () => {
+    const res = await api<Envelope<{ variants: Variant[] }>>(
+      ctx.baseUrl,
+      `/api/v1/admin/products/${flagshipId}/variants/${variantId}`,
+      { method: "PATCH", accessToken: adminToken, body: { imageId: null } },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(
+      res.body.data.variants.find((variant) => variant.id === variantId)?.imageUrl,
+      null,
+      "a swatch set by mistake has to be removable",
+    );
+  });
+
+  /**
+   * The rule a schema cannot enforce, because it cannot see the parent. Without
+   * it, a variant could show another product's photograph — and that picture
+   * would vanish the day the unrelated product's image was deleted, with
+   * nothing on this product to explain why.
+   */
+  it("refuses a picture belonging to a different product", async () => {
+    const other = await api<Envelope<{ product: { id: string } }>>(
+      ctx.baseUrl,
+      "/api/v1/admin/products",
+      {
+        method: "POST",
+        accessToken: adminToken,
+        body: {
+          name: "Someone Else's Product",
+          slug: "someone-elses-product",
+          sku: "OTHER-1",
+          categoryId: phonesCategoryId,
+          price: 500,
+        },
+      },
+    );
+
+    const stolen = await uploadFiles<Envelope<{ images: ProductImage[] }>>(
+      ctx.baseUrl,
+      `/api/v1/admin/products/${other.body.data.product.id}/images`,
+      [{ field: "images", buffer: await makeTestImage(400, 400), filename: "theirs.png" }],
+      { accessToken: adminToken },
+    );
+
+    const res = await api<Envelope<never>>(
+      ctx.baseUrl,
+      `/api/v1/admin/products/${flagshipId}/variants/${variantId}`,
+      {
+        method: "PATCH",
+        accessToken: adminToken,
+        body: { imageId: stolen.body.data.images[0]!.id },
+      },
+    );
+
+    assert.equal(res.status, 422, JSON.stringify(res.body));
+  });
+
+  it("remembers that an axis is shown as pictures", async () => {
+    const saved = await api<Envelope<{ product: { variantOptions: unknown[] } }>>(
+      ctx.baseUrl,
+      `/api/v1/admin/products/${flagshipId}`,
+      {
+        method: "PATCH",
+        accessToken: adminToken,
+        body: {
+          variantOptions: [
+            { name: "Color", values: ["Titanium Gray", "Titanium Black"], display: "image" },
+            { name: "Storage", values: ["256GB", "512GB"] },
+          ],
+        },
+      },
+    );
+
+    assert.equal(saved.status, 200, JSON.stringify(saved.body));
+
+    const shown = await api<
+      Envelope<{ product: { variantOptions: { name: string; display?: string }[] } }>
+    >(ctx.baseUrl, `/api/v1/products/${flagshipSlug}`);
+
+    const options = shown.body.data.product.variantOptions;
+    assert.equal(options.find((o) => o.name === "Color")?.display, "image");
+    assert.equal(
+      options.find((o) => o.name === "Storage")?.display,
+      undefined,
+      "an axis left as text stays text — old products must render unchanged",
+    );
   });
 });

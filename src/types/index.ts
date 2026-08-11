@@ -40,6 +40,17 @@ export type VariantOptionName = string;
 export interface VariantOption {
   name: VariantOptionName;
   values: string[];
+  /**
+   * Whether the shopper picks by reading a word or by looking at a picture.
+   *
+   * Per axis, because a phone in three colours and two storage tiers wants
+   * both: swatches for Colour, where "Midnight Green" means nothing until you
+   * see it, and text for Storage, where a photograph of 256GB does not exist.
+   *
+   * Absent means text. Every product saved before this existed has no such
+   * value and must keep rendering exactly as it does today.
+   */
+  display?: "text" | "image";
 }
 
 /**

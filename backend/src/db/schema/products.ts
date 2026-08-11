@@ -30,10 +30,25 @@ export interface ProductSpec {
   value: string;
 }
 
-/** A selectable variant axis, e.g. `{ name: "Storage", values: ["256GB"] }`. */
+/** How an axis is offered to the shopper. */
+export type OptionDisplay = "text" | "image";
+
+/**
+ * A selectable variant axis, e.g. `{ name: "Storage", values: ["256GB"] }`.
+ *
+ * `display` decides whether the shopper picks by reading a word or by looking
+ * at a picture. It is per axis rather than per product because a phone sold in
+ * three colours and two storage tiers wants both at once: swatches for Colour,
+ * where "Midnight Green" means nothing until you see it, and plain text for
+ * Storage, where a picture of 256GB does not exist.
+ *
+ * Optional, and absent means text. Every product saved before this existed has
+ * no such key, and must keep rendering exactly as it does today.
+ */
 export interface ProductOptionDefinition {
   name: string;
   values: string[];
+  display?: OptionDisplay;
 }
 
 /**

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { adminApi, AdminApiError } from "@/lib/admin/client";
 import { toast } from "@/lib/stores/toast-store";
 import { cn, formatTaka } from "@/lib/utils";
@@ -288,9 +288,60 @@ function VariantRow({
 }) {
   const [price, setPrice] = useState(String(variant.price));
   const [stock, setStock] = useState(String(variant.stockQuantity));
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
 
   const changed = price !== String(variant.price) || stock !== String(variant.stockQuantity);
   const label = Object.values(variant.options).join(" / ");
+
+  /**
+   * Uploads a photo and puts it on this variant in one action.
+   *
+   * The picture had to already exist in the product's Photos card, and the only
+   * hint about that was an empty space where the picker should have been — a
+   * product with no photos rendered nothing here at all, so setting an axis to
+   * "Picture" left no visible way to give it one.
+   *
+   * This does both steps: the file joins the product's photos exactly as it
+   * would from the Photos card, and the new one is assigned to this variant
+   * immediately.
+   */
+  async function uploadAndAssign(files: FileList | null): Promise<void> {
+    const file = files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    try {
+      const form = new FormData();
+      form.append("images", file);
+
+      const uploaded = await adminApi.upload<{ images: ApiProductImage[] }>(
+        `admin/products/${productId}/images`,
+        form,
+      );
+
+      /* The endpoint answers with the product's whole set; the one just added
+         is the newest. */
+      const added = uploaded.images.at(-1);
+      if (!added) throw new Error("The photo did not come back from the server.");
+
+      await onRun(
+        () =>
+          adminApi.patch(`admin/products/${productId}/variants/${variant.id}`, {
+            imageId: added.id,
+          }),
+        "Picture uploaded and set",
+      );
+    } catch (caught) {
+      toast(caught instanceof AdminApiError ? caught.message : "Upload failed.", {
+        tone: "error",
+      });
+    } finally {
+      setUploading(false);
+      /* Cleared so choosing the same file again still fires `change`. */
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
 
   return (
     <li className="flex flex-wrap items-center gap-2 py-2.5">
@@ -318,60 +369,85 @@ function VariantRow({
 
       {/* The picture that stands for this variant.
           Two jobs: it swaps the gallery when a shopper picks this variant, and
-          — when its axis is set to "Picture" — it IS the swatch they tap. Only
-          offered once photographs exist, because there is nothing to choose
-          from before that. */}
-      {images.length > 0 && (
-        <div className="flex w-full items-center gap-1.5 pl-0.5">
-          <span className="text-micro text-muted">Picture</span>
-          {images.map((image) => {
-            const chosen = variant.imageUrl === image.url;
-            return (
-              <button
-                key={image.id}
-                type="button"
-                disabled={busy}
-                aria-label={chosen ? `Remove picture from ${label}` : `Use this picture for ${label}`}
-                aria-pressed={chosen}
-                title={chosen ? "Tap again to clear" : "Use for this variant"}
-                onClick={() =>
-                  void onRun(
-                    () =>
-                      adminApi.patch(`admin/products/${productId}/variants/${variant.id}`, {
-                        /* Tapping the chosen one clears it — otherwise a
-                           swatch set by mistake could never be removed. */
-                        imageId: chosen ? null : image.id,
-                      }),
-                    chosen ? "Picture removed" : "Picture set",
-                  )
-                }
-                className={cn(
-                  "relative size-9 shrink-0 overflow-hidden rounded-sm border-2",
-                  chosen ? "border-ink" : "border-line",
-                )}
-              >
-                <Image
-                  src={image.url}
-                  alt=""
-                  fill
-                  sizes="64px"
-                  className={cn("object-cover", !chosen && "opacity-60 hover:opacity-100")}
-                />
-                {/* A visible mark on the chosen one, not only a hover tooltip.
-                    "Tap again to clear" was discoverable by hovering and
-                    waiting — which a touch screen never does, and a keyboard
-                    user never sees. The tick says which one is set; the label
-                    already told a screen reader it can be removed. */}
-                {chosen && (
-                  <span className="absolute inset-x-0 bottom-0 bg-ink/85 text-center text-[9px] font-medium leading-3 text-white">
-                    ✓
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      )}
+          — when its axis is set to "Picture" — it IS the swatch they tap.
+          Always rendered, including when the product has no photos yet. It used
+          to be hidden in that case, which is precisely when someone needs it:
+          they had just set an axis to "Picture" and were looking for where to
+          put one. */}
+      <div className="flex w-full flex-wrap items-center gap-1.5 pl-0.5">
+        <span className="text-micro text-muted">Picture</span>
+        {images.map((image) => {
+          const chosen = variant.imageUrl === image.url;
+          return (
+            <button
+              key={image.id}
+              type="button"
+              disabled={busy}
+              aria-label={chosen ? `Remove picture from ${label}` : `Use this picture for ${label}`}
+              aria-pressed={chosen}
+              title={chosen ? "Tap again to clear" : "Use for this variant"}
+              onClick={() =>
+                void onRun(
+                  () =>
+                    adminApi.patch(`admin/products/${productId}/variants/${variant.id}`, {
+                      /* Tapping the chosen one clears it — otherwise a
+                         swatch set by mistake could never be removed. */
+                      imageId: chosen ? null : image.id,
+                    }),
+                  chosen ? "Picture removed" : "Picture set",
+                )
+              }
+              className={cn(
+                "relative size-9 shrink-0 overflow-hidden rounded-sm border-2",
+                chosen ? "border-ink" : "border-line",
+              )}
+            >
+              <Image
+                src={image.url}
+                alt=""
+                fill
+                sizes="64px"
+                className={cn("object-cover", !chosen && "opacity-60 hover:opacity-100")}
+              />
+              {/* A visible mark on the chosen one, not only a hover tooltip.
+                  "Tap again to clear" was discoverable by hovering and
+                  waiting — which a touch screen never does, and a keyboard
+                  user never sees. The tick says which one is set; the label
+                  already told a screen reader it can be removed. */}
+              {chosen && (
+                <span className="absolute inset-x-0 bottom-0 bg-ink/85 text-center text-[9px] font-medium leading-3 text-white">
+                  ✓
+                </span>
+              )}
+          </button>
+        );
+        })}
+
+        {/* Upload straight from here.
+            The only route used to be the Photos card further down the page, and
+            nothing said so — which made "Picture" mode look broken on a product
+            whose photos had not been added yet. */}
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          onChange={(event) => void uploadAndAssign(event.target.files)}
+          className="hidden"
+        />
+        <button
+          type="button"
+          disabled={busy || uploading}
+          onClick={() => fileRef.current?.click()}
+          className="flex h-9 shrink-0 items-center gap-1 rounded-sm border border-dashed border-line px-2 text-micro text-muted hover:border-muted hover:text-ink disabled:opacity-50"
+        >
+          <Icon name={uploading ? "spinner" : "plus"} size={13} className={cn(uploading && "animate-spin")} />
+          {uploading ? "Uploading…" : images.length === 0 ? "Upload a picture" : "Upload"}
+        </button>
+
+        {images.length === 0 && !uploading && (
+          <span className="text-micro text-muted">no photos on this product yet</span>
+        )}
+      </div>
 
       <label className="flex items-center gap-1 text-micro text-muted">
         Qty

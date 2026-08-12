@@ -40,5 +40,15 @@ step "Running containers"
 docker compose ps
 
 printf '\n%s  Deployed as %s%s%s.%s\n' "$GREEN" "$BOLD" "$DEPLOYMENT_ID" "$OFF$GREEN" "$OFF"
-printf '%s  Verify the storefront picked it up:%s\n' "$DIM" "$OFF"
-printf '%s    curl -s localhost:3000/admin/login | grep -o "dpl=[^\"&]*" | sort -u%s\n\n' "$DIM" "$OFF"
+
+# Asked of Compose rather than assumed. A box that already runs something on
+# 3000 remaps this in docker-compose.override.yml, and a verification command
+# aimed at the wrong port proves nothing — or worse, proves it against somebody
+# else's service.
+published="$(docker compose port web 3000 2>/dev/null || true)"
+
+if [ -n "$published" ]; then
+  printf '%s  Verify the storefront is serving that id:%s\n' "$DIM" "$OFF"
+  printf '%s    curl -s http://%s/admin/login | grep -o "dpl=[^\"&]*" | sort -u%s\n\n' \
+    "$DIM" "$published" "$OFF"
+fi

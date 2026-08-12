@@ -158,8 +158,14 @@ The short version:
 **Update after a code change:**
 
 ```bash
-docker compose up -d --build && docker compose exec api npm run db:migrate
+bash deploy/redeploy.sh
 ```
+
+Rebuilds, restarts and migrates. Use it rather than `docker compose up -d
+--build`: the plain command builds the storefront under the same identity as the
+last deploy, and an admin whose browser is holding the previous build then gets a
+sign-in page with no "Forgot your password?" link and a password that will not go
+through.
 
 **Logs:**
 
@@ -204,7 +210,7 @@ the images were built. Fix it, then rebuild — a restart is not enough, because
 allowed image host is baked into the storefront bundle:
 
 ```bash
-docker compose up -d --build web
+bash deploy/redeploy.sh
 ```
 
 **Forgot the admin password.** Reset it from the server. This also reactivates a

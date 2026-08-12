@@ -79,18 +79,25 @@ Let's Encrypt validates over HTTP and will fail against a stale record.
 ## 3. Bring the stack up
 
 ```bash
-docker compose up -d --build
+DEPLOYMENT_ID="$(bash deploy/deployment-id.sh)" docker compose up -d --build
 ```
+
+`DEPLOYMENT_ID` stamps the build so a later deploy can be told apart from this
+one — see step 12. Every deploy after this one goes through
+`bash deploy/redeploy.sh`, which sets it for you.
 
 Then create the schema and the first admin account:
 
 ```bash
-docker compose exec api npm run db:migrate
+docker compose exec api npm run db:migrate:prod
 ```
 
 ```bash
-docker compose exec api npm run db:seed
+docker compose exec api npm run db:seed:prod
 ```
+
+Both take the `:prod` name: the runtime image ships only compiled JavaScript, so
+the plain `db:migrate` fails there with `sh: tsx: not found`.
 
 `db:seed` reads `SEED_ADMIN_EMAIL` and `SEED_ADMIN_PASSWORD` from `.env`. **Once
 it succeeds, delete the password from `.env`** — the account exists in the
@@ -536,11 +543,17 @@ database dump — back that up too, or move to object storage.
 **Deploy a change:**
 
 ```bash
-git pull && docker compose up -d --build
+git pull && bash deploy/redeploy.sh
 ```
 
-Then run `docker compose exec api npm run db:migrate` if the release added
-migrations. Migrations are forward-only and safe to re-run.
+The script rebuilds, restarts and applies any new migrations. Migrations are
+forward-only and safe to re-run, so it runs them every time.
+
+Use it rather than `docker compose up -d --build`. The plain compose command
+builds the storefront under the same identity as the last deploy, and a browser
+still holding the previous build then keeps calling server actions this build no
+longer has — an admin sees a sign-in page missing its "Forgot your password?"
+link and a password that will not go through.
 
 **Logs:**
 

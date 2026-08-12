@@ -100,6 +100,13 @@ fi
 # --- Build and start -------------------------------------------------------
 
 step "Building images (first run takes a few minutes)"
+# Which build this is. Nothing is holding a previous one on a first run, but the
+# variable has to be set from somewhere or the storefront is built as `dev` — and
+# the deploy AFTER this one would then be indistinguishable from it. See
+# deploy/deployment-id.sh and, for what it protects, next.config.ts.
+DEPLOYMENT_ID="$(bash deploy/deployment-id.sh)"
+export DEPLOYMENT_ID
+printf '%s  Building as %s.%s\n' "$DIM" "$DEPLOYMENT_ID" "$OFF"
 docker compose build
 
 step "Starting Postgres, the API and the storefront"

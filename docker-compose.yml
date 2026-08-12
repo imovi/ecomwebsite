@@ -146,11 +146,19 @@ services:
         NEXT_PUBLIC_SITE_URL: ${SITE_URL}
         NEXT_PUBLIC_WHATSAPP_NUMBER: ${NEXT_PUBLIC_WHATSAPP_NUMBER:-}
         NEXT_PUBLIC_HOTLINE: ${NEXT_PUBLIC_HOTLINE:-}
-        # Must differ on every deploy. Pass the commit:
-        #   DEPLOYMENT_ID=$(git rev-parse --short HEAD) docker compose build web
-        # Without it a browser holding the previous build keeps calling server
-        # actions this build no longer has — which is what threw admins to
-        # "Something went wrong" when signing in.
+        # Must differ on every deploy, so build through the script that
+        # guarantees it rather than by hand:
+        #
+        #   bash deploy/redeploy.sh
+        #
+        # Without a fresh value a browser holding the previous build keeps
+        # calling server actions this build no longer has — which is what threw
+        # admins to "Something went wrong" when signing in, and what left the
+        # sign-in page without its "Forgot your password?" link.
+        #
+        # The `dev` fallback keeps a bare `docker compose build` working for
+        # local use. A DEPLOY that reuses it is one no client can tell apart
+        # from the last, which is exactly the bug.
         NEXT_DEPLOYMENT_ID: ${DEPLOYMENT_ID:-dev}
     restart: unless-stopped
     depends_on:

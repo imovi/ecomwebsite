@@ -8,11 +8,16 @@
 # back, so a browser still holding the previous build reloads instead of calling
 # a server action that no longer exists — see the note in `next.config.ts`.
 #
-# The ONE property that matters is that it differs on every deploy. It bought
-# nothing for its first weeks in the tree because no deploy path set it, so every
-# build came out as the literal `dev` and no client could tell two of them apart.
-# That is why this is a file both deploy scripts call rather than a line each of
-# them is trusted to remember.
+# The ONE property that matters is that it differs on every deploy, and until
+# this file existed nothing guaranteed it. `DEPLOYMENT_ID` had to be typed on the
+# command line from memory, prompted only by a comment in docker-compose.yml —
+# and the command that comment suggested, `git rev-parse --short HEAD`, returns
+# nothing on the server, which is an unpacked tarball with no repository in it.
+# Every path that forgot it, or ran it there, built as the literal `dev`: a
+# release no client could tell apart from the one before.
+#
+# So this is a file both deploy scripts call, rather than a line each of them is
+# trusted to remember.
 
 set -euo pipefail
 

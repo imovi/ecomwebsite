@@ -151,10 +151,16 @@ services:
         #
         #   bash deploy/redeploy.sh
         #
-        # Without a fresh value a browser holding the previous build keeps
-        # calling server actions this build no longer has — which is what threw
-        # admins to "Something went wrong" when signing in, and what left the
-        # sign-in page without its "Forgot your password?" link.
+        # Reuse a value and a browser still holding the previous build carries
+        # on calling server actions this build no longer has. It shows up as a
+        # sign-in page with no "Forgot your password?" link — that bundle was
+        # built before the link existed — and a password that will not go
+        # through, both from the same stale JavaScript.
+        #
+        # Note what this cannot reach: a bundle built before `deploymentId` was
+        # configured at all sends no id, so there is nothing to compare and no
+        # hard navigation to trigger. Those tabs are only fixed by a reload,
+        # which is what src/app/(admin)/admin/login/error.tsx is for.
         #
         # The `dev` fallback keeps a bare `docker compose build` working for
         # local use. A DEPLOY that reuses it is one no client can tell apart

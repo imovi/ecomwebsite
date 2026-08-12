@@ -44,10 +44,11 @@ ARG NEXT_PUBLIC_HOTLINE
 # still holding the previous build reloads instead of calling a server action
 # that no longer exists — see the note in `next.config.ts`.
 #
-# Must CHANGE on every deploy, or the protection it buys is nil — which is what
-# it was worth for its first weeks here, because nothing on the deploy path set
-# it and every build came out as the fallback below. `deploy/redeploy.sh` now
-# supplies a value that cannot repeat, and it is the documented way to deploy.
+# Must CHANGE on every deploy, or the protection it buys is nil. For its first
+# weeks here nothing guaranteed that: the value had to be typed by hand, and any
+# deploy that forgot built as the fallback below — indistinguishable from the
+# release before it. `deploy/redeploy.sh` now supplies a value that cannot
+# repeat, and it is the documented way to deploy.
 #
 # The fallback only keeps a plain `docker compose build` working for local use.
 # A DEPLOY that reuses it is one no client can tell apart from the last.

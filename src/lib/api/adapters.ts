@@ -131,9 +131,15 @@ export function toProduct(product: ApiProduct): Product {
      * to a grey square.
      */
     imageStates: ordered.map(
-      (image) => image.states.find((state) => state.key === "off") ?? null,
+      /* `?? []` is not defensive habit, it is required. This adapter reads a
+         payload that can predate the field: Next's fetch cache survives a
+         deploy on purpose, so the first render after this shipped was handed a
+         cached product whose images had no `states` at all — and `undefined.find`
+         took the product page down with a 500. An adapter sits at the boundary
+         and has to tolerate the previous shape. */
+      (image) => (image.states ?? []).find((state) => state.key === "off") ?? null,
     ),
-    interactiveEnabled: product.interactiveEnabled,
+    interactiveEnabled: product.interactiveEnabled ?? false,
     description: product.description ?? product.shortDescription ?? "",
     specs: product.specifications,
     included: product.whatsIncluded,

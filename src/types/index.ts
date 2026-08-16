@@ -71,6 +71,15 @@ export interface Variant {
 
 export type ProductStatus = "active" | "draft" | "archived";
 
+/** An alternate version of a gallery photo — the same frame, light off. */
+export interface ProductImageState {
+  key: string;
+  label: string;
+  url: string;
+  width: number;
+  height: number;
+}
+
 export interface Product {
   id: string;
   slug: string;
@@ -84,6 +93,13 @@ export interface Product {
   price: Money;
   oldPrice?: Money;
   images: string[];
+  /**
+   * The same shots with the light off, positionally aligned with `images`.
+   * `null` where a photo has no unlit version — which is most of them.
+   */
+  imageStates: (ProductImageState | null)[];
+  /** Whether the shopper is offered the on/off switch on this product. */
+  interactiveEnabled: boolean;
   description: string;
   /** Ordered spec rows, rendered as a definition list. */
   specs: { label: string; value: string }[];

@@ -176,6 +176,13 @@
       "when": 1785436752218,
       "tag": "0024_customer_ip_and_blocking",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1786634562319,
+      "tag": "0025_interactive_product_images",
+      "breakpoints": true
     }
   ]
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { copy } from "@/lib/copy";
 import { useAutoAdvance } from "@/lib/hooks/use-auto-advance";
@@ -27,9 +27,29 @@ interface GalleryProps {
   title: string;
   /** When the selected variant changes, jump to its image. */
   activeIndex?: number;
+  /**
+   * Drawn inside one frame, over its photo. Used to hold a second version of
+   * the same shot — the lamp switched off — so it can be cross-faded in place.
+   *
+   * Optional, and absent for every product that has none: with no overlay this
+   * component renders exactly the markup it always did.
+   */
+  renderFrameOverlay?: (index: number) => ReactNode;
+  /**
+   * Drawn once, over the main image area rather than inside the rail, so it
+   * stays put while the frames scroll under it. Receives the frame currently
+   * in view.
+   */
+  renderOverlay?: (index: number) => ReactNode;
 }
 
-export function Gallery({ images, title, activeIndex }: GalleryProps) {
+export function Gallery({
+  images,
+  title,
+  activeIndex,
+  renderFrameOverlay,
+  renderOverlay,
+}: GalleryProps) {
   const railRef = useRef<HTMLDivElement>(null);
   const [index, setIndex] = useState(0);
   // Prevents the scroll handler from fighting a programmatic scroll.
@@ -130,16 +150,44 @@ export function Gallery({ images, title, activeIndex }: GalleryProps) {
                 src={src}
                 alt={`${title} — ${copy.product.imageOf(i + 1, images.length)}`}
                 fill
-                sizes="(max-width: 768px) 100vw, 520px"
-                /* Only the first frame is worth preloading; it is the LCP
-                   element on the product page. The rest lazy-load. */
-                preload={i === 0}
+                /* What this frame is actually rendered at, which is not what it
+                   used to claim.
+
+                   Phone: the rail is the full page width.
+
+                   From `md` up the page is a two-column grid inside a container
+                   that caps at 1600px with a 1rem gutter each side, the columns
+                   are separated by gap-10, and the gallery then gives 64px to the
+                   thumbnail column plus gap-4 beside it. So the frame is
+                     (min(100vw, 1600px) - 32 - 40) / 2 - 80
+                   which is `50vw - 116px` until the container caps at a viewport
+                   of 1632px, and a flat 684px above that.
+
+                   The old value said a flat 520px, so the browser picked a
+                   candidate for a box a quarter narrower than the real one and
+                   the desktop photo was being upscaled to fit. */
+                sizes="(max-width: 767px) 100vw, (min-width: 1632px) 684px, calc(50vw - 116px)"
+                /* The first frame is the LCP element on this page, and an image
+                   is only "Low" priority to the browser until layout proves it
+                   is in view — on a phone over mobile data that delay is the
+                   whole problem. `fetchPriority` says so up front instead.
+
+                   This used to be `preload`, which puts a <link> in the head.
+                   Next's own guidance is to use `loading`/`fetchPriority`
+                   *instead of* preload rather than alongside it, and the pair
+                   here was emitting a preload link that carried no priority at
+                   all — so neither the link nor the <img> ever told the browser
+                   this was the important one. The rest stay lazy. */
+                fetchPriority={i === 0 ? "high" : undefined}
                 loading={i === 0 ? "eager" : "lazy"}
                 className="object-cover"
               />
+              {renderFrameOverlay?.(i)}
             </div>
           ))}
         </div>
+
+        {renderOverlay?.(index)}
 
         {/* Frame counter — mobile only. Tells the shopper how many photos exist
             even before they reach the thumbnails below. */}

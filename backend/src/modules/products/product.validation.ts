@@ -217,6 +217,14 @@ export const createProductSchema = z
     status: z.enum(productStatusEnum.enumValues).default("draft"),
     isVisible: z.boolean().default(true),
 
+    /**
+     * Whether the storefront offers this product's alternate image states.
+     *
+     * Defaults off, so a product created tomorrow behaves exactly like every
+     * product created before this field existed.
+     */
+    interactiveEnabled: z.boolean().default(false),
+
     variantOptions: z.array(optionDefinitionSchema).max(4).default([]),
     variants: z.array(variantInputSchema).max(100).default([]),
   })
@@ -272,6 +280,11 @@ export const updateProductSchema = z
 
     status: z.enum(productStatusEnum.enumValues).optional(),
     isVisible: z.boolean().optional(),
+
+    /* Independent of whether any state image exists: the shop can upload the
+       unlit photos, check them, and switch this on afterwards — or switch it
+       off later without losing the uploads. */
+    interactiveEnabled: z.boolean().optional(),
 
     variantOptions: z.array(optionDefinitionSchema).max(4).optional(),
   })
@@ -441,6 +454,35 @@ export const productImageParamSchema = z.object({
   id: uuidSchema,
   imageId: uuidSchema,
 });
+
+/**
+ * A state key is a name, not free text.
+ *
+ * Lowercase letters, digits and dashes only, because it travels in a URL path
+ * and is compared exactly. `off` today; `warm`, `night`, `folded` later.
+ */
+const stateKeySchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(32)
+  .regex(/^[a-z0-9-]+$/, "Use lowercase letters, numbers and dashes.");
+
+export const productImageStateParamSchema = z.object({
+  id: uuidSchema,
+  imageId: uuidSchema,
+  stateKey: stateKeySchema,
+});
+
+export const uploadImageStateSchema = z
+  .object({
+    stateKey: stateKeySchema,
+    /** What the shopper is offered. Falls back to the key when absent. */
+    label: z.string().trim().min(1).max(40).optional(),
+  })
+  .strict();
+
+export type UploadImageStateInput = z.infer<typeof uploadImageStateSchema>;
 
 export const productVariantParamSchema = z.object({
   id: uuidSchema,

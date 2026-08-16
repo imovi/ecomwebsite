@@ -189,6 +189,21 @@ export const products = pgTable(
     publishedAt: timestamp("published_at", { withTimezone: true }),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
 
+    /* --- Interactive images --------------------------------------------- */
+    /**
+     * Whether this product's gallery offers alternate image states — today the
+     * lamp that can be shown lit or unlit.
+     *
+     * Per product, never per category: the shop decides one product at a time,
+     * and a category rule would light up the next thing filed under it.
+     *
+     * Defaults to false, so nothing changes for anything already in the
+     * catalogue and nothing changes for a product created tomorrow. A product
+     * with this off renders exactly as it does now and the storefront ships no
+     * extra image and no extra JavaScript for it — see `product_image_states`.
+     */
+    interactiveEnabled: boolean("interactive_enabled").notNull().default(false),
+
     /* --- Search --------------------------------------------------------- */
     /**
      * Weighted full-text index over the fields users actually search.

@@ -10,6 +10,7 @@ import type { ApiCategory, ApiProduct } from "@/lib/api/types";
 import { AdminShell } from "./AdminShell";
 import { Card, CardHeader, ErrorBanner, PageBody } from "./ui";
 import { ProductImages } from "./ProductImages";
+import { ProductInteractive } from "./ProductInteractive";
 import { ProductImageStaging, type StagedImage } from "./ProductImageStaging";
 import { ProductVariants } from "./ProductVariants";
 import {
@@ -753,6 +754,10 @@ export function ProductForm({ productId }: { productId?: string }) {
               images={product.images}
               onChange={() => void loadProduct()}
             />
+            {/* After the gallery, because it operates on what the gallery
+                holds — and a photo has to exist before it can have an off
+                version. */}
+            <ProductInteractive product={product} onChange={() => void loadProduct()} />
             <ProductVariants product={product} onChange={() => void loadProduct()} />
           </>
         )}

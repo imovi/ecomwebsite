@@ -120,6 +120,20 @@ export function toProduct(product: ApiProduct): Product {
     price: product.price,
     ...(money(product.oldPrice) !== undefined ? { oldPrice: product.oldPrice! } : {}),
     images: imageUrls(product.images),
+    /**
+     * The unlit twin of each photo, positionally aligned with `images` above —
+     * both are built from `orderImages`, so index `n` here is the alternate for
+     * index `n` there.
+     *
+     * Derived from `ordered` rather than from the raw list, and left empty when
+     * the product has no photos at all: `imageUrls` substitutes a placeholder in
+     * that case, and pairing a state to a placeholder would attach an unlit lamp
+     * to a grey square.
+     */
+    imageStates: ordered.map(
+      (image) => image.states.find((state) => state.key === "off") ?? null,
+    ),
+    interactiveEnabled: product.interactiveEnabled,
     description: product.description ?? product.shortDescription ?? "",
     specs: product.specifications,
     included: product.whatsIncluded,
@@ -154,6 +168,10 @@ export function toProductFromListItem(item: ApiProductListItem): Product {
     price: item.price,
     ...(money(item.oldPrice) !== undefined ? { oldPrice: item.oldPrice! } : {}),
     images: item.featuredImage ? [item.featuredImage.url] : [PLACEHOLDER_IMAGE],
+    /* A listing carries no gallery and no states, and a product card has
+       nowhere to put a switch — so this is empty by fact, not by omission. */
+    imageStates: [],
+    interactiveEnabled: false,
     description: "",
     specs: [],
     included: [],

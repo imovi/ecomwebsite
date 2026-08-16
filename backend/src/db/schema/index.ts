@@ -17,6 +17,7 @@ export * from "./catalog-enums.js";
 export * from "./categories.js";
 export * from "./products.js";
 export * from "./product-images.js";
+export * from "./product-image-states.js";
 export * from "./product-variants.js";
 export * from "./product-metrics.js";
 

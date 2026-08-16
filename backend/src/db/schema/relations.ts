@@ -2,6 +2,7 @@ import { relations } from "drizzle-orm";
 import { categories } from "./categories.js";
 import { products } from "./products.js";
 import { productImages } from "./product-images.js";
+import { productImageStates } from "./product-image-states.js";
 import { productVariants } from "./product-variants.js";
 import { productMetrics } from "./product-metrics.js";
 import { orders } from "./orders.js";
@@ -49,6 +50,16 @@ export const productImagesRelations = relations(productImages, ({ one, many }) =
   }),
   /* Variants that display this image. */
   variants: many(productVariants),
+  /* Alternate versions of this same shot — the lamp unlit, and whatever else
+     the shop adds later. Empty for every image that has none. */
+  states: many(productImageStates),
+}));
+
+export const productImageStatesRelations = relations(productImageStates, ({ one }) => ({
+  image: one(productImages, {
+    fields: [productImageStates.productImageId],
+    references: [productImages.id],
+  }),
 }));
 
 export const productVariantsRelations = relations(productVariants, ({ one }) => ({

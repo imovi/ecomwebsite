@@ -18,6 +18,8 @@ import {
   productIdParamSchema,
   productIdentifierParamSchema,
   productImageParamSchema,
+  productImageStateParamSchema,
+  uploadImageStateSchema,
   productStatusSchema,
   productVariantParamSchema,
   reorderImagesSchema,
@@ -213,6 +215,23 @@ productAdminRouter.patch(
   "/:id/images/:imageId/featured",
   validate({ params: productImageParamSchema }),
   controller.setFeaturedImage,
+);
+
+/* Declared BEFORE the catch-all delete below, which would otherwise match
+   `/images/:imageId` and swallow the state path's first segment. */
+productAdminRouter.post(
+  "/:id/images/:imageId/states",
+  /* Same note as the gallery upload: multer parses the multipart body first,
+     and `req.params` is populated by the router either way. */
+  uploadImages("image"),
+  validate({ params: productImageParamSchema, body: uploadImageStateSchema }),
+  controller.uploadImageState,
+);
+
+productAdminRouter.delete(
+  "/:id/images/:imageId/states/:stateKey",
+  validate({ params: productImageStateParamSchema }),
+  controller.removeImageState,
 );
 
 productAdminRouter.delete(

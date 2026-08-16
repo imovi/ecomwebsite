@@ -5,6 +5,11 @@ import {
   type NewProductImageRow,
   type ProductImageRow,
 } from "../../db/schema/product-images.js";
+import {
+  productImageStates,
+  type NewProductImageStateRow,
+  type ProductImageStateRow,
+} from "../../db/schema/product-image-states.js";
 
 /** Product image data access. */
 
@@ -156,7 +161,14 @@ export async function imagesBelongToProduct(
   return rows.length === imageIds.length;
 }
 
-/** Storage keys for a product, used to clean up objects on hard delete. */
+/**
+ * Storage keys for a product, used to clean up objects on hard delete.
+ *
+ * Alternate states are included. They are separate objects in storage, and the
+ * row that points at them is removed by the cascade from `product_images` — so
+ * leaving them out here would delete the pointer and keep the file, orphaning
+ * an unlit photo per gallery frame with nothing left to find it by.
+ */
 export async function listStorageKeys(
   productId: string,
   executor: DatabaseExecutor = getDb(),
@@ -165,5 +177,114 @@ export async function listStorageKeys(
     .select({ storageKey: productImages.storageKey })
     .from(productImages)
     .where(eq(productImages.productId, productId));
-  return rows.map((row) => row.storageKey);
+
+  const stateRows = await executor
+    .select({ storageKey: productImageStates.storageKey })
+    .from(productImageStates)
+    .innerJoin(productImages, eq(productImages.id, productImageStates.productImageId))
+    .where(eq(productImages.productId, productId));
+
+  return [...rows, ...stateRows].map((row) => row.storageKey);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Alternate image states                                                     */
+/* -------------------------------------------------------------------------- */
+
+/** Every alternate state on a product, flat. The DTO mapper groups them. */
+export async function listStatesForProduct(
+  productId: string,
+  executor: DatabaseExecutor = getDb(),
+): Promise<ProductImageStateRow[]> {
+  const rows = await executor
+    .select({ state: productImageStates })
+    .from(productImageStates)
+    .innerJoin(productImages, eq(productImages.id, productImageStates.productImageId))
+    .where(eq(productImages.productId, productId))
+    .orderBy(asc(productImages.sortOrder), asc(productImageStates.sortOrder));
+
+  return rows.map((row) => row.state);
+}
+
+export async function listStatesForImage(
+  imageId: string,
+  executor: DatabaseExecutor = getDb(),
+): Promise<ProductImageStateRow[]> {
+  return executor
+    .select()
+    .from(productImageStates)
+    .where(eq(productImageStates.productImageId, imageId))
+    .orderBy(asc(productImageStates.sortOrder));
+}
+
+/**
+ * Writes one state, replacing any previous upload for the same key.
+ *
+ * `onConflictDoUpdate` against the (image, key) unique index rather than a
+ * delete-then-insert: re-uploading the unlit photo is a correction, and it
+ * should not be able to leave the product with no state at all if the second
+ * statement fails.
+ *
+ * Returns the previous storage key when one was replaced, so the caller can
+ * delete the object it no longer points at.
+ */
+export async function upsertState(
+  input: NewProductImageStateRow,
+  executor: DatabaseExecutor = getDb(),
+): Promise<{ row: ProductImageStateRow; replacedKey: string | null }> {
+  const existing = await executor
+    .select({ storageKey: productImageStates.storageKey })
+    .from(productImageStates)
+    .where(
+      and(
+        eq(productImageStates.productImageId, input.productImageId),
+        eq(productImageStates.stateKey, input.stateKey),
+      ),
+    )
+    .limit(1);
+
+  const rows = await executor
+    .insert(productImageStates)
+    .values(input)
+    .onConflictDoUpdate({
+      target: [productImageStates.productImageId, productImageStates.stateKey],
+      set: {
+        label: input.label ?? null,
+        storageKey: input.storageKey,
+        width: input.width,
+        height: input.height,
+        size: input.size,
+        mimeType: input.mimeType,
+        checksum: input.checksum,
+      },
+    })
+    .returning();
+
+  const previous = existing[0]?.storageKey ?? null;
+
+  return {
+    row: rows[0]!,
+    /* Only when the bytes actually changed. Re-uploading an identical file
+       produces the same content-addressed key, and deleting it would remove
+       the object the surviving row points at. */
+    replacedKey: previous && previous !== input.storageKey ? previous : null,
+  };
+}
+
+/** Removes one state. Returns the row so the caller can drop its object. */
+export async function deleteState(
+  imageId: string,
+  stateKey: string,
+  executor: DatabaseExecutor = getDb(),
+): Promise<ProductImageStateRow | undefined> {
+  const rows = await executor
+    .delete(productImageStates)
+    .where(
+      and(
+        eq(productImageStates.productImageId, imageId),
+        eq(productImageStates.stateKey, stateKey),
+      ),
+    )
+    .returning();
+  return rows[0];
 }

@@ -1,6 +1,6 @@
 import type { Request, RequestHandler } from "express";
 import { sendCreated, sendNoContent, sendPaginated, sendSuccess } from "../../core/response.js";
-import { ForbiddenError } from "../../core/errors.js";
+import { ForbiddenError, ValidationError } from "../../core/errors.js";
 import { ErrorCode } from "../../core/http-status.js";
 import { validated } from "../../middleware/validate.js";
 import * as productService from "./product.service.js";
@@ -15,6 +15,7 @@ import type {
   ReorderImagesInput,
   UpdateProductInput,
   UpdateVariantInput,
+  UploadImageStateInput,
 } from "./product.validation.js";
 
 /**
@@ -274,5 +275,47 @@ export const reorderImages: RequestHandler = async (req, res) => {
 export const setFeaturedImage: RequestHandler = async (req, res) => {
   const { params } = validated<unknown, unknown, { id: string; imageId: string }>(req);
   const images = await imageService.setFeatured(params.id, params.imageId);
+  sendSuccess(res, { images });
+};
+
+/**
+ * POST /api/v1/admin/products/:id/images/:imageId/states
+ *
+ * Multipart, field name `image`. One file: this is the other version of one
+ * photograph, not a batch.
+ */
+export const uploadImageState: RequestHandler = async (req, res) => {
+  const { body, params } = validated<
+    UploadImageStateInput,
+    unknown,
+    { id: string; imageId: string }
+  >(req);
+
+  const files = Array.isArray(req.files) ? req.files : [];
+  const file = files[0];
+
+  if (!file) {
+    throw new ValidationError([
+      { field: "image", message: 'Attach one file in the "image" field.' },
+    ]);
+  }
+
+  const images = await imageService.uploadState(params.id, params.imageId, {
+    stateKey: body.stateKey,
+    ...(body.label !== undefined ? { label: body.label } : {}),
+    file: { buffer: file.buffer, originalname: file.originalname },
+  });
+
+  sendCreated(res, { images });
+};
+
+export const removeImageState: RequestHandler = async (req, res) => {
+  const { params } = validated<
+    unknown,
+    unknown,
+    { id: string; imageId: string; stateKey: string }
+  >(req);
+
+  const images = await imageService.removeState(params.id, params.imageId, params.stateKey);
   sendSuccess(res, { images });
 };

@@ -17,6 +17,7 @@ import { getDb, type DatabaseExecutor } from "../../db/client.js";
 import { categories, type CategoryRow } from "../../db/schema/categories.js";
 import { products, type NewProductRow, type ProductRow } from "../../db/schema/products.js";
 import { productImages, type ProductImageRow } from "../../db/schema/product-images.js";
+import type { ProductImageStateRow } from "../../db/schema/product-image-states.js";
 import { productVariants, type ProductVariantRow } from "../../db/schema/product-variants.js";
 import { productMetrics, type ProductMetricsRow } from "../../db/schema/product-metrics.js";
 import type { ProductSort, ProductStatus, StockStatus } from "../../db/schema/catalog-enums.js";
@@ -294,6 +295,8 @@ export interface ProductDetail {
   product: ProductRow;
   category: CategoryRow | null;
   images: ProductImageRow[];
+  /** Flat across every image; the DTO mapper groups them by image id. */
+  imageStates: ProductImageStateRow[];
   variants: ProductVariantRow[];
   metrics: ProductMetricsRow | null;
 }
@@ -325,7 +328,10 @@ export async function findProductDetail(
     where: visibility ? and(identity, visibility) : identity,
     with: {
       category: true,
-      images: true,
+      /* Nested rather than a second query: Drizzle folds this into the same
+         lateral join, so alternate states cost no extra round trip — and for
+         the whole catalogue as it stands today, no extra rows either. */
+      images: { with: { states: true } },
       variants: true,
       metrics: true,
     },
@@ -337,6 +343,7 @@ export async function findProductDetail(
     product: row as unknown as ProductRow,
     category: row.category ?? null,
     images: row.images,
+    imageStates: row.images.flatMap((image) => image.states),
     variants: row.variants,
     metrics: row.metrics ?? null,
   };

@@ -20,6 +20,7 @@ import { Icon } from "@/components/ui/Icon";
 import { Price } from "@/components/ui/Price";
 import { Sheet } from "@/components/ui/Sheet";
 import { Gallery } from "./Gallery";
+import { LightPill, OffFrame, useLightSwitch } from "./LightSwitch";
 import { QtyStepper } from "./QtyStepper";
 import { StickyBuyBar } from "./StickyBuyBar";
 import { VariantPicker } from "./VariantPicker";
@@ -56,6 +57,22 @@ export function ProductPurchase({ product }: { product: Product }) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [stickyVisible, setStickyVisible] = useState(false);
   const [errorAxes, setErrorAxes] = useState<VariantOptionName[]>([]);
+
+  /**
+   * The light switch.
+   *
+   * The hook runs for every product — hooks cannot be conditional — but it is
+   * only two `useState` calls and it costs nothing when unused. What IS
+   * conditional is the markup: `lit` gates both render props below, so a
+   * product without the feature gets a gallery with no overlay slots filled,
+   * no second image, and no control.
+   *
+   * `interactiveEnabled` alone is not enough. The shop can switch the feature
+   * on before uploading any unlit photo, and a switch with nothing behind it
+   * would be a control that does nothing.
+   */
+  const light = useLightSwitch({ offByIndex: product.imageStates, title: product.title });
+  const lit = product.interactiveEnabled && product.imageStates.some(Boolean);
 
   const inlineActionsRef = useRef<HTMLDivElement>(null);
   const variantsRef = useRef<HTMLDivElement>(null);
@@ -204,6 +221,23 @@ export function ProductPurchase({ product }: { product: Product }) {
           images={product.images}
           title={product.title}
           activeIndex={variant?.imageIndex}
+          {...(lit
+            ? {
+                renderFrameOverlay: (i: number) => (
+                  <OffFrame
+                    state={product.imageStates[i] ?? null}
+                    title={product.title}
+                    index={i}
+                    total={product.images.length}
+                    visible={light.isOff(i)}
+                  />
+                ),
+                renderOverlay: (i: number) =>
+                  light.hasPair(i) ? (
+                    <LightPill isOff={light.isOff(i)} onToggle={() => light.toggle(i)} />
+                  ) : null,
+              }
+            : {})}
         />
 
         <div className="mt-5 flex flex-col gap-5 md:mt-0">

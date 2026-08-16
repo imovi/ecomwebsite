@@ -9,14 +9,18 @@ import { findProductById } from "./product.repository.js";
 import {
   applyImageOrder,
   deleteImageRow,
+  deleteState,
   findImageById,
+  upsertState,
   imagesBelongToProduct,
   insertImages,
   listImages,
+  listStatesForProduct,
   maxSortOrder,
   promoteFirstImageToFeatured,
   setFeaturedImage,
 } from "./image.repository.js";
+import type { ProductImageStateRow } from "../../db/schema/product-image-states.js";
 import { toImageDto, type ProductImageDto } from "./product.types.js";
 import type { ReorderImagesInput } from "./product.validation.js";
 
@@ -41,7 +45,18 @@ export async function list(productId: string): Promise<ProductImageDto[]> {
   if (!product) throw new NotFoundError("Product not found.");
 
   const images = await listImages(productId);
-  return images.map(toImageDto);
+  const states = await listStatesForProduct(productId);
+
+  const byImage = new Map<string, ProductImageStateRow[]>();
+  for (const state of states) {
+    const existing = byImage.get(state.productImageId);
+    if (existing) existing.push(state);
+    else byImage.set(state.productImageId, [state]);
+  }
+
+  /* Not `images.map(toImageDto)`: `map` passes the index as the second
+     argument, which `toImageDto` reads as the state list. */
+  return images.map((image) => toImageDto(image, byImage.get(image.id) ?? []));
 }
 
 export async function upload(
@@ -120,6 +135,95 @@ export async function upload(
   }
 
   log.info({ productId, count: stored.length }, "Product images uploaded");
+  return list(productId);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Alternate image states                                                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Uploads the other version of one gallery photo — the lamp unlit.
+ *
+ * Same pipeline as a gallery image, deliberately: decode, validate, resize and
+ * re-encode to WebP through `optimizeImage`, then store, then persist. So the
+ * shop uploads whatever came off the camera or the supplier's site — JPEG, PNG,
+ * anything sharp can read — and never has to think about size or format.
+ *
+ * Replacing an existing state deletes the object it used to point at, but only
+ * after the row has been updated. The other order loses the picture if the
+ * write fails.
+ */
+export async function uploadState(
+  productId: string,
+  imageId: string,
+  input: { stateKey: string; label?: string; file: { buffer: Buffer; originalname: string } },
+): Promise<ProductImageDto[]> {
+  const image = await findImageById(imageId);
+  if (!image || image.productId !== productId) {
+    throw new NotFoundError("Image not found on this product.");
+  }
+
+  const optimized = await optimizeImage(input.file.buffer, {
+    label: input.file.originalname,
+  });
+
+  const storage = getStorage();
+  const object = await storage.put({
+    folder: "products",
+    buffer: optimized.buffer,
+    mimeType: optimized.mimeType,
+    originalName: input.file.originalname,
+  });
+
+  let replacedKey: string | null = null;
+
+  try {
+    const result = await upsertState({
+      productImageId: imageId,
+      stateKey: input.stateKey,
+      label: input.label ?? null,
+      storageKey: object.key,
+      width: optimized.width,
+      height: optimized.height,
+      size: object.size,
+      mimeType: object.mimeType,
+      checksum: object.checksum,
+    });
+    replacedKey = result.replacedKey;
+  } catch (error) {
+    /* The row never landed, so nothing points at these bytes. */
+    await storage.delete(object.key).catch(() => undefined);
+    throw error;
+  }
+
+  if (replacedKey) {
+    /* Best effort. A file left behind costs a few kilobytes; failing the
+       request after the row is already correct would be worse. */
+    await storage.delete(replacedKey).catch(() => undefined);
+  }
+
+  log.info({ productId, imageId, stateKey: input.stateKey }, "Image state uploaded");
+  return list(productId);
+}
+
+/** Removes one alternate state and the object behind it. */
+export async function removeState(
+  productId: string,
+  imageId: string,
+  stateKey: string,
+): Promise<ProductImageDto[]> {
+  const image = await findImageById(imageId);
+  if (!image || image.productId !== productId) {
+    throw new NotFoundError("Image not found on this product.");
+  }
+
+  const removed = await deleteState(imageId, stateKey);
+  if (!removed) throw new NotFoundError("That image has no such state.");
+
+  await getStorage().delete(removed.storageKey).catch(() => undefined);
+
+  log.info({ productId, imageId, stateKey }, "Image state removed");
   return list(productId);
 }
 

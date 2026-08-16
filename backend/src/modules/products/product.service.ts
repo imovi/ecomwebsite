@@ -97,6 +97,7 @@ export async function getByIdentifier(
   return toProductDto(detail.product, {
     category: detail.category,
     images: detail.images,
+    imageStates: detail.imageStates,
     variants: detail.variants,
     metrics: detail.metrics,
     includeAdminFields: options.scope === "admin",
@@ -279,6 +280,7 @@ export async function create(input: CreateProductInput): Promise<ProductDto> {
         lowStockThreshold: input.lowStockThreshold,
         status: input.status,
         isVisible: input.isVisible,
+        interactiveEnabled: input.interactiveEnabled,
         publishedAt: input.status === "active" ? new Date() : null,
       },
       tx,
@@ -370,6 +372,9 @@ export async function update(id: string, input: UpdateProductInput): Promise<Pro
     stockStatus: deriveStockStatus(quantity, input.stockStatus ?? existing.stockStatus),
     ...(input.status !== undefined ? { status: input.status } : {}),
     ...(input.isVisible !== undefined ? { isVisible: input.isVisible } : {}),
+    ...(input.interactiveEnabled !== undefined
+      ? { interactiveEnabled: input.interactiveEnabled }
+      : {}),
     /* Stamp the first publication, and only the first. */
     ...(nextStatus === "active" && !existing.publishedAt ? { publishedAt: new Date() } : {}),
     ...(nextStatus === "archived" && !existing.archivedAt ? { archivedAt: new Date() } : {}),

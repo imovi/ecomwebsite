@@ -56,6 +56,15 @@ export interface ApiCategory {
   updatedAt: string;
 }
 
+/** An alternate version of a gallery photo — the same shot, lamp switched off. */
+export interface ApiProductImageState {
+  key: string;
+  label: string;
+  url: string;
+  width: number;
+  height: number;
+}
+
 export interface ApiProductImage {
   id: string;
   url: string;
@@ -64,6 +73,8 @@ export interface ApiProductImage {
   height: number;
   isFeatured: boolean;
   sortOrder: number;
+  /** Empty for every photo without one, which is every photo by default. */
+  states: ApiProductImageState[];
 }
 
 export interface ApiProductVariant {
@@ -134,6 +145,13 @@ export interface ApiProduct extends Omit<ApiProductListItem, "featuredImage"> {
   variantOptions: { name: string; values: string[]; display?: "text" | "image" }[];
   featuredImage: ApiProductImage | null;
   images: ApiProductImage[];
+  /**
+   * Whether the storefront offers this product's alternate image states.
+   *
+   * Independent of whether any state image exists — the shop can upload the
+   * unlit photos, look at them, and switch this on afterwards.
+   */
+  interactiveEnabled: boolean;
   variants: ApiProductVariant[];
   lowStockThreshold: number;
   publishedAt: string | null;

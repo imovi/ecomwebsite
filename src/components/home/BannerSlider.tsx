@@ -13,8 +13,10 @@ import { useAutoAdvance } from "@/lib/hooks/use-auto-advance";
  * Constraints applied deliberately, because carousels are usually a net
  * negative on conversion and always a risk to LCP:
  *
- *  - Slide 1 is preloaded and eagerly decoded; it is the LCP element on the
- *    homepage. Slides 2 and 3 lazy-load and cost nothing until swiped to.
+ *  - Slide 1 is marked high priority; it is the LCP element on the homepage.
+ *    Every slide stays lazy, including that one — each slide holds two crops
+ *    and only one of them is ever displayed, so eager loading would fetch the
+ *    hidden crop too. Slides 2 and 3 cost nothing until swiped to.
  *  - Auto-advance is unhurried and stops permanently the moment the customer
  *    swipes the rail — fighting a user's scroll is the worst carousel failure
  *    mode. Scrolling the PAGE is not swiping the rail, which is the distinction
@@ -107,13 +109,20 @@ export function BannerSlider({ banners }: { banners: Banner[] }) {
             className="snap-item relative w-full overflow-hidden bg-surface aspect-[var(--banner-ratio)] sm:aspect-[var(--banner-ratio-wide)]"
             aria-label={banner.alt}
           >
+            {/* Two crops of the same banner, one hidden by CSS at each width.
+                Neither may be eager or preloaded: a hidden <img> that has been
+                told to load eagerly still downloads, so forcing the first slide
+                would fetch BOTH the phone and the desktop banner on every
+                visit and the wrong one is pure waste. Left lazy, the browser
+                skips the one that is `display: none`, and `fetchPriority`
+                carries the urgency instead — which is exactly the trade Next's
+                own art-direction guidance describes. */}
             <Image
               src={banner.imageMobile ?? banner.image}
               alt={banner.alt}
               fill
               sizes="100vw"
-              preload={i === 0}
-              loading={i === 0 ? "eager" : "lazy"}
+              fetchPriority={i === 0 ? "high" : undefined}
               /* `contain`, not `cover`: the whole picture is shown. A banner
                  carries words, and cropping them is worse than a narrow band of
                  background beside an oddly-shaped one. */
@@ -124,8 +133,7 @@ export function BannerSlider({ banners }: { banners: Banner[] }) {
               alt=""
               fill
               sizes="(max-width: 640px) 0px, 100vw"
-              preload={i === 0}
-              loading={i === 0 ? "eager" : "lazy"}
+              fetchPriority={i === 0 ? "high" : undefined}
               className="hidden object-contain sm:block"
             />
           </Link>

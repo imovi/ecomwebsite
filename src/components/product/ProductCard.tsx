@@ -41,7 +41,12 @@ export function ProductCard({
           alt={product.title}
           fill
           sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 260px"
-          preload={priority}
+          /* Eager, but deliberately not preloaded and not `fetchPriority`.
+             A first row is two to six cards depending on the breakpoint, so
+             there is no single card that is the LCP element — marking them all
+             as the important one just makes them compete with each other, and
+             the preload links this used to emit carried no priority anyway.
+             Dropping the lazy deferral is the whole win here. */
           loading={priority ? "eager" : "lazy"}
           className={cn(
             "object-cover transition-transform duration-300 ease-out",

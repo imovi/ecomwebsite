@@ -36,6 +36,29 @@ import { useAutoAdvance } from "@/lib/hooks/use-auto-advance";
  *    fits perfectly; mixed sizes fit inside without losing anything.
  */
 
+/**
+ * How tall the banner may get from `sm` up — laptops, desktops and tablets.
+ *
+ * Phones are untouched: there the banner is the full page width and its own
+ * shape is right, because a phone screen is roughly the shape of the artwork.
+ *
+ * A wide screen is not. The uploaded banner is 1717×916 — a poster, not a
+ * banner — so at the container's full 1568px it stands 838px tall and pushes
+ * the products, which are what the page is for, entirely below the fold.
+ *
+ * The cap is applied to the WIDTH, computed from this height and the image's
+ * own ratio, rather than by squeezing the frame. Capping height alone would
+ * leave a box wider than the picture and `object-contain` would fill the
+ * difference with empty background; forcing a 3:1 crop instead would cut the
+ * logo row off the top and the feature strip off the bottom. Constraining the
+ * whole block keeps every pixel of the artwork and simply makes it smaller.
+ *
+ * Upload a properly banner-shaped image — 1600×500 or similar — and this stops
+ * binding on its own: the ratio is read from the file, so a wide crop fills the
+ * width at the height it was designed for.
+ */
+const BANNER_MAX_HEIGHT_PX = 440;
+
 /** Falls back to the old fixed ratios when dimensions are unknown (0). */
 function ratio(width?: number, height?: number, fallback = 5 / 2): number {
   if (!width || !height) return fallback;
@@ -84,7 +107,16 @@ export function BannerSlider({ banners }: { banners: Banner[] }) {
   }, [noteScroll]);
 
   return (
-    <div className="relative">
+    /* The cap sits on the whole block, not just the rail, so the dots and the
+       arrows stay centred under the banner rather than under the page. */
+    <div
+      className="relative sm:mx-auto sm:w-full sm:max-w-[var(--banner-max-width)]"
+      style={
+        {
+          "--banner-max-width": `${Math.round(BANNER_MAX_HEIGHT_PX * desktopRatio)}px`,
+        } as React.CSSProperties
+      }
+    >
       <div
         ref={railRef}
         onScroll={onScroll}

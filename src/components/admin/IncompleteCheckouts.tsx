@@ -125,7 +125,7 @@ export function IncompleteCheckouts() {
         </label>
       }
     >
-      <OrderTabs active="incomplete" />
+      <OrderTabs active="incomplete" incompleteCount={openCount} />
 
       <PageBody columns={false}>
         <ErrorBanner message={actionError} />

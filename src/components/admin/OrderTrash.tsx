@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import { adminApi, AdminApiError, qs } from "@/lib/admin/client";
 import { useLoad } from "@/lib/admin/use-load";
+import { useOpenCheckoutCount } from "@/lib/admin/use-open-checkouts";
 import { formatTaka, formatDateTime } from "@/lib/utils";
 import { copy } from "@/lib/copy";
 import { toast } from "@/lib/stores/toast-store";
@@ -32,6 +33,9 @@ function daysLeft(deletedAt: string | null | undefined): number | null {
 }
 
 export function OrderTrash() {
+  /* So the badge does not vanish when somebody steps into Trash. */
+  const openCheckouts = useOpenCheckoutCount();
+
   const [orders, setOrders] = useState<ApiOrderListItem[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -79,7 +83,7 @@ export function OrderTrash() {
 
   return (
     <AdminShell title="Orders">
-      <OrderTabs active="trash" />
+      <OrderTabs active="trash" incompleteCount={openCheckouts} />
 
       <ErrorBanner message={actionError} className="mb-3" />
 

@@ -402,11 +402,31 @@ export function DateRangeFilter({
  * the shop — so it lives one route down from Orders and is presented as a tab
  * rather than its own sidebar entry.
  */
-export function OrderTabs({ active }: { active: "orders" | "incomplete" | "trash" }) {
+/**
+ * The three order screens.
+ *
+ * `incompleteCount` puts the waiting-for-a-call number on the tab itself. A tab
+ * that looks identical whether nobody or thirty people are waiting is a tab
+ * nobody opens, and this is the one screen on the panel where the work is money
+ * that has not been lost yet. Zero draws no badge — a "0" would be one more
+ * thing to read on a day when there is nothing to do.
+ */
+export function OrderTabs({
+  active,
+  incompleteCount = 0,
+}: {
+  active: "orders" | "incomplete" | "trash";
+  incompleteCount?: number;
+}) {
   const tabs = [
-    { key: "orders" as const, href: "/admin/orders", label: "Orders" },
-    { key: "incomplete" as const, href: "/admin/incomplete", label: "Incomplete" },
-    { key: "trash" as const, href: "/admin/orders/trash", label: "Trash" },
+    { key: "orders" as const, href: "/admin/orders", label: "Orders", count: 0 },
+    {
+      key: "incomplete" as const,
+      href: "/admin/incomplete",
+      label: "Incomplete",
+      count: incompleteCount,
+    },
+    { key: "trash" as const, href: "/admin/orders/trash", label: "Trash", count: 0 },
   ];
 
   return (
@@ -416,13 +436,18 @@ export function OrderTabs({ active }: { active: "orders" | "incomplete" | "trash
           key={tab.key}
           href={tab.href}
           className={cn(
-            "border-b-2 pb-2.5 text-caption font-medium transition-colors",
+            "flex items-center gap-1.5 border-b-2 pb-2.5 text-caption font-medium transition-colors",
             active === tab.key
               ? "border-ink text-ink"
               : "border-transparent text-muted hover:text-ink",
           )}
         >
           {tab.label}
+          {tab.count > 0 && (
+            <span className="tnum rounded-full bg-warn-soft px-1.5 py-0.5 text-micro font-semibold text-warn">
+              {tab.count}
+            </span>
+          )}
         </Link>
       ))}
     </div>

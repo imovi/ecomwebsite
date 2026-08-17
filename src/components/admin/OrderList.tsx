@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { adminApi, AdminApiError, qs } from "@/lib/admin/client";
 import { downloadCsv, toCsv } from "@/lib/admin/csv";
+import { useOpenCheckoutCount } from "@/lib/admin/use-open-checkouts";
 import { formatTaka, formatDateTime } from "@/lib/utils";
 import { copy } from "@/lib/copy";
 import type { ApiOrderListItem, ApiOrderStatus } from "@/lib/api/types";
@@ -61,6 +62,9 @@ const FILTERS: { value: string; label: string }[] = [
  * needs a confirmation call.
  */
 export function OrderList() {
+  /* Shown on the Incomplete tab, so the desk sees the waiting calls from here. */
+  const openCheckouts = useOpenCheckoutCount();
+
   const [orders, setOrders] = useState<ApiOrderListItem[]>([]);
   const [total, setTotal] = useState(0);
   const [status, setStatus] = useState("");
@@ -176,7 +180,7 @@ export function OrderList() {
 
   return (
     <AdminShell title="Orders">
-      <OrderTabs active="orders" />
+      <OrderTabs active="orders" incompleteCount={openCheckouts} />
 
       {/* Most of this shop's sales are agreed in a message rather than through
           the checkout, so taking one down by hand is a first-class action here

@@ -50,6 +50,18 @@ const ALLOWED_PATHS = [
   /* Reads only, and `profit.csv` is a distinct path rather than a query flag
      so the allowlist can name it. */
   /^admin\/reports\/profit(\.csv)?$/,
+  /* Reads only: the customer list and its export. Both are `manager` and above
+     upstream, and the export carries names, phones and addresses, so it is
+     named here rather than swept in by a wildcard. */
+  /^admin\/customers$/,
+  /^admin\/customers\/export$/,
+  /* The dashboard summary. Read only, and the takings inside it are withheld
+     below `admin` by the API, not by this list. */
+  /^admin\/overview$/,
+  /* Refusing an address: the "Blocked IPs" screen and the button on an order.
+     Listing, blocking and unblocking — nothing else under this prefix. */
+  /^admin\/ips$/,
+  /^admin\/ips\/[^/]+$/,
   /^admin\/abandoned(\/.*)?$/,
   /^admin\/courier\/(status|test|sync|webhook-token)$/,
   /^admin\/courier\/(order|shipment)\/[^/]+(\/send|\/sync)?$/,

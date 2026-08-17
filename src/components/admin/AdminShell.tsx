@@ -40,6 +40,9 @@ const NAV: NavItem[] = [
   { href: "/admin/orders", label: "Orders", icon: "package", primary: true },
   { href: "/admin/products", label: "Products", icon: "mobile", primary: true },
   { href: "/admin/profit", label: "Profit", icon: "cash", primary: true },
+  /* Beside Orders in the More menu rather than in the primary bar: it is read
+     when somebody is deciding whether to trust a caller, not on every shift. */
+  { href: "/admin/customers", label: "Customers", icon: "users" },
   { href: "/admin/categories", label: "Categories", icon: "blocks" },
   { href: "/admin/branding", label: "Branding", icon: "camera" },
   { href: "/admin/marketing", label: "Marketing", icon: "bolt" },

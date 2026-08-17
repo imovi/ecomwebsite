@@ -158,6 +158,33 @@ export interface ApiProduct extends Omit<ApiProductListItem, "featuredImage"> {
   updatedAt: string;
 }
 
+/**
+ * A customer, aggregated from their orders.
+ *
+ * There is no customers table: the phone number is the identity on a shop nobody
+ * registers for, so every field here is folded from that phone's orders. Name and
+ * address come from the most recent one.
+ */
+export interface ApiCustomer {
+  phone: string;
+  name: string;
+  address: string;
+  areaText: string;
+  deliveryZone: string;
+  orderCount: number;
+  deliveredCount: number;
+  returnedCount: number;
+  cancelledCount: number;
+  /** Delivered orders only — what the shop actually took. */
+  spent: number;
+  /** Every order placed, delivered or not. */
+  placedValue: number;
+  /** Delivered vs settled, as a percentage. Null when nothing has settled yet. */
+  successRate: number | null;
+  firstOrderAt: string;
+  lastOrderAt: string;
+}
+
 export interface ApiBanner {
   id: string;
   imageUrl: string;

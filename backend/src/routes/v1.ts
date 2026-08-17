@@ -15,6 +15,7 @@ import {
   orderAdminRouter,
 } from "../modules/orders/order.routes.js";
 import { storefrontRouter } from "../modules/orders/storefront.routes.js";
+import { customerAdminRouter } from "../modules/customers/customer.routes.js";
 import {
   bannerAdminRouter,
   bannerPublicRouter,
@@ -88,6 +89,12 @@ v1Router.use("/checkout", abandonedPublicRouter);
 v1Router.use("/storefront", storefrontRouter);
 
 v1Router.use("/admin/orders", orderAdminRouter);
+
+/* --- Customers -----------------------------------------------------------
+   Not a table. Derived from orders, grouped by phone, because the phone number
+   IS the customer identity on a shop nobody registers for — see the module.
+   `manager` and above: this is the order desk's call list and return history. */
+v1Router.use("/admin/customers", customerAdminRouter);
 
 /* --- Refusing an address --------------------------------------------------
    The block list behind the order page's "block this address" button. `admin`

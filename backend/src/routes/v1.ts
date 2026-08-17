@@ -16,6 +16,7 @@ import {
 } from "../modules/orders/order.routes.js";
 import { storefrontRouter } from "../modules/orders/storefront.routes.js";
 import { customerAdminRouter } from "../modules/customers/customer.routes.js";
+import { overviewAdminRouter } from "../modules/overview/overview.routes.js";
 import {
   bannerAdminRouter,
   bannerPublicRouter,
@@ -95,6 +96,12 @@ v1Router.use("/admin/orders", orderAdminRouter);
    IS the customer identity on a shop nobody registers for — see the module.
    `manager` and above: this is the order desk's call list and return history. */
 v1Router.use("/admin/customers", customerAdminRouter);
+
+/* --- The dashboard -------------------------------------------------------
+   One summary rather than the five requests the screen would otherwise make on
+   every load. `manager` and above; the takings are withheld below `admin`
+   inside the service, so the order desk gets its work and not the accounts. */
+v1Router.use("/admin/overview", overviewAdminRouter);
 
 /* --- Refusing an address --------------------------------------------------
    The block list behind the order page's "block this address" button. `admin`

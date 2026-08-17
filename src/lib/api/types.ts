@@ -185,6 +185,39 @@ export interface ApiCustomer {
   lastOrderAt: string;
 }
 
+/**
+ * The dashboard summary.
+ *
+ * `money` is absent — not zero, absent — for a `manager`, because the API omits
+ * it below `admin` rather than sending numbers the screen then hides.
+ */
+export interface ApiOverview {
+  money?: {
+    today: ApiOverviewDay;
+    yesterday: ApiOverviewDay;
+  };
+  sources: {
+    windowDays: number;
+    /** `source: null` is the storefront — the customer checked out unaided. */
+    breakdown: { source: string | null; orders: number }[];
+  };
+  parcels: {
+    inTransit: number;
+    /** A subset of `inTransit` — never add this to it. */
+    needsAttention: number;
+    failing: number;
+  };
+  callList: { abandonedOpen: number };
+  returns: { returned: number; settled: number; windowDays: number };
+}
+
+export interface ApiOverviewDay {
+  delivered: number;
+  deliveredOrders: number;
+  placedOrders: number;
+  placedValue: number;
+}
+
 export interface ApiBanner {
   id: string;
   imageUrl: string;

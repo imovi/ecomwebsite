@@ -190,8 +190,11 @@ export function Overview() {
                     {stuckParcels === 1 ? "has" : "have"} stopped moving
                     {parcels.failing > 0 && ` — ${parcels.failing} failing to sync`}.
                   </p>
-                  <Button href="/admin/courier" variant="soft" size="sm">
-                    Check parcels
+                  {/* There is no shipments screen — a parcel is synced from
+                      the order it belongs to. So this goes to the order list,
+                      and the sentence above says which ones to open. */}
+                  <Button href="/admin/orders" variant="soft" size="sm">
+                    Open orders
                   </Button>
                 </div>
               )}
@@ -220,7 +223,9 @@ export function Overview() {
                     {abandonedOpen} customer{abandonedOpen === 1 ? "" : "s"} started a checkout and
                     left without ordering.
                   </p>
-                  <Button href="/admin/abandoned" variant="soft" size="sm">
+                  {/* The screen is called "incomplete", not "abandoned" — the
+                      API's word for it and the panel's are not the same one. */}
+                  <Button href="/admin/incomplete" variant="soft" size="sm">
                     Call list
                   </Button>
                 </div>

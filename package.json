@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "check:admin-proxy": "node scripts/check-admin-proxy-paths.mjs"
+    "check:admin-proxy": "node scripts/check-admin-proxy-paths.mjs",
+    "check:admin-links": "node scripts/check-admin-links.mjs",
+    "check:admin": "npm run check:admin-proxy && npm run check:admin-links"
   },
   "dependencies": {
     "clsx": "^2.1.1",

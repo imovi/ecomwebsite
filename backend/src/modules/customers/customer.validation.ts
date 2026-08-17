@@ -4,7 +4,16 @@ import { z } from "zod";
 
 export const listCustomersQuerySchema = z
   .object({
-    search: z.string().trim().min(1).max(60).optional(),
+    /**
+     * Two characters minimum, not one.
+     *
+     * A name search compiles to `ILIKE '%x%'`, and a leading wildcard cannot use
+     * an index — so it scans every order and groups them. One character matches
+     * most of the catalogue's customers for that cost, which makes it a cheap way
+     * for a compromised staff login (or a retrying admin screen) to keep the
+     * database busy. Two characters is still forgiving and much narrower.
+     */
+    search: z.string().trim().min(2).max(60).optional(),
     /** Customers with more than one order. */
     repeatOnly: z
       .union([z.boolean(), z.string()])

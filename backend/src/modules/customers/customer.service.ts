@@ -1,4 +1,5 @@
 import {
+  countCustomers,
   EXPORT_MAX,
   listCustomers,
   listCustomersForExport,
@@ -93,8 +94,19 @@ export async function list(query: ListCustomersQuery): Promise<{
     perPage: query.perPage,
   });
 
-  /* `count(*) over()` is on every row; an empty page means no matches at all. */
-  const total = rows[0]?.totalCount ?? 0;
+  /**
+   * The window count rides on every returned row — and there are no rows on a
+   * page past the end, so it has nowhere to live.
+   *
+   * That case has to be told apart from "nothing matches": one is an empty
+   * state, the other is a page number that overshot, and reporting a total of 0
+   * for the second hides the pager and leaves the screen with no way back. So
+   * when the page is empty AND it is not the first page, the count is asked for
+   * directly. On the ordinary path that query never runs.
+   */
+  const total =
+    rows[0]?.totalCount ??
+    (query.page > 1 ? await countCustomers(toOptions(query)) : 0);
   const totalPages = Math.max(1, Math.ceil(total / query.perPage));
 
   return {

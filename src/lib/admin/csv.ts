@@ -15,13 +15,32 @@
  *    locales; CRLF is what the format actually specifies.
  */
 
+/**
+ * Neutralises a spreadsheet formula before it becomes one.
+ *
+ * Excel and Sheets evaluate any cell beginning `=`, `+`, `-` or `@` when the
+ * file is opened. Customer names and addresses in these exports were typed into
+ * the PUBLIC checkout by whoever placed the order, so `=cmd|'/c calc'!A1` as a
+ * name is code running on the machine of whoever opens the file, and
+ * `=IMPORTXML(...)` quietly posts the sheet's contents to somebody else's
+ * server. Quoting does not help — the parser strips the quotes before it reads
+ * the formula.
+ *
+ * A leading apostrophe is the standard defence: the text shows, nothing runs.
+ * Tab and carriage return count as leading whitespace on the way to the
+ * trigger, so they are covered too.
+ */
+function defuse(text: string): string {
+  return /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
+}
+
 /** Quotes a value, doubling any quotes inside it. */
 function cell(value: unknown): string {
   const text = value === null || value === undefined ? "" : String(value);
   /* Always quoted rather than only when needed: a customer name with a comma
      would otherwise split into two columns, and "when needed" is a rule that
      gets one case wrong eventually. */
-  return `"${text.replace(/"/g, '""')}"`;
+  return `"${defuse(text).replace(/"/g, '""')}"`;
 }
 
 export function toCsv(headers: string[], rows: unknown[][]): string {

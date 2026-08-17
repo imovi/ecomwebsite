@@ -49,6 +49,28 @@ const exportCustomers: RequestHandler = async (req, res) => {
     service.EXPORT_COLUMNS.map((column) => column.value(customer)),
   );
 
+  /**
+   * Neutralises a spreadsheet formula before it becomes one.
+   *
+   * A customer types their own name into the public checkout, and that name ends
+   * up in this file. Excel and Sheets treat a cell beginning `=`, `+`, `-` or
+   * `@` as a formula and evaluate it on open — so `=cmd|'/c calc'!A1` typed as a
+   * name is remote code execution against whoever opens the export, and
+   * `=IMPORTXML(...)` quietly ships the sheet's contents to somebody else's
+   * server. Quoting the field does not help; the quotes are stripped by the
+   * parser before the formula is read.
+   *
+   * A leading apostrophe is the standard defence: the spreadsheet shows the text
+   * and evaluates nothing. Tab and carriage return are included because both are
+   * treated as leading whitespace and skipped over on the way to the trigger.
+   *
+   * `safeString` on the way IN strips control characters but knows nothing about
+   * formulas, and it should not — this is a property of the file format, so it
+   * belongs at the point the file is written.
+   */
+  const defuse = (value: string): string =>
+    /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+
   /* The BOM is not decoration. Without it Excel on Windows reads the file in the
      system codepage and every Bangla name becomes mojibake — the same reason the
      browser-side helper in `lib/admin/csv.ts` writes one. CRLF for the same
@@ -57,7 +79,11 @@ const exportCustomers: RequestHandler = async (req, res) => {
     service.EXPORT_COLUMNS.map((column) => column.header),
     ...rows,
   ]
-    .map((row) => row.map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(","))
+    .map((row) =>
+      row
+        .map((cell) => `"${defuse(String(cell ?? "")).replace(/"/g, '""')}"`)
+        .join(","),
+    )
     .join("\r\n");
 
   res.setHeader("content-type", "text/csv; charset=utf-8");

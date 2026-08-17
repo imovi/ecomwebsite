@@ -112,9 +112,13 @@ function buildWhere(options: ListCustomersOptions): SQL | undefined {
 
   const term = options.search.trim();
   /* Digits are how anyone actually looks a customer up — the phone is the key,
-     and an operator with a call on the line types the number, not a name. The
-     name branch is the fallback, matched case-insensitively on a prefix so the
-     index on lower(name) is usable if one is added later. */
+     and an operator with a call on the line types the number, not a name.
+
+     The name branch is a fallback and it is genuinely expensive: `%term%` has a
+     leading wildcard, so no btree index can serve it and every order is scanned
+     and grouped. That is affordable at this shop's size and is why the schema
+     asks for two characters minimum. If the orders table grows into six figures,
+     the fix is a trigram (GIN) index on `customer_name`, not a narrower LIKE. */
   const digits = term.replace(/\D/g, "");
   const like = `%${term.replace(/[%_\\]/g, "\\$&")}%`;
 
@@ -217,6 +221,38 @@ export async function listCustomers(
  * when it was reached rather than being handed a silent truncation.
  */
 export const EXPORT_MAX = 10_000;
+
+/**
+ * How many customers match, asked separately.
+ *
+ * `count(*) over()` rides along on every returned row, which is free — and
+ * unreadable when there are no rows. A page past the end returns nothing, so the
+ * window count has nowhere to live and the caller cannot tell "no matches at
+ * all" from "matches, but not on this page". The first is a real empty state;
+ * the second is a stuck screen with the pager hidden and no way back.
+ *
+ * So this runs only in that case: rows empty and a page above the first. On the
+ * ordinary path it never runs.
+ */
+export async function countCustomers(
+  options: Omit<ListCustomersOptions, "page" | "perPage">,
+  executor: DatabaseExecutor = getDb(),
+): Promise<number> {
+  const where = buildWhere({ ...options, page: 1, perPage: 1 });
+  const having = buildHaving({ ...options, page: 1, perPage: 1 });
+
+  const rows = await executor.execute(sql`
+    select count(*)::int as total from (
+      select 1
+      from ${orders}
+      ${where ? sql`where ${where}` : sql``}
+      group by ${orders.phone}
+      ${having ? sql`having ${having}` : sql``}
+    ) as matched
+  `);
+
+  return num(rows.rows[0]?.total);
+}
 
 export async function listCustomersForExport(
   options: Omit<ListCustomersOptions, "page" | "perPage">,

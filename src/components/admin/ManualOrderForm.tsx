@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { adminApi, AdminApiError } from "@/lib/admin/client";
 import { useLoad } from "@/lib/admin/use-load";
@@ -36,7 +36,13 @@ import { Input, Select, Textarea } from "@/components/ui/Field";
  *  the field stays free text for the fifth. */
 const SOURCE_SUGGESTIONS = ["WhatsApp", "Facebook page", "Instagram", "Phone call"];
 
+/** Named so an emptied cart can retire this message without hiding real ones. */
+const PRICING_FAILED = "Could not price this cart.";
+
 interface Line {
+  /** Stable for the life of the line, so removing one above it does not
+   *  remount the rows below and take the focus with it. */
+  key: string;
   productId: string;
   variantId: string | null;
   quantity: number;
@@ -57,6 +63,16 @@ export function ManualOrderForm() {
   const [source, setSource] = useState("");
   const [status, setStatus] = useState<"confirmed" | "pending">("confirmed");
   const [lines, setLines] = useState<Line[]>([]);
+
+  /* Monotonic, so a line's key is unique for the life of the form no matter how
+     many are added and removed. Derived keys collide the moment two lines of the
+     same product exist. */
+  const nextKey = useRef(0);
+
+  /* Products whose detail request is already out. Without this, choosing the
+     same product twice before the first reply lands fires a second identical
+     request and adds a second line for one click's worth of intent. */
+  const fetchingDetail = useRef(new Set<string>());
 
   const [quote, setQuote] = useState<ApiQuote | null>(null);
   const [quoting, setQuoting] = useState(false);
@@ -90,6 +106,18 @@ export function ManualOrderForm() {
        body, and the emptiness is already knowable during render. */
     if (priceable.length === 0) return;
 
+    /**
+     * Which request this is.
+     *
+     * The debounce only cancels a timer that has not fired yet; a request
+     * already in flight keeps going. So two changes far enough apart both send,
+     * and if the FIRST reply arrives last it would overwrite the newer total —
+     * leaving the desk reading a price for a cart that no longer exists. The
+     * flag is closed over by this run of the effect and cleared by its cleanup,
+     * so a superseded reply knows to stay quiet.
+     */
+    let current = true;
+
     const timer = setTimeout(() => {
       setQuoting(true);
       adminApi
@@ -104,29 +132,39 @@ export function ManualOrderForm() {
           ...(areaText.trim() ? { areaText: areaText.trim() } : {}),
         })
         .then((result) => {
+          if (!current) return;
           setQuote(result);
           setError(null);
         })
         .catch((caught: unknown) => {
+          if (!current) return;
           setQuote(null);
           setError(
-            caught instanceof AdminApiError ? caught.message : "Could not price this cart.",
+            caught instanceof AdminApiError ? caught.message : PRICING_FAILED,
           );
         })
-        .finally(() => setQuoting(false));
+        .finally(() => {
+          if (current) setQuoting(false);
+        });
     }, 400);
 
-    return () => clearTimeout(timer);
+    return () => {
+      current = false;
+      clearTimeout(timer);
+    };
   }, [lines, areaText]);
 
   async function addLine(productId: string): Promise<void> {
     const product = products.find((candidate) => candidate.id === productId);
     if (!product) return;
 
-    /* Options are only fetched when a product actually has them — the listing
-       does not carry variants, and most products here have none. */
+    /* Fetched to find OUT whether it has options, not because we already know:
+       the listing carries no variant information at all. Cached per product, so
+       adding a second line of the same thing costs nothing. */
     let variantId: string | null = null;
     if (!detail[productId]) {
+      if (fetchingDetail.current.has(productId)) return;
+      fetchingDetail.current.add(productId);
       try {
         const full = await adminApi.get<{ product: ApiProduct }>(
           `admin/products/${productId}`,
@@ -136,12 +174,18 @@ export function ManualOrderForm() {
       } catch {
         setError("Could not load that product's options.");
         return;
+      } finally {
+        fetchingDetail.current.delete(productId);
       }
     } else {
       variantId = detail[productId]?.variants[0]?.id ?? null;
     }
 
-    setLines((current) => [...current, { productId, variantId, quantity: 1 }]);
+    nextKey.current += 1;
+    setLines((current) => [
+      ...current,
+      { key: `line-${nextKey.current}`, productId, variantId, quantity: 1 },
+    ]);
   }
 
   function updateLine(index: number, patch: Partial<Line>): void {
@@ -161,7 +205,13 @@ export function ManualOrderForm() {
    * total sitting on screen next to a Create button, and deriving it is how that
    * becomes impossible instead of merely handled.
    */
-  const shownQuote = lines.some((line) => line.quantity > 0) ? quote : null;
+  const hasPriceableLines = lines.some((line) => line.quantity > 0);
+  const shownQuote = hasPriceableLines ? quote : null;
+
+  /* A pricing error is about a cart. Empty the cart and the message no longer
+     describes anything, so it is derived away rather than left on screen saying
+     "could not price this cart" about a cart that is gone. */
+  const shownError = hasPriceableLines ? error : (error === PRICING_FAILED ? null : error);
 
   const canSubmit =
     !saving &&
@@ -216,7 +266,7 @@ export function ManualOrderForm() {
     <AdminShell title="New order">
       <PageBody>
         <form onSubmit={(event) => void submit(event)} className="flex flex-col gap-4">
-          <ErrorBanner message={error} />
+          <ErrorBanner message={shownError} />
 
           <Card>
             <CardHeader
@@ -314,7 +364,7 @@ export function ManualOrderForm() {
 
                     return (
                       <li
-                        key={`${line.productId}-${index}`}
+                        key={line.key}
                         className="flex flex-wrap items-end gap-3 rounded-sm border border-line p-3"
                       >
                         <div className="min-w-0 flex-1">

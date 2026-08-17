@@ -178,6 +178,16 @@ export function OrderList() {
     <AdminShell title="Orders">
       <OrderTabs active="orders" />
 
+      {/* Most of this shop's sales are agreed in a message rather than through
+          the checkout, so taking one down by hand is a first-class action here
+          and not something buried in a menu. */}
+      <div className="mb-3 flex justify-end">
+        <Button href="/admin/orders/new" variant="primary" size="md">
+          <Icon name="plus" size={16} />
+          New order
+        </Button>
+      </div>
+
       <DateRangeFilter
         className="mb-3"
         preset={preset}

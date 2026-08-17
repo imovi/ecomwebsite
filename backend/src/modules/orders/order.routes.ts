@@ -202,6 +202,13 @@ orderAdminRouter.patch(
   controller.updateStatus,
 );
 
+/* Pricing a cart before the desk agrees it on the phone.
+   The same `checkout.quote` the storefront uses, on the admin router rather
+   than through the public one: that route is rate limited PER SHOPPER, and
+   every admin request arrives from the storefront server's own address, so the
+   desk would share one bucket and hit the limit in a busy hour. */
+orderAdminRouter.post("/quote", validate({ body: quoteSchema }), controller.quote);
+
 /* An order typed in from a WhatsApp or page message.
    Declared BEFORE the `/:id/...` routes so a literal path is matched first. */
 orderAdminRouter.post(

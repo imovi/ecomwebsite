@@ -183,6 +183,13 @@
       "when": 1786634562319,
       "tag": "0025_interactive_product_images",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1786634563319,
+      "tag": "0026_manual_order_source",
+      "breakpoints": true
     }
   ]
 }

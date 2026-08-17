@@ -108,6 +108,12 @@ export interface OrderDto extends OrderListItemDto {
   /** The live block covering this address, if there is one. */
   blocked: { id: string; reason: string; expiresAt: string | null } | null;
   internalNotes: string | null;
+  /**
+   * Where the order came from, when the desk typed it in — "WhatsApp",
+   * "Facebook page". NULL means the customer checked out themselves, which is
+   * the answer for every order the storefront placed.
+   */
+  source: string | null;
   cancellationReason: string | null;
   version: number;
   items: OrderItemDto[];
@@ -229,6 +235,7 @@ export function toOrderDto(
     sameIp: origin.sameIp,
     blocked: origin.blocked,
     internalNotes: row.internalNotes,
+    source: row.source,
     cancellationReason: row.cancellationReason,
     version: row.version,
     /* Admin detail: the margin on this order is exactly the question the

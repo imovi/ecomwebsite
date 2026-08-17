@@ -110,6 +110,44 @@ export const placeOrderSchema = z
 
 export type PlaceOrderInput = z.infer<typeof placeOrderSchema>;
 
+/**
+ * The same order, typed in by the order desk.
+ *
+ * Extends the public checkout rather than replacing it, so a hand-typed order
+ * goes through the identical validation, the identical price resolution and the
+ * identical stock decrement. The alternative — a second write path with its own
+ * rules — is how two places end up disagreeing about whether stock was taken,
+ * and oversold inventory is the outcome nobody notices until a courier is
+ * standing at a door.
+ *
+ * Money is still absent. An operator does not name a price either: the
+ * catalogue does, exactly as it does for a customer.
+ */
+export const adminCreateOrderSchema = placeOrderSchema
+  .extend({
+    /**
+     * Where the order came from, in the operator's own words — "WhatsApp",
+     * "Facebook page", "phone". Required here, because an order reaching this
+     * endpoint came from SOMEWHERE other than the website, and leaving it blank
+     * would make it indistinguishable from a storefront checkout.
+     */
+    source: safeString({ min: 2, max: 40 }),
+
+    /**
+     * Where the order starts. Defaults to `confirmed`.
+     *
+     * The desk has already spoken to this customer — that conversation is why
+     * the order exists. Starting at `pending` would put it on the "needs a
+     * confirmation call" list it has already been through. `pending` stays
+     * available for the case where somebody is typing up a message they have
+     * not replied to yet.
+     */
+    status: z.enum(["pending", "confirmed"]).default("confirmed"),
+  })
+  .strict();
+
+export type AdminCreateOrderInput = z.infer<typeof adminCreateOrderSchema>;
+
 /* -------------------------------------------------------------------------- */
 /* Admin edits                                                                */
 /* -------------------------------------------------------------------------- */

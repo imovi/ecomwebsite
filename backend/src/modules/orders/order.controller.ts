@@ -15,6 +15,7 @@ import {
 import type { Actor } from "./order-event.repository.js";
 import type { OrderFilters } from "./order.repository.js";
 import type {
+  AdminCreateOrderInput,
   CancelOrderInput,
   InternalNotesInput,
   InvoiceSheetQuery,
@@ -60,6 +61,44 @@ export const quote: RequestHandler = async (req, res) => {
  * The `Idempotency-Key` header makes a retry safe: a flaky mobile connection
  * replaying the POST returns the original order instead of creating a second.
  */
+/**
+ * POST /api/v1/admin/orders — an order typed in by the desk.
+ *
+ * Most of this shop's sales are agreed in a message, not through the checkout: a
+ * customer sees an ad, writes to the page or to WhatsApp, and somebody at the
+ * desk settles it in a conversation. This is where that conversation becomes an
+ * order.
+ *
+ * It calls the SAME `checkout.placeOrder` the storefront does. That is the whole
+ * point — one place resolves prices from the catalogue, one place decrements
+ * stock conditionally inside the transaction, one place generates the order
+ * number. A separate admin write path would duplicate the stock logic, and two
+ * copies of a decrement are how a shop oversells without noticing.
+ *
+ * What differs is only context: a source, who typed it, and a starting status.
+ */
+export const adminCreateOrder: RequestHandler = async (req, res) => {
+  if (!req.auth) throw new UnauthorizedError();
+
+  const { body } = validated<AdminCreateOrderInput>(req);
+  const { source, status, ...order } = body;
+
+  const result = await checkout.placeOrder(order, {
+    source,
+    initialStatus: status,
+    /* The email rather than a display name: `req.auth` carries it already, so
+       the timeline names the person without a second query, and an address is
+       unambiguous in a way a first name is not. */
+    createdBy: { adminId: req.auth.adminId, name: req.auth.email },
+    /* Deliberately no ipAddress and no userAgent. They describe the OPERATOR's
+       browser, not the customer's, and writing the desk's address into
+       `customer_ip` would poison both the fraud trail and Meta's attribution
+       with the shop's own office. Absent is the honest value. */
+  });
+
+  sendCreated(res, { order: result.order });
+};
+
 export const placeOrder: RequestHandler = async (req, res) => {
   const { body } = validated<PlaceOrderInput>(req);
 

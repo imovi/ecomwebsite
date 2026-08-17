@@ -8,6 +8,7 @@ import { customerKey } from "../../middleware/rate-limit.js";
 import { blockGuard } from "../../middleware/block-guard.js";
 import * as controller from "./order.controller.js";
 import {
+  adminCreateOrderSchema,
   areaSearchQuerySchema,
   cancelOrderSchema,
   internalNotesSchema,
@@ -199,6 +200,14 @@ orderAdminRouter.patch(
   "/:id/status",
   validate({ params: orderIdParamSchema, body: updateStatusSchema }),
   controller.updateStatus,
+);
+
+/* An order typed in from a WhatsApp or page message.
+   Declared BEFORE the `/:id/...` routes so a literal path is matched first. */
+orderAdminRouter.post(
+  "/",
+  validate({ body: adminCreateOrderSchema }),
+  controller.adminCreateOrder,
 );
 
 orderAdminRouter.post(

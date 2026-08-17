@@ -362,6 +362,33 @@ export interface PlaceOrderContext {
   idempotencyKey?: string | undefined;
   ipAddress?: string | undefined;
   userAgent?: string | undefined;
+  /**
+   * How the order reached the shop, when an operator typed it in.
+   *
+   * Undefined for storefront checkouts, which is what leaves the column NULL —
+   * see `orders.source`. Setting it is the only thing that marks an order as
+   * taken by hand.
+   */
+  source?: string | undefined;
+  /**
+   * The admin who typed it in. Undefined for storefront checkouts.
+   *
+   * Carries the name as well as the id because the order timeline records an
+   * actor by name — an id alone would leave the one record that settles a
+   * dispute saying "admin" instead of who.
+   */
+  createdBy?: { adminId: string; name: string } | undefined;
+  /**
+   * Where the order starts its life. Defaults to `pending`.
+   *
+   * The storefront must never pass this: a customer who checked out has not
+   * been spoken to, and `pending` is precisely the state of "somebody needs to
+   * ring them". An order typed in from a WhatsApp conversation is the opposite
+   * case — the conversation already happened, and forcing the desk to confirm
+   * an order they just agreed on the phone would make the timeline lie about
+   * when it was confirmed.
+   */
+  initialStatus?: "pending" | "confirmed" | undefined;
 }
 
 export interface PlaceOrderResult {
@@ -436,7 +463,11 @@ export async function placeOrder(
         itemCount: lines.length,
         totalQuantity: lines.reduce((sum, line) => sum + line.quantity, 0),
         paymentMethod: "cod",
-        status: "pending",
+        status: context.initialStatus ?? "pending",
+        /* NULL for a storefront checkout, which is how "the customer placed
+           this themselves" is recorded — see `orders.source`. */
+        source: context.source ?? null,
+        createdByAdminId: context.createdBy?.adminId ?? null,
         /* The customer's own note is kept in the internal notes field,
            clearly attributed. There is no separate customer-notes column
            because staff read one place during the confirmation call. */
@@ -486,8 +517,16 @@ export async function placeOrder(
           grandTotal: order.grandTotal,
           itemCount: order.itemCount,
           deliveryZone: order.deliveryZone,
+          /* Present only on a hand-typed order, so the timeline of a storefront
+             order reads exactly as it did before this existed. */
+          ...(context.source ? { source: context.source, status: order.status } : {}),
         },
-        actor: CUSTOMER_ACTOR,
+        /* Who the timeline credits. A customer did not place an order that an
+           operator typed in from a message, and saying they did would misread
+           the one record that settles a dispute later. */
+        actor: context.createdBy
+          ? { adminId: context.createdBy.adminId, name: context.createdBy.name }
+          : CUSTOMER_ACTOR,
         note: input.customerNote ?? undefined,
       },
       tx,

@@ -139,6 +139,32 @@ export const orders = pgTable(
      * later a sweep purges it for real — long enough to notice a mistake, short
      * enough that the trash does not become a second database.
      */
+    /* --- Where it came from --------------------------------------------- */
+    /**
+     * How the order reached the shop, when somebody typed it in by hand.
+     *
+     * NULL for every order the storefront placed — the absence IS the answer,
+     * and it means "the customer checked out themselves". A default of
+     * 'website' would have been a value nobody wrote, indistinguishable from
+     * one somebody did.
+     *
+     * Free text rather than an enum because the shop is told this in a message,
+     * not chosen from a list: "WhatsApp", "Facebook page", "phone call", or the
+     * name of whoever referred them. If it ever needs reporting on, that is the
+     * point to introduce a controlled vocabulary — not before.
+     */
+    source: text("source"),
+
+    /**
+     * The admin who typed it in. NULL for storefront orders.
+     *
+     * SET NULL rather than CASCADE: a staff member leaving must not delete the
+     * orders they took.
+     */
+    createdByAdminId: uuid("created_by_admin_id").references(() => admins.id, {
+      onDelete: "set null",
+    }),
+
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     deletedBy: uuid("deleted_by").references(() => admins.id, { onDelete: "set null" }),
 

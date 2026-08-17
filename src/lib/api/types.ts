@@ -396,6 +396,11 @@ export interface ApiOrderDetail extends ApiOrderListItem {
   /** The live block covering this address, if any. */
   blocked: { id: string; reason: string; expiresAt: string | null } | null;
   internalNotes: string | null;
+  /**
+   * Where the order came from, when the desk typed it in — "WhatsApp",
+   * "Facebook page". Null means the customer checked out themselves.
+   */
+  source: string | null;
   cancellationReason: string | null;
   version: number;
   items: (ApiOrderItem & { id: string; productId: string | null; variantId: string | null })[];

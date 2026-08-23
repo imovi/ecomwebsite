@@ -4,10 +4,15 @@ import type { OrderItemRow } from "../../db/schema/order-items.js";
 import type { OrderEventRow } from "../../db/schema/order-events.js";
 import {
   ORDER_STATUS_TRANSITIONS,
+  orderStatusEnum,
   type DeliveryZone,
   type OrderStatus,
   type PaymentMethod,
 } from "../../db/schema/order-enums.js";
+import { pickUndoableStatusEvent } from "./order-event.repository.js";
+
+/** Every legal status, for narrowing a value read back out of the timeline. */
+const ORDER_STATUS_VALUES: readonly string[] = orderStatusEnum.enumValues;
 
 /**
  * Order response shapes.
@@ -120,6 +125,17 @@ export interface OrderDto extends OrderListItemDto {
   timeline: OrderEventDto[];
   /** Which statuses this order may legally move to next. */
   allowedTransitions: OrderStatus[];
+  /**
+   * Where "undo the last change" would put this order, or null when there is
+   * nothing left to take back.
+   *
+   * Computed here rather than in the browser so the undo stack has one
+   * implementation. A panel that worked it out from the timeline itself would
+   * be a second copy of the rule, free to disagree with the server about which
+   * moves have already been undone — and the disagreement would only show up
+   * as a button that says one thing and does another.
+   */
+  undoableTo: OrderStatus | null;
   confirmedAt: string | null;
   shippedAt: string | null;
   deliveredAt: string | null;
@@ -219,6 +235,23 @@ export function toOrderListItemDto(row: OrderRow): OrderListItemDto {
   return listFields(row);
 }
 
+/**
+ * The status an undo would land on.
+ *
+ * Null unless the move to undo is the one that produced the order's current
+ * status — if anything else has changed it since, the panel should not offer
+ * an undo the API would refuse.
+ */
+function undoTargetOf(events: readonly OrderEventRow[], current: OrderStatus): OrderStatus | null {
+  const undoable = pickUndoableStatusEvent(events);
+  if (!undoable || undoable.newValue !== current) return null;
+
+  const previous = undoable.previousValue;
+  return typeof previous === "string" && ORDER_STATUS_VALUES.includes(previous)
+    ? (previous as OrderStatus)
+    : null;
+}
+
 export function toOrderDto(
   row: OrderRow,
   items: OrderItemRow[],
@@ -245,6 +278,7 @@ export function toOrderDto(
        monotonic sequence: events from one edit can share a timestamp. */
     timeline: [...events].sort((a, b) => a.seq - b.seq).map(toOrderEventDto),
     allowedTransitions: ORDER_STATUS_TRANSITIONS[row.status],
+    undoableTo: undoTargetOf(events, row.status),
     confirmedAt: row.confirmedAt?.toISOString() ?? null,
     shippedAt: row.shippedAt?.toISOString() ?? null,
     deliveredAt: row.deliveredAt?.toISOString() ?? null,

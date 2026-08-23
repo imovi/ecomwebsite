@@ -439,6 +439,11 @@ export interface ApiOrderDetail extends ApiOrderListItem {
   items: (ApiOrderItem & { id: string; productId: string | null; variantId: string | null })[];
   timeline: ApiOrderEvent[];
   allowedTransitions: ApiOrderStatus[];
+  /**
+   * Where "undo the last change" would put this order, or null when there is
+   * nothing left to take back. Decided by the API, which owns the undo stack.
+   */
+  undoableTo: ApiOrderStatus | null;
   updatedAt: string;
 }
 

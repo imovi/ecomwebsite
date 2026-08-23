@@ -11,6 +11,7 @@ import {
   adminCreateOrderSchema,
   areaSearchQuerySchema,
   cancelOrderSchema,
+  revertStatusSchema,
   internalNotesSchema,
   invoiceQuerySchema,
   invoiceSheetQuerySchema,
@@ -221,6 +222,14 @@ orderAdminRouter.post(
   "/:id/cancel",
   validate({ params: orderIdParamSchema, body: cancelOrderSchema }),
   controller.cancel,
+);
+
+/* Undo the last status move. `manager` reaches the route; the service refuses
+   the money-touching reversals below `admin`. */
+orderAdminRouter.post(
+  "/:id/revert",
+  validate({ params: orderIdParamSchema, body: revertStatusSchema }),
+  controller.revertStatus,
 );
 
 orderAdminRouter.patch(

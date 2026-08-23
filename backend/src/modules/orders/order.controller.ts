@@ -17,6 +17,7 @@ import type { OrderFilters } from "./order.repository.js";
 import type {
   AdminCreateOrderInput,
   CancelOrderInput,
+  RevertStatusInput,
   InternalNotesInput,
   InvoiceSheetQuery,
   ListOrdersQuery,
@@ -314,6 +315,20 @@ export const updateStatus: RequestHandler = async (req, res) => {
 export const cancel: RequestHandler = async (req, res) => {
   const { body, params } = validated<CancelOrderInput, unknown, { id: string }>(req);
   const order = await orderService.cancel(params.id, body, actorFrom(req));
+  sendSuccess(res, { order });
+};
+
+/**
+ * POST /api/v1/admin/orders/:id/revert
+ *
+ * The role goes to the service rather than sitting on the route: whether this
+ * needs an admin depends on which status is being left, and only the service
+ * knows that.
+ */
+export const revertStatus: RequestHandler = async (req, res) => {
+  if (!req.auth) throw new UnauthorizedError();
+  const { body, params } = validated<RevertStatusInput, unknown, { id: string }>(req);
+  const order = await orderService.revertStatus(params.id, body, actorFrom(req), req.auth.role);
   sendSuccess(res, { order });
 };
 

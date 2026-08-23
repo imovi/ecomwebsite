@@ -227,6 +227,23 @@ export const cancelOrderSchema = z
 
 export type CancelOrderInput = z.infer<typeof cancelOrderSchema>;
 
+/**
+ * Undoing the last status change.
+ *
+ * The destination is not a parameter. It is read from the timeline, so a
+ * caller cannot ask to be put anywhere it likes — see `revertStatus`. The only
+ * thing to supply is why, and that is required: an unexplained reversal on a
+ * delivered order is indistinguishable from someone hiding a mistake.
+ */
+export const revertStatusSchema = z
+  .object({
+    reason: safeString({ min: 3, max: 300 }),
+    expectedVersion,
+  })
+  .strict();
+
+export type RevertStatusInput = z.infer<typeof revertStatusSchema>;
+
 export const internalNotesSchema = z
   .object({
     internalNotes: safeString({ max: 2000 }).nullable(),

@@ -105,6 +105,10 @@ export const orderEventTypeEnum = pgEnum("order_event_type", [
   "order_cancelled",
   "order_delivered",
   "order_returned",
+  /* A status change taken back. Its own type, not another `status_changed`,
+     so the undo stack can tell a move from a move that was undone — see
+     `revertStatus`. Added in migration 0027. */
+  "status_reverted",
 ]);
 
 export type OrderEventType = (typeof orderEventTypeEnum.enumValues)[number];

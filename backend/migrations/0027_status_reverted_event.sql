@@ -1,0 +1,12 @@
+-- Undoing a status change needs to be distinguishable from making one.
+--
+-- Without its own type, an undo is just another `status_changed` row, and the
+-- undo stack cannot tell "this move happened" from "this move was taken back".
+-- Pressing undo twice would then toggle between two statuses instead of
+-- stepping further back through the history.
+--
+-- ALTER TYPE ... ADD VALUE is allowed inside a transaction from PostgreSQL 12
+-- onward, provided the new value is not USED in that same transaction. This
+-- migration only declares it; the first row carrying it is written later, at
+-- runtime. Server is 17.2, local PGlite is 17.
+ALTER TYPE "order_event_type" ADD VALUE IF NOT EXISTS 'status_reverted';

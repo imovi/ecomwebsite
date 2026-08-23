@@ -7,6 +7,7 @@ import { adminApi, AdminApiError } from "@/lib/admin/client";
 import { useLoad } from "@/lib/admin/use-load";
 import { cn, formatTaka, formatDateTime } from "@/lib/utils";
 import { copy } from "@/lib/copy";
+import { orderMessage, whatsappHref } from "@/lib/admin/whatsapp";
 import { toast } from "@/lib/stores/toast-store";
 import type { ApiOrderDetail, ApiOrderStatus } from "@/lib/api/types";
 import { AdminShell } from "./AdminShell";
@@ -201,6 +202,18 @@ export function OrderDetail({ identifier }: { identifier: string }) {
                   expectedVersion: order.version,
                 }),
               "Order cancelled",
+            )
+          }
+          onUndo={(reason) =>
+            mutate(
+              () =>
+                adminApi.post(`admin/orders/${order.id}/revert`, {
+                  reason,
+                  expectedVersion: order.version,
+                }),
+              order.undoableTo
+                ? `Put back to ${copy.orderStatus[order.undoableTo].toLowerCase()}`
+                : "Status put back",
             )
           }
         />
@@ -554,21 +567,29 @@ function StatusActions({
   busy,
   onTransition,
   onCancel,
+  onUndo,
 }: {
   order: ApiOrderDetail;
   busy: boolean;
   onTransition: (status: ApiOrderStatus, note?: string) => Promise<boolean>;
   onCancel: (reason: string) => Promise<boolean>;
+  onUndo: (reason: string) => Promise<boolean>;
 }) {
   const [cancelling, setCancelling] = useState(false);
   const [reason, setReason] = useState("");
+  const [undoing, setUndoing] = useState(false);
+  const [undoReason, setUndoReason] = useState("");
 
   /* Cancellation has its own required reason, so it is excluded here and gets
      a dedicated control. */
   const transitions = order.allowedTransitions.filter((status) => status !== "cancelled");
   const canCancel = order.allowedTransitions.includes("cancelled");
 
-  if (transitions.length === 0 && !canCancel) return null;
+  /* The server decides this — it owns the undo stack, so a step already taken
+     back is not offered a second time. See `undoableTo` on the DTO. */
+  const undoTarget = order.undoableTo;
+
+  if (transitions.length === 0 && !canCancel && !undoTarget) return null;
 
   return (
     <Card>
@@ -639,6 +660,59 @@ function StatusActions({
               Cancel order
             </Button>
           ))}
+
+        {/* Undoing the last move. Separated from the forward buttons by a rule
+            and worded as a correction, because it is not part of working an
+            order — it is admitting the last click was wrong, and it should not
+            sit among the buttons somebody is clicking quickly. */}
+        {undoTarget &&
+          (undoing ? (
+            <div className="flex flex-col gap-2 rounded-sm border border-line p-3">
+              <Input
+                label={`Why is this going back to ${copy.orderStatus[undoTarget].toLowerCase()}?`}
+                value={undoReason}
+                onChange={(event) => setUndoReason(event.target.value)}
+                hint="Recorded permanently in the order history."
+                placeholder="Marked shipped by mistake — the parcel is still here"
+                required
+              />
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  loading={busy}
+                  disabled={undoReason.trim().length < 3}
+                  onClick={async () => {
+                    if (await onUndo(undoReason.trim())) {
+                      setUndoing(false);
+                      setUndoReason("");
+                    }
+                  }}
+                >
+                  Put it back
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setUndoing(false)}
+                >
+                  Leave it
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="border-t border-line pt-3">
+              <button
+                type="button"
+                onClick={() => setUndoing(true)}
+                className="text-caption text-muted underline-offset-2 hover:text-ink hover:underline"
+              >
+                Undo &mdash; put this back to {copy.orderStatus[undoTarget].toLowerCase()}
+              </button>
+            </div>
+          ))}
       </div>
     </Card>
   );
@@ -671,6 +745,14 @@ function CustomerCard({
   const set = (key: keyof typeof form, value: string) =>
     setForm((current) => ({ ...current, [key]: value }));
 
+  /* Rebuilt on every render rather than memoised: it is string concatenation
+     over one order, and the message has to follow the status the moment it
+     changes. */
+  const whatsappLink = whatsappHref(
+    order.phone,
+    orderMessage(order, { storeName: copy.brand.name }),
+  );
+
   if (!editing) {
     return (
       <Card>
@@ -686,6 +768,21 @@ function CustomerCard({
           </a>
           <p className="text-caption text-ink-soft">{order.address}</p>
           <p className="text-caption text-muted">{order.areaText}</p>
+
+          {/* Opens WhatsApp with this order's update already written. Absent
+              when the number is not a Bangladeshi mobile, because `wa.me` would
+              otherwise open a chat with a number in the wrong country. */}
+          {whatsappLink && (
+            <a
+              href={whatsappLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex w-fit items-center gap-1.5 rounded-sm border border-positive/30 bg-positive-soft px-2.5 py-1.5 text-caption font-medium text-positive hover:bg-positive/10"
+            >
+              <Icon name="whatsapp" size={15} />
+              Send the update on WhatsApp
+            </a>
+          )}
 
           <Button
             type="button"

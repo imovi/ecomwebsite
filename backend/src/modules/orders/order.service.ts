@@ -5,6 +5,7 @@ import { productVariants, type ProductVariantRow } from "../../db/schema/product
 import {
   BadRequestError,
   ConflictError,
+  ForbiddenError,
   NotFoundError,
   ValidationError,
 } from "../../core/errors.js";
@@ -30,12 +31,19 @@ import {
 } from "./order.repository.js";
 import { findLiveBlockFor } from "../security/blocked-ip.service.js";
 import {
+  findUndoableStatusEvent,
   listOrderEvents,
   recordEvent,
   type Actor,
   type RecordEventInput,
 } from "./order-event.repository.js";
-import { adjustStock, moveReservation, releaseStock, type StockLine } from "./stock.service.js";
+import {
+  adjustStock,
+  moveReservation,
+  releaseStock,
+  reserveStock,
+  type StockLine,
+} from "./stock.service.js";
 import { variantLabelOf } from "./checkout.service.js";
 import {
   toOrderDto,
@@ -48,9 +56,16 @@ import {
 import {
   DISPATCHED_STATUSES,
   ORDER_STATUS_TRANSITIONS,
+  STOCK_RELEASING_STATUSES,
+  orderStatusEnum,
   type DeliveryZone,
   type OrderStatus,
 } from "../../db/schema/order-enums.js";
+import { ROLE_RANK, type AdminRole } from "../../db/schema/enums.js";
+import { findByOrder } from "../courier/courier.service.js";
+
+/** Every legal status, for narrowing a value read back out of the timeline. */
+const ORDER_STATUSES: readonly string[] = orderStatusEnum.enumValues;
 import type { OrderRow } from "../../db/schema/orders.js";
 import type { OrderItemRow } from "../../db/schema/order-items.js";
 import type {
@@ -955,5 +970,188 @@ export async function updateInternalNotes(
   });
 
   log.info({ orderId }, "Internal notes updated");
+  return getByIdentifier(orderId);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Undo                                                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Statuses whose reversal moves stock or money.
+ *
+ * Leaving one of these is not a clerical correction — it puts units back into
+ * a customer's order and changes what the shop believes it sold. So it needs a
+ * rank above the order desk that made the mistake.
+ */
+const MONEY_TOUCHING: readonly OrderStatus[] = ["delivered", "cancelled", "returned"];
+
+export interface RevertStatusInput {
+  /** Required. A reversal with no stated reason is an unexplained edit. */
+  reason: string;
+  expectedVersion?: number | undefined;
+}
+
+/**
+ * Undoes the last status change.
+ *
+ * WHY THIS IS NOT A BACKWARD TRANSITION TABLE
+ * -------------------------------------------
+ * The obvious implementation is to let the transition table go both ways. That
+ * would allow a delivered order to be walked back to pending one step at a
+ * time, each step legal, and the audit trail would show a plausible-looking
+ * sequence of ordinary moves. What is actually wanted is narrower: the last
+ * move was a mistake, put it back. So the only destination on offer is the
+ * status the order held immediately before — read from the timeline, where
+ * `previous_value` was written in the same transaction as the move itself,
+ * rather than inferred.
+ *
+ * WHAT IT UNDOES BESIDES THE STATUS
+ * ---------------------------------
+ * `updateStatus` hangs three side effects off specific transitions, and a
+ * reversal that leaves them in place is worse than no reversal at all — it
+ * would put an order back to `packed` while the catalogue still believes the
+ * units were sold. Each is mirrored here:
+ *
+ *   leaving cancelled/returned : the released stock is taken back
+ *   leaving delivered          : the recorded sale is reversed
+ *   returning INTO delivered   : the sale is recorded again
+ *
+ * WHAT IT REFUSES
+ * ---------------
+ * Un-shipping an order the courier is actually carrying. The panel can change
+ * a row in a database; it cannot bring a parcel back off a van. If a shipment
+ * exists and has not settled, the shipment has to be dealt with first — and
+ * saying so is more useful than a status that quietly disagrees with reality.
+ */
+export async function revertStatus(
+  orderId: string,
+  input: RevertStatusInput,
+  actor: Actor,
+  actorRole: AdminRole,
+): Promise<OrderDto> {
+  const existing = await requireOrder(orderId);
+  const lastChange = await findUndoableStatusEvent(orderId);
+
+  if (!lastChange) {
+    throw new ConflictError(
+      "This order has never changed status, so there is nothing to undo.",
+      ErrorCode.CONFLICT,
+    );
+  }
+
+  const target = lastChange.previousValue;
+  if (typeof target !== "string" || !ORDER_STATUSES.includes(target)) {
+    throw new ConflictError(
+      "The last status change did not record what the order was before it, so it cannot be undone.",
+      ErrorCode.CONFLICT,
+    );
+  }
+
+  const from = existing.status;
+  const to = target as OrderStatus;
+
+  if (from === to) {
+    throw new ConflictError("This order is already back at that status.", ErrorCode.CONFLICT);
+  }
+
+  /* The timeline's newest status event must describe the state the order is in
+     now. If it does not, something else has moved the order since — undoing
+     would put it somewhere neither value expects. */
+  if (lastChange.newValue !== from) {
+    throw new ConflictError(
+      "This order has changed since that step was recorded. Reload it and try again.",
+      ErrorCode.CONFLICT,
+    );
+  }
+
+  if (MONEY_TOUCHING.includes(from) && ROLE_RANK[actorRole] < ROLE_RANK.admin) {
+    throw new ForbiddenError(
+      `Undoing "${from}" moves stock and recorded sales. Ask an admin to do it.`,
+    );
+  }
+
+  if (from === "shipped") {
+    const shipment = await findByOrder(orderId);
+    if (shipment && !["delivered", "returned", "cancelled"].includes(shipment.status)) {
+      throw new ConflictError(
+        "This parcel is still with the courier. Cancel the shipment before undoing the status.",
+        ErrorCode.CONFLICT,
+      );
+    }
+  }
+
+  /* Mirrors of updateStatus's side effects, in reverse. */
+  const retakesStock = STOCK_RELEASING_STATUSES.includes(from) && !STOCK_RELEASING_STATUSES.includes(to);
+  const reversesSale = from === "delivered";
+  const restoresSale = to === "delivered";
+
+  await getDb().transaction(async (tx) => {
+    const items = await listOrderItems(orderId, tx);
+
+    if (retakesStock) {
+      /* Deleted products are skipped for the same reason cancelling skips
+         them: the order's state matters more than a counter on a row that no
+         longer exists. Anything still in the catalogue must be available, and
+         reserveStock throws by name if it is not — the whole undo then rolls
+         back rather than half-applying. */
+      const lines = items
+        .filter((item) => item.productId)
+        .map((item) => stockLineOf(item, item.quantity));
+
+      if (lines.length > 0) await reserveStock(lines, tx);
+    }
+
+    /* The timestamp of the status being left is cleared. The target's own
+       timestamp stays as it was — the order really did reach that status at
+       that moment, and rewriting it would lose when. */
+    const leavingField = STATUS_TIMESTAMP[from];
+
+    await applyUpdate(
+      existing,
+      {
+        status: to,
+        ...(leavingField ? { [leavingField]: null } : {}),
+        ...(from === "cancelled" ? { cancellationReason: null } : {}),
+      },
+      input.expectedVersion,
+      tx,
+    );
+
+    await recordEvent(
+      {
+        orderId,
+        type: "status_reverted",
+        field: "status",
+        previousValue: from,
+        newValue: to,
+        actor,
+        note: input.reason,
+      },
+      tx,
+    );
+
+    if (reversesSale) {
+      for (const item of items) {
+        if (item.productId) {
+          await reverseProductSale({ productId: item.productId, units: item.quantity }, tx);
+        }
+      }
+    }
+
+    if (restoresSale) {
+      for (const item of items) {
+        if (item.productId) {
+          await recordProductSale({ productId: item.productId, units: item.quantity }, tx);
+        }
+      }
+    }
+  });
+
+  log.info(
+    { orderId, from, to, adminId: actor.adminId, reason: input.reason },
+    "Order status reverted",
+  );
+
   return getByIdentifier(orderId);
 }

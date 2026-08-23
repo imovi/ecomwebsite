@@ -17,6 +17,7 @@ import {
 import { storefrontRouter } from "../modules/orders/storefront.routes.js";
 import { customerAdminRouter } from "../modules/customers/customer.routes.js";
 import { overviewAdminRouter } from "../modules/overview/overview.routes.js";
+import { fraudAdminRouter } from "../modules/fraud/fraud.routes.js";
 import {
   bannerAdminRouter,
   bannerPublicRouter,
@@ -102,6 +103,12 @@ v1Router.use("/admin/customers", customerAdminRouter);
    every load. `manager` and above; the takings are withheld below `admin`
    inside the service, so the order desk gets its work and not the accounts. */
 v1Router.use("/admin/overview", overviewAdminRouter);
+
+/* --- Has this number taken delivery before? ------------------------------
+   Asks the couriers' own merchant panels. Reading is `manager` — it is the
+   confirmation call's job. Configuring is `super_admin`: these are the shop's
+   real courier passwords, not a scoped API key. See the module. */
+v1Router.use("/admin/fraud", fraudAdminRouter);
 
 /* --- Refusing an address --------------------------------------------------
    The block list behind the order page's "block this address" button. `admin`

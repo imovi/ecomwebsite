@@ -58,6 +58,13 @@ const ALLOWED_PATHS = [
   /* The dashboard summary. Read only, and the takings inside it are withheld
      below `admin` by the API, not by this list. */
   /^admin\/overview$/,
+  /* Asking the couriers what a phone number has taken delivery of. The bulk
+     read is a POST because fifty customer numbers do not belong in a query
+     string; the API gates the credential routes to super_admin. */
+  /^admin\/fraud\/check\/[^/]+$/,
+  /^admin\/fraud\/cached$/,
+  /^admin\/fraud\/accounts$/,
+  /^admin\/fraud\/accounts\/[^/]+(\/test)?$/,
   /* Refusing an address: the "Blocked IPs" screen and the button on an order.
      Listing, blocking and unblocking — nothing else under this prefix. */
   /^admin\/ips$/,

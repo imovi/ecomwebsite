@@ -5,6 +5,8 @@ import Link from "next/link";
 import { adminApi, AdminApiError, qs } from "@/lib/admin/client";
 import { downloadCsv, toCsv } from "@/lib/admin/csv";
 import { useOpenCheckoutCount } from "@/lib/admin/use-open-checkouts";
+import { useCachedFraud } from "@/lib/admin/use-cached-fraud";
+import { FraudBadge } from "./FraudBadge";
 import { formatTaka, formatDateTime } from "@/lib/utils";
 import { copy } from "@/lib/copy";
 import type { ApiOrderListItem, ApiOrderStatus } from "@/lib/api/types";
@@ -66,6 +68,9 @@ export function OrderList() {
   const openCheckouts = useOpenCheckoutCount();
 
   const [orders, setOrders] = useState<ApiOrderListItem[]>([]);
+  /* Delivery rates for the rows on screen. Cache only — never a live sign-in;
+     see the hook. */
+  const fraud = useCachedFraud(orders.map((order) => order.phone));
   const [total, setTotal] = useState(0);
   const [status, setStatus] = useState("");
   const [search, setSearch] = useState("");
@@ -343,7 +348,10 @@ export function OrderList() {
                     {formatDateTime(order.createdAt)}
                   </p>
 
-                  <p className="mt-2 truncate text-caption text-ink">{order.customerName}</p>
+                  <div className="mt-2 flex items-center gap-1.5">
+                    <p className="truncate text-caption text-ink">{order.customerName}</p>
+                    <FraudBadge report={fraud[order.phone]} />
+                  </div>
 
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <Badge tone={STATUS_TONE[order.status]}>
@@ -421,8 +429,13 @@ export function OrderList() {
                         sizes to its content unless something caps it, so a long
                         customer name would push Total and Status off-screen. */}
                     <td className="w-full max-w-0 px-3 py-2.5">
-                      <span className="block truncate text-caption text-ink">
-                        {order.customerName}
+                      <span className="flex items-center gap-1.5">
+                        <span className="truncate text-caption text-ink">
+                          {order.customerName}
+                        </span>
+                        {/* The delivery rate, read only from what is already
+                            stored — see useCachedFraud. */}
+                        <FraudBadge report={fraud[order.phone]} />
                       </span>
                       {/* Tappable: confirmation calls are the whole workflow. */}
                       <a

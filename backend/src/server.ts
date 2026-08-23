@@ -6,6 +6,7 @@ import { logger } from "./core/logger.js";
 import { initStorage } from "./lib/storage/index.js";
 import { registerMetaTracking } from "./modules/marketing/meta.subscriber.js";
 import { registerOrderIntegrations } from "./modules/integrations/integrations.subscriber.js";
+import { registerFraudChecks } from "./modules/fraud/fraud.subscriber.js";
 import { isDeliveryConfigured } from "./modules/auth/reset-code.delivery.js";
 import {
   startBlockedIpRefresh,
@@ -42,6 +43,9 @@ async function start(): Promise<void> {
      after traffic starts would silently miss the first orders. */
   registerMetaTracking();
   registerOrderIntegrations();
+  /* Looks the customer up with the couriers, so the order list can show a
+     delivery rate without checking fifty numbers when it opens. */
+  registerFraudChecks();
 
   /* Polls the courier for parcel statuses. Timer is unref'd, so it never holds
      a deploy open. */

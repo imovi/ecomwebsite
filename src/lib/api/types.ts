@@ -218,6 +218,63 @@ export interface ApiOverviewDay {
   placedValue: number;
 }
 
+/* -------------------------------------------------------------------------- */
+/* Courier delivery record                                                    */
+/* -------------------------------------------------------------------------- */
+
+export type ApiFraudCourier = "steadfast" | "pathao" | "redx" | "paperfly" | "carrybee";
+
+export interface ApiFraudCourierResult {
+  courier: ApiFraudCourier;
+  label: string;
+  success: number;
+  cancel: number;
+  total: number;
+  successRatio: number;
+}
+
+/**
+ * A courier that was asked and did not answer.
+ *
+ * Kept apart from the results on purpose: a courier that failed must never be
+ * read as a customer with nothing delivered.
+ */
+export interface ApiFraudFailure {
+  courier: ApiFraudCourier;
+  label: string;
+  kind: "credentials" | "upstream";
+  message: string;
+}
+
+export interface ApiFraudReport {
+  phone: string;
+  couriers: ApiFraudCourierResult[];
+  failures: ApiFraudFailure[];
+  aggregate: {
+    success: number;
+    cancel: number;
+    total: number;
+    successRatio: number;
+    /** How many couriers the figures above actually come from. */
+    answered: number;
+    asked: number;
+  };
+  checkedAt: string;
+}
+
+export interface ApiFraudAccount {
+  provider: ApiFraudCourier;
+  label: string;
+  /** What this courier calls the thing you sign in with. */
+  identifierLabel: string;
+  identifier: string;
+  /** Never the password — only whether one is stored. */
+  hasSecret: boolean;
+  enabled: boolean;
+  lastOkAt: string | null;
+  lastError: string;
+}
+
 export interface ApiBanner {
   id: string;
   imageUrl: string;

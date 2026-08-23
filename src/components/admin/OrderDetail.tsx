@@ -8,6 +8,7 @@ import { useLoad } from "@/lib/admin/use-load";
 import { cn, formatTaka, formatDateTime } from "@/lib/utils";
 import { copy } from "@/lib/copy";
 import { orderMessage, whatsappHref } from "@/lib/admin/whatsapp";
+import { FraudCard } from "./FraudCard";
 import { toast } from "@/lib/stores/toast-store";
 import type { ApiOrderDetail, ApiOrderStatus } from "@/lib/api/types";
 import { AdminShell } from "./AdminShell";
@@ -217,6 +218,10 @@ export function OrderDetail({ identifier }: { identifier: string }) {
             )
           }
         />
+
+        {/* Right under the status controls: the desk reads this before it
+            decides whether to confirm, not after. */}
+        <FraudCard phone={order.phone} />
 
         <CourierPanel
           order={order}

@@ -130,7 +130,14 @@ git add -A
 CHANGED="$(git diff --cached --numstat | wc -l)"
 git commit -q -m "Backup $NOW ($CHANGED file(s))"
 
-if ! git push -q 2>/dev/null; then
+# A repository created empty on GitHub has no branch to track yet, so the very
+# first push has to say where it is going. Every push after this one is plain.
+PUSH_ARGS=()
+if ! git rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
+  PUSH_ARGS=(--set-upstream origin HEAD)
+fi
+
+if ! git push -q "${PUSH_ARGS[@]}" 2>/dev/null; then
   fail "committed locally but could not push. Check the remote and its token: git -C $REPO remote -v"
 fi
 

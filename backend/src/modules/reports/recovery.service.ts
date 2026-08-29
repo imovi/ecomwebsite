@@ -39,6 +39,8 @@ export interface RecoverySummary {
   couponsUsed: number;
   couponsExpired: number;
   couponsCancelled: number;
+  /** Individual uses. A ten-use code spent nine times is nine, not one. */
+  couponRedemptions: number;
   recoveredOrders: number;
   recoveredRevenue: number;
   /** Delivery charges the shop absorbed on coupon orders. */
@@ -272,6 +274,7 @@ export async function recoveryReport(
     couponsUsed: couponRow.used,
     couponsExpired: couponRow.expired,
     couponsCancelled: couponRow.cancelled,
+    couponRedemptions: couponRow.redemptions,
     recoveredOrders: leads.recovered ?? 0,
     recoveredRevenue: leads.recoveredRevenue ?? 0,
     freeDeliveryCost: couponRow.deliveryCost,

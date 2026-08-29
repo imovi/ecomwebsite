@@ -9,10 +9,14 @@ import { AsyncState, Card, CardHeader, TableWrap } from "./ui";
 /**
  * Whether chasing incomplete checkouts is paying for itself.
  *
- * The Report tab on the Abandoned page. It answers one question — did chasing
- * these customers bring any of them back — and deliberately no longer counts
- * coupons: those are objects with their own page, and the same five figures on
- * two screens is how a shop ends up with two answers to one question.
+ * The Report tab on the Abandoned page. Everything about chasing an unfinished
+ * checkout in one place: how many were abandoned, what was done, what came
+ * back, and what the offers cost.
+ *
+ * The offer counts also appear on the Coupons page. They are not computed
+ * twice — both screens call `coupons.totals()` on the server — so the two
+ * cannot drift into disagreeing, which was the only real objection to showing
+ * them in both places.
  *
  * THE COLUMN THAT KEEPS THE REST HONEST
  * "Came back on their own" counts leads that were recovered with nobody having
@@ -32,6 +36,7 @@ interface RecoveryData {
     couponsUsed: number;
     couponsExpired: number;
     couponsCancelled: number;
+    couponRedemptions: number;
     recoveredOrders: number;
     recoveredRevenue: number;
     freeDeliveryCost: number;
@@ -140,7 +145,11 @@ function Body({ data }: { data: RecoveryData }) {
         <Stat
           label="Free delivery cost"
           value={formatTaka(spentOnDelivery)}
-          note={`${summary.couponsUsed} coupon${summary.couponsUsed === 1 ? "" : "s"} used`}
+          /* Uses, not coupons. The cost is one delivery charge per USE, so a
+             single ten-use code spent three times reads "1 coupon used" beside
+             a figure three times that size — which is the kind of small lie
+             that makes an owner stop believing a page. */
+          note={`${summary.couponRedemptions} time${summary.couponRedemptions === 1 ? "" : "s"} used`}
           tone={spentOnDelivery > 0 ? "warn" : "plain"}
         />
       </div>
@@ -174,15 +183,33 @@ function Body({ data }: { data: RecoveryData }) {
           )}
       </div>
 
-      {/* The coupon counts used to sit here. They live on the Coupons page now
-          — the same five figures on two screens is how a shop ends up with two
-          answers to one question. What stays is the line that belongs to THIS
-          report: whether being contacted made a difference. */}
-      <p className="rounded-sm bg-surface px-3 py-2 text-caption text-ink-soft">
-        {summary.contacted === 0
-          ? "Nobody has been messaged or offered anything in this period."
-          : `${rates.recoveryPercent}% of the customers who were contacted came back. Every coupon made, used and expired is on the Coupons page.`}
-      </p>
+      {/* --- The offers --------------------------------------------------- */}
+      {/* These same figures are on the Coupons page. That is deliberate rather
+          than sloppy: both screens call one function on the server, so they
+          cannot drift into disagreeing. The owner works this page and wants the
+          offers in front of them here, without leaving for a second screen. */}
+      <div>
+        <h3 className="mb-2 text-caption font-medium text-ink">Offers</h3>
+        <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
+          <Stat label="Made" value={String(summary.couponsGenerated)} />
+          <Stat label="Still running" value={String(summary.couponsActive)} />
+          {/* Times used, not coupons used. A ten-use code spent nine times has
+              cost nine deliveries and would read as "0 used" the other way. */}
+          <Stat
+            label="Times used"
+            value={String(summary.couponRedemptions)}
+            tone={summary.couponRedemptions > 0 ? "good" : "plain"}
+          />
+          <Stat label="Used up" value={String(summary.couponsUsed)} />
+          <Stat label="Ran out" value={String(summary.couponsExpired)} />
+          <Stat label="Cancelled" value={String(summary.couponsCancelled)} />
+        </div>
+        <p className="mt-2 text-micro text-muted">
+          {summary.couponsGenerated === 0
+            ? "No offers have been made in this period."
+            : `${rates.couponUsePercent}% of offers were used. Recovery rate among customers who were contacted: ${rates.recoveryPercent}%.`}
+        </p>
+      </div>
 
       {/* --- Where it is happening ---------------------------------------- */}
       {data.byProduct.length > 0 && (

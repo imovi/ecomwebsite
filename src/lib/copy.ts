@@ -16,7 +16,7 @@ export const copy = {
      * the API cannot be reached at render time, so it should stay in step with
      * the configured name rather than being the source of it.
      */
-    name: "HABU SHOP",
+    name: "HINAR",
     tagline: "Gadgets, delivered.",
   },
 

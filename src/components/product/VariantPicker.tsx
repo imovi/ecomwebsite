@@ -2,18 +2,28 @@
 
 import Image from "next/image";
 import { cn } from "@/lib/utils";
-import { isOptionValueAvailable } from "@/lib/catalog-utils";
+import { isOptionValueAvailable, type VariantedProduct } from "@/lib/catalog-utils";
 import { copy } from "@/lib/copy";
-import type { Product, VariantOptionName } from "@/types";
+import type { VariantOptionName } from "@/types";
 
 type Selection = Partial<Record<VariantOptionName, string>>;
 
 interface VariantPickerProps {
-  product: Product;
+  /* Widened from `Product` so the listing card's quick-add sheet can reuse this
+     picker against its trimmed projection. */
+  product: VariantedProduct;
   selection: Selection;
   onChange: (selection: Selection) => void;
   /** Highlights unchosen axes in red after a failed Buy Now attempt. */
   errorAxes?: VariantOptionName[];
+  /**
+   * Fully rounded value buttons.
+   *
+   * The quick-add sheet is a compact card floating over a grid, and pills read
+   * as lighter there than the page's squarer controls do. The product page,
+   * where the picker sits in a column of squared-off blocks, keeps the default.
+   */
+  shape?: "square" | "pill";
 }
 
 /**
@@ -30,7 +40,7 @@ interface VariantPickerProps {
  * than render an empty square.
  */
 function swatchFor(
-  product: Product,
+  product: VariantedProduct,
   optionName: VariantOptionName,
   value: string,
 ): string | null {
@@ -47,8 +57,15 @@ export function VariantPicker({
   selection,
   onChange,
   errorAxes = [],
+  shape = "square",
 }: VariantPickerProps) {
   if (!product.options.length) return null;
+
+  /* Pills get extra horizontal padding and a floor on their width so a
+     single-character value like "S" reads as an oval rather than a circle —
+     a circle in a row of ovals looks like a different kind of control. */
+  const valueShape =
+    shape === "pill" ? "rounded-full px-5 min-w-[3.5rem]" : "rounded-sm px-3.5";
 
   return (
     <div className="flex flex-col gap-5">
@@ -99,7 +116,8 @@ export function VariantPicker({
                       title={value}
                       onClick={() => onChange({ ...selection, [option.name]: value })}
                       className={cn(
-                        "relative size-16 overflow-hidden rounded-sm border-2 bg-white",
+                        "relative size-16 overflow-hidden border-2 bg-white",
+                        shape === "pill" ? "rounded-full" : "rounded-sm",
                         "transition-[border-color] duration-150 ease-out",
                         "active:scale-[0.98]",
                         selected ? "border-ink" : "border-line hover:border-muted",
@@ -144,7 +162,8 @@ export function VariantPicker({
                     }
                     onClick={() => onChange({ ...selection, [option.name]: value })}
                     className={cn(
-                      "min-h-11 rounded-sm border px-3.5 py-2 text-caption font-medium",
+                      "min-h-11 border py-2 text-caption font-medium",
+                      valueShape,
                       "transition-[border-color,background-color,color] duration-150 ease-out",
                       "active:scale-[0.98]",
                       selected

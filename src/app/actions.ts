@@ -4,7 +4,8 @@ import { randomUUID } from "node:crypto";
 import { headers } from "next/headers";
 import { ApiError, ApiUnavailableError, apiRequest } from "@/lib/api/client";
 import { forwardClientHints } from "@/lib/api/client-hints";
-import { PLACEHOLDER_IMAGE } from "@/lib/api/adapters";
+import { PLACEHOLDER_IMAGE, toProduct } from "@/lib/api/adapters";
+import { toQuickAddProduct, type QuickAddProduct } from "@/lib/catalog-utils";
 import type {
   ApiDeliveryZone,
   ApiOrderConfirmation,
@@ -286,6 +287,51 @@ export async function resolveCartAction(
   }
 
   return { lines: resolved, unavailable, dropped };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Quick add                                                                  */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The one product a listing card's quick-add sheet is about.
+ *
+ * Fetched when the sheet opens rather than shipped with the grid, for the same
+ * reason the cart resolves its lines here: **the listing endpoint returns no
+ * variants and no real variant ids.** A card therefore cannot tell a product
+ * with four sizes from one with none — both arrive with an empty variant list —
+ * and a sheet trusting that would add a sizeless line for a product that has
+ * sizes. On cash on delivery that is a parcel going out with a size nobody
+ * chose.
+ *
+ * One request, ISR-cached for 30 seconds the same as the cart's lookups, and
+ * only for the card actually tapped. Shipping variants for all twenty-four
+ * cards to save it would send the whole grid's worth to every shopper on the
+ * chance they open one.
+ */
+export async function quickAddProductAction(
+  productId: string,
+): Promise<QuickAddProduct | null> {
+  /* A server action is a public endpoint, so the argument is whatever the
+     caller sent. An id that is not an id is a 404 waiting to happen; refuse it
+     here rather than turn it into an API request. */
+  if (typeof productId !== "string" || productId.length === 0 || productId.length > 64) {
+    return null;
+  }
+
+  try {
+    const data = await apiRequest<{ product: ApiProduct }>(
+      `/api/v1/products/${productId}`,
+      { revalidate: 30 },
+    );
+    return toQuickAddProduct(toProduct(data.product));
+  } catch (error) {
+    /* Null covers both "deleted" and "API unwell". The sheet's only recourse is
+       the same either way: send the shopper to the product page, where the
+       normal page-level error handling applies. */
+    logFailure(`quick-add product lookup failed for ${productId}`, error);
+    return null;
+  }
 }
 
 /* -------------------------------------------------------------------------- */

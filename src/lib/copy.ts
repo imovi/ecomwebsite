@@ -76,6 +76,17 @@ export const copy = {
     addedToast: "Added to cart",
     viewCart: "View cart",
     viewDetails: "View Details",
+    /**
+     * The listing card's quick-add button shows only an icon, so this is the
+     * whole of its accessible name. It carries the product title because a grid
+     * of two dozen buttons all announcing "Add to cart" tells a screen-reader
+     * user which control they are on but not which product.
+     */
+    quickAdd: (title: string) => `Add ${title} to cart`,
+    /* Shown in the quick-add sheet when the product lookup fails. It does not
+       guess at a cause — the shopper cannot act on "the API is down" — and
+       points at the product page, which handles a missing product properly. */
+    quickAddFailed: "Couldn't load the options for this product.",
   },
 
   trust: {

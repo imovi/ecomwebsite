@@ -1,4 +1,10 @@
-import type { Money, Product, Variant, VariantOptionName } from "@/types";
+import type {
+  Money,
+  Product,
+  Variant,
+  VariantOption,
+  VariantOptionName,
+} from "@/types";
 
 /**
  * Pure catalog helpers that are safe on both server and client.
@@ -7,6 +13,29 @@ import type { Money, Product, Variant, VariantOptionName } from "@/types";
  * cart and product-page client components can share this logic without
  * dragging the data layer into the browser bundle.
  */
+
+/**
+ * The part of a product the variant helpers actually read.
+ *
+ * `Product` satisfies it structurally, so every existing caller is unchanged.
+ * It exists so the same resolution logic can run against a trimmed projection
+ * — see `QuickAddProduct` below — without that projection having to carry a
+ * description and a spec table it will never show.
+ */
+export interface VariantedProduct {
+  images: string[];
+  price: Money;
+  oldPrice?: Money;
+  options: VariantOption[];
+  variants: Variant[];
+}
+
+/**
+ * Below this, a stock line shows the exact count instead of a generic
+ * "In stock". Shared so the product page and the listing's quick-add sheet
+ * cannot drift into telling the same shopper two different things.
+ */
+export const LOW_STOCK_THRESHOLD = 5;
 
 export function minPrice(product: Product): Money {
   if (!product.variants.length) return product.price;
@@ -30,7 +59,7 @@ export function isInStock(product: Product): boolean {
 
 /** Resolves a full option selection to exactly one variant, if it exists. */
 export function findVariant(
-  product: Product,
+  product: VariantedProduct,
   selection: Partial<Record<VariantOptionName, string>>,
 ): Variant | undefined {
   if (!product.variants.length) return undefined;
@@ -41,7 +70,7 @@ export function findVariant(
 
 /** True when every option axis on the product has a chosen value. */
 export function isSelectionComplete(
-  product: Product,
+  product: VariantedProduct,
   selection: Partial<Record<VariantOptionName, string>>,
 ): boolean {
   return product.options.every((opt) => Boolean(selection[opt.name]));
@@ -53,7 +82,7 @@ export function isSelectionComplete(
  * combinations instead of letting the customer hit a dead end.
  */
 export function isOptionValueAvailable(
-  product: Product,
+  product: VariantedProduct,
   optionName: VariantOptionName,
   value: string,
   selection: Partial<Record<VariantOptionName, string>>,
@@ -87,7 +116,7 @@ export function variantLabel(variant: Variant | undefined): string | undefined {
  * them. Undefined when every variant costs the same — a "from" on a single
  * price is noise — and undefined for a product without variants.
  */
-export function cheapestVariant(product: Product): Variant | undefined {
+export function cheapestVariant(product: VariantedProduct): Variant | undefined {
   if (product.variants.length < 2) return undefined;
   let cheapest = product.variants[0]!;
   let dearest = product.variants[0]!;
@@ -144,6 +173,40 @@ export function toCatalogEntry(product: Product): CatalogEntry {
       stock: v.stock,
       image: product.images[v.imageIndex ?? 0] ?? product.images[0],
     })),
+  };
+}
+
+/**
+ * The slice a listing card's quick-add sheet needs.
+ *
+ * Distinct from `CatalogEntry` because that one flattens each variant to a
+ * display label, which is all the cart shows. The sheet has to *resolve* a
+ * selection, so it keeps the option axes and each variant's option map intact.
+ *
+ * It still drops the description, the spec table, the included list and the
+ * unlit image states. None of those are shown here, and a category page renders
+ * this once per card — on a 24-card grid the full `Product` would be serialised
+ * into the RSC payload twenty-four times over.
+ */
+export interface QuickAddProduct extends VariantedProduct {
+  id: string;
+  slug: string;
+  title: string;
+  /** Carried for the ad-tracking content id on a product without variants. */
+  sku: string;
+}
+
+export function toQuickAddProduct(product: Product): QuickAddProduct {
+  return {
+    id: product.id,
+    slug: product.slug,
+    title: product.title,
+    sku: product.sku,
+    images: product.images,
+    price: product.price,
+    oldPrice: product.oldPrice,
+    options: product.options,
+    variants: product.variants,
   };
 }
 

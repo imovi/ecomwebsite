@@ -6,6 +6,7 @@ import { cn, discountPercent } from "@/lib/utils";
 import { copy } from "@/lib/copy";
 import { Badge } from "@/components/ui/Badge";
 import { Price } from "@/components/ui/Price";
+import { QuickAddButton } from "./QuickAddButton";
 
 /**
  * Product card.
@@ -16,6 +17,16 @@ import { Price } from "@/components/ui/Price";
  * same thing, and makes people hesitate about whether tapping the image does
  * something different. This keeps the visual affordance and makes the entire
  * card a single, large, unambiguous target — which is what converts on a phone.
+ *
+ * The quick-add button is the one exception, and it is why the link is now a
+ * STRETCHED link rather than a wrapper: the anchor holds the title — which is
+ * what a crawler and a screen reader should meet as the link's text — and a
+ * pseudo element spreads its hit area over the whole card. The button is then
+ * a sibling sitting above that pseudo element, so the markup stays valid and
+ * the card keeps being one large target everywhere the button is not.
+ *
+ * This component stays a Server Component; only the button ships JavaScript,
+ * and it receives a summary rather than the whole product.
  */
 export function ProductCard({
   product,
@@ -31,10 +42,7 @@ export function ProductCard({
   const available = isInStock(product);
 
   return (
-    <Link
-      href={`/product/${product.slug}`}
-      className="group flex flex-col outline-offset-4"
-    >
+    <div className="group relative flex flex-col">
       <div className="relative aspect-square overflow-hidden rounded-md bg-surface">
         <Image
           src={product.images[0]}
@@ -68,16 +76,42 @@ export function ProductCard({
             </Badge>
           </div>
         )}
+
+        {/* Sold out has nothing to add, so the control is absent rather than
+            disabled — a dead button invites a tap that does nothing. */}
+        {available && (
+          <QuickAddButton
+            /* A summary, not the product. The listing endpoint this card was
+               rendered from returns no variants, so the button fetches the real
+               ones when it opens — see QuickAddButton. */
+            summary={{
+              id: product.id,
+              slug: product.slug,
+              title: product.title,
+              image: product.images[0],
+              price,
+              oldPrice,
+            }}
+            className="absolute bottom-2 right-2 z-20"
+          />
+        )}
       </div>
 
       <div className="flex flex-1 flex-col gap-1.5 pt-2.5">
         <h3 className="clamp-2 min-h-[2.7em] text-caption leading-[1.35] text-ink-soft">
-          {product.title}
+          {/* The stretched link. Its `::after` covers the card, so the whole
+              card is clickable while the anchor's text stays the title. */}
+          <Link
+            href={`/product/${product.slug}`}
+            className="outline-offset-4 after:absolute after:inset-0 after:content-['']"
+          >
+            {product.title}
+          </Link>
         </h3>
 
         <Price price={price} oldPrice={oldPrice} size="card" />
 
-        {/* Styled as a button, but it is text inside the card's own link. */}
+        {/* Styled as a button, but it is text covered by the card's own link. */}
         <span
           className={cn(
             "mt-1.5 inline-flex h-9 w-full items-center justify-center rounded-xs",
@@ -89,7 +123,7 @@ export function ProductCard({
           {copy.product.viewDetails}
         </span>
       </div>
-    </Link>
+    </div>
   );
 }
 

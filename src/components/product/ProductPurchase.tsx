@@ -8,6 +8,7 @@ import {
   cheapestVariant,
   findVariant,
   isSelectionComplete,
+  LOW_STOCK_THRESHOLD,
 } from "@/lib/catalog-utils";
 import { formatTaka, savings } from "@/lib/utils";
 import { copy } from "@/lib/copy";
@@ -26,9 +27,6 @@ import { StickyBuyBar } from "./StickyBuyBar";
 import { VariantPicker } from "./VariantPicker";
 
 type Selection = Partial<Record<VariantOptionName, string>>;
-
-/** Below this, show the exact count instead of a generic "In stock". */
-const LOW_STOCK_THRESHOLD = 5;
 
 /**
  * Owns everything above the fold on a product page: gallery, price, variant

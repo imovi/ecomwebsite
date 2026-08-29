@@ -542,6 +542,13 @@ function AddCampaign({
         placeholder="120210000000123456"
         value={metaId}
         onChange={(event) => setMetaId(event.target.value)}
+        /* Chrome saw the first text box on an admin page and filled it with the
+           owner's email address, which then went off to Meta as a campaign id.
+           `autoComplete="off"` alone is widely ignored; a name the browser has
+           no heuristic for is what actually stops it. */
+        autoComplete="off"
+        name="meta-campaign-id"
+        inputMode="numeric"
         wrapperClassName="w-[210px]"
       />
       <Input

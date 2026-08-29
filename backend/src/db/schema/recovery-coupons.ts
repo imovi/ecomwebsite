@@ -87,6 +87,19 @@ export const recoveryCoupons = pgTable(
     note: text("note").notNull().default(""),
 
     /**
+     * How many times it may be spent. Null means no limit.
+     *
+     * Nullable rather than a magic 0, because "unlimited" and "zero uses
+     * allowed" are different things and a shop that typed 0 by accident should
+     * not get an unlimited coupon out of it. 1 is the default and is what every
+     * lead offer still is.
+     */
+    maxUses: integer("max_uses").default(1),
+
+    /** How many times it has been spent. Bumped by the claim, never read for it. */
+    usedCount: integer("used_count").notNull().default(0),
+
+    /**
      * What the shop last recorded. `expiresAt` is what actually decides.
      *
      * Redemption tests the timestamp, never this word alone, so a sweep that
@@ -98,6 +111,14 @@ export const recoveryCoupons = pgTable(
 
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
 
+    /**
+     * The FIRST order it was spent on, and when.
+     *
+     * Kept as they were. For a single-use coupon — still the default, still
+     * every lead offer — the first use is the only use, so nothing about the
+     * existing behaviour moved. Every use, including this one, is also a row in
+     * `coupon_redemptions`, which is what the panel lists.
+     */
     usedOrderId: uuid("used_order_id").references(() => orders.id, { onDelete: "set null" }),
     usedAt: timestamp("used_at", { withTimezone: true }),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
@@ -123,6 +144,10 @@ export const recoveryCoupons = pgTable(
       sql`${table.status} in ('active', 'used', 'cancelled', 'expired')`,
     ),
     check("recovery_coupons_cart_value_non_negative", sql`${table.cartValue} >= 0`),
+    check(
+      "recovery_coupons_uses_sane",
+      sql`${table.usedCount} >= 0 and (${table.maxUses} is null or ${table.maxUses} >= 1)`,
+    ),
   ],
 );
 

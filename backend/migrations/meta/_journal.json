@@ -232,6 +232,13 @@
       "when": 1786634569319,
       "tag": "0032_coupon_note",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1786634570319,
+      "tag": "0033_coupon_uses",
+      "breakpoints": true
     }
   ]
 }

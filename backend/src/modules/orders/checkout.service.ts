@@ -538,7 +538,7 @@ export async function placeOrder(
      * with a delivery charge nobody paid for.
      */
     let deliveryCharge = totals.deliveryCharge;
-    let couponToSpend: string | null = null;
+    let couponToSpend: { code: string; saved: number } | null = null;
 
     if (input.couponCode) {
       /* Read on the transaction's own connection. See `findByCode`: going
@@ -560,7 +560,12 @@ export async function placeOrder(
       deliveryCharge = applied.deliveryCharge;
       /* Only claim it when it actually took the charge off. A coupon on a cart
          that already had free delivery stays live for next time. */
-      if (applied.quote.applied) couponToSpend = applied.quote.code;
+      if (applied.quote.applied) {
+        /* The charge that was removed, frozen onto the redemption. Delivery
+           charges are settings and settings change; reading today's rate later
+           would restate what last month's offers cost. */
+        couponToSpend = { code: applied.quote.code, saved: applied.quote.saved };
+      }
     }
 
     /* Decrement first. If anything is short, the whole transaction unwinds
@@ -611,7 +616,14 @@ export async function placeOrder(
     /* The claim. One conditional UPDATE carrying every precondition; whoever
        the database serialises second matches nothing, this throws, and their
        stock goes back. */
-    const spent = couponToSpend ? await coupons.redeem(couponToSpend, order.id, tx) : null;
+    const spent = couponToSpend
+      ? await coupons.redeem(
+          couponToSpend.code,
+          { id: order.id, orderNumber: order.orderNumber },
+          couponToSpend.saved,
+          tx,
+        )
+      : null;
 
     const items = await insertOrderItems(
       lines.map((line) => ({

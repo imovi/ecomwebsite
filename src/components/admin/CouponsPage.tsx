@@ -10,7 +10,7 @@ import { AdminShell } from "./AdminShell";
 import { AsyncState, Card, CardHeader, ErrorBanner, PageBody, TableWrap } from "./ui";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Field";
+import { Input, Select } from "@/components/ui/Field";
 import { Icon } from "@/components/ui/Icon";
 
 /**
@@ -18,17 +18,24 @@ import { Icon } from "@/components/ui/Icon";
  *
  * WHY THIS EXISTS WHEN THE ABANDONED PAGE ALREADY MAKES COUPONS
  * That page makes them FOR A LEAD — somebody the shop is already chasing, whose
- * basket and number it knows. This one covers the case that had nowhere to go:
- * the desk is on the phone to a customer who was never in the call list, agrees
- * to free delivery, and needs a code in the next ten seconds.
+ * basket and number it knows, on the shop's own default terms. This one is for
+ * everything else: a code for a customer who was never in the call list, one
+ * that lasts a week, one that twenty people can use, or one the owner named
+ * themselves.
  *
- * The coupon counts live here rather than on the recovery report. They were on
- * both for about an hour, which is how a shop ends up with two screens
- * disagreeing about how many offers it made. The report keeps what is uniquely
- * its own: how many leads came back, and by which route.
+ * The Abandoned page is deliberately not given these fields. An offer to a lead
+ * is one use on the shop's default deadline, exactly as it was before any of
+ * this existed, and the desk should not have four decisions to make while a
+ * customer waits on the phone.
  */
 
 type CouponState = "active" | "used" | "expired" | "cancelled";
+
+interface CouponUse {
+  orderNumber: string;
+  deliverySaved: number;
+  at: string;
+}
 
 interface Coupon {
   id: string;
@@ -36,11 +43,14 @@ interface Coupon {
   state: CouponState;
   cartValue: number;
   note: string;
+  maxUses: number | null;
+  usedCount: number;
   expiresAt: string;
   usedAt: string | null;
   createdAt: string;
   phone: string | null;
   orderNumber: string | null;
+  uses: CouponUse[];
 }
 
 interface Totals {
@@ -49,13 +59,14 @@ interface Totals {
   used: number;
   expired: number;
   cancelled: number;
+  redemptions: number;
   deliveryCost: number;
 }
 
 const FILTERS: { key: CouponState | "all"; label: string }[] = [
   { key: "all", label: "All" },
   { key: "active", label: "Running" },
-  { key: "used", label: "Used" },
+  { key: "used", label: "Used up" },
   { key: "expired", label: "Ran out" },
   { key: "cancelled", label: "Cancelled" },
 ];
@@ -69,10 +80,20 @@ const STATE_TONE: Record<CouponState, "positive" | "neutral" | "warn" | "saleSof
 
 const STATE_LABEL: Record<CouponState, string> = {
   active: "Running",
-  used: "Used",
+  used: "Used up",
   expired: "Ran out",
   cancelled: "Cancelled",
 };
+
+/** "3 of 5", or "3 times" when there is no limit. */
+function usesLabel(coupon: Coupon): string {
+  if (coupon.maxUses === null) {
+    return coupon.usedCount === 0
+      ? "0 · no limit"
+      : `${coupon.usedCount} · no limit`;
+  }
+  return `${coupon.usedCount} of ${coupon.maxUses}`;
+}
 
 export function CouponsPage() {
   const [coupons, setCoupons] = useState<Coupon[]>([]);
@@ -83,9 +104,6 @@ export function CouponsPage() {
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-
-  const [note, setNote] = useState("");
-  /** The code just minted, held so it can be read out before the list redraws. */
   const [minted, setMinted] = useState<Coupon | null>(null);
 
   const query = filter === "all" ? "" : `?state=${filter}`;
@@ -107,20 +125,21 @@ export function CouponsPage() {
 
   useLoad(load);
 
-  const create = async () => {
+  const create = async (body: Record<string, unknown>) => {
     setBusy(true);
     setActionError(null);
     try {
       const result = await adminApi.post<{ coupon: Coupon; created: boolean }>(
         "admin/coupons",
-        note.trim() ? { note: note.trim() } : {},
+        body,
       );
       setMinted(result.coupon);
-      setNote("");
       toast("Coupon ready");
       await load();
+      return true;
     } catch (caught) {
       setActionError(caught instanceof AdminApiError ? caught.message : "Could not create it.");
+      return false;
     } finally {
       setBusy(false);
     }
@@ -147,14 +166,7 @@ export function CouponsPage() {
       <PageBody columns={false}>
         <ErrorBanner message={actionError} />
 
-        <MakeOne
-          note={note}
-          setNote={setNote}
-          busy={busy}
-          minted={minted}
-          onCreate={create}
-          onCancel={cancel}
-        />
+        <MakeOne busy={busy} minted={minted} onCreate={create} onCancel={cancel} />
 
         {totals && <Counts totals={totals} />}
 
@@ -195,55 +207,21 @@ export function CouponsPage() {
                 <thead>
                   <tr className="border-b border-line text-left text-muted">
                     <th className="px-4 py-2 font-medium">Code</th>
-                    <th className="px-4 py-2 font-medium">For</th>
+                    <th className="px-4 py-2 font-medium">Note / purpose</th>
                     <th className="px-4 py-2 font-medium">State</th>
+                    <th className="px-4 py-2 text-right font-medium">Used</th>
                     <th className="px-4 py-2 font-medium">Runs out</th>
-                    <th className="px-4 py-2 font-medium">Order</th>
                     <th className="px-4 py-2" />
                   </tr>
                 </thead>
                 <tbody>
                   {coupons.map((coupon) => (
-                    <tr key={coupon.id} className="border-b border-line last:border-0">
-                      {/* Largest thing on the row, for the same reason the phone
-                          number is largest on a lead card: it is what somebody
-                          reads out or copies. */}
-                      <td className="tnum px-4 py-2.5 text-body font-semibold tracking-wider text-ink">
-                        {coupon.code}
-                      </td>
-                      <td className="px-4 py-2.5 text-ink-soft">
-                        {coupon.phone ? (
-                          <span className="tnum">{coupon.phone}</span>
-                        ) : coupon.note ? (
-                          coupon.note
-                        ) : (
-                          <span className="text-muted">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-2.5">
-                        <Badge tone={STATE_TONE[coupon.state]}>
-                          {STATE_LABEL[coupon.state]}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-2.5 text-muted">
-                        {offerDeadline(coupon.expiresAt)}
-                      </td>
-                      <td className="tnum px-4 py-2.5 text-muted">
-                        {coupon.orderNumber ?? "—"}
-                      </td>
-                      <td className="px-4 py-2.5 text-right">
-                        {coupon.state === "active" && (
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={() => void cancel(coupon)}
-                            className="text-caption text-muted underline-offset-4 hover:text-sale hover:underline disabled:opacity-40"
-                          >
-                            Withdraw
-                          </button>
-                        )}
-                      </td>
-                    </tr>
+                    <CouponRow
+                      key={coupon.id}
+                      coupon={coupon}
+                      busy={busy}
+                      onCancel={() => void cancel(coupon)}
+                    />
                   ))}
                 </tbody>
               </table>
@@ -257,54 +235,217 @@ export function CouponsPage() {
 
 /* -------------------------------------------------------------------------- */
 
+function CouponRow({
+  coupon,
+  busy,
+  onCancel,
+}: {
+  coupon: Coupon;
+  busy: boolean;
+  onCancel: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <tr className="border-b border-line last:border-0">
+        {/* Largest thing on the row, for the same reason the phone number is
+            largest on a lead card: it is what somebody reads out or copies. */}
+        <td className="tnum px-4 py-2.5 text-body font-semibold tracking-wider text-ink">
+          {coupon.code}
+        </td>
+        <td className="px-4 py-2.5 text-ink-soft">
+          {coupon.note || (coupon.phone ? <span className="tnum">{coupon.phone}</span> : null) || (
+            <span className="text-muted">—</span>
+          )}
+        </td>
+        <td className="px-4 py-2.5">
+          <Badge tone={STATE_TONE[coupon.state]}>{STATE_LABEL[coupon.state]}</Badge>
+        </td>
+        <td className="tnum px-4 py-2.5 text-right">
+          {coupon.usedCount > 0 ? (
+            <button
+              type="button"
+              onClick={() => setOpen((value) => !value)}
+              className="underline-offset-4 hover:underline"
+              /* The count is the affordance: an owner asking "used how many
+                 times" is one tap from "on which orders". */
+              aria-expanded={open}
+            >
+              {usesLabel(coupon)}
+            </button>
+          ) : (
+            <span className="text-muted">{usesLabel(coupon)}</span>
+          )}
+        </td>
+        <td className="px-4 py-2.5 text-muted">{offerDeadline(coupon.expiresAt)}</td>
+        <td className="px-4 py-2.5 text-right">
+          {coupon.state === "active" && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onCancel}
+              className="text-caption text-muted underline-offset-4 hover:text-sale hover:underline disabled:opacity-40"
+            >
+              Withdraw
+            </button>
+          )}
+        </td>
+      </tr>
+
+      {open && coupon.uses.length > 0 && (
+        <tr className="border-b border-line last:border-0">
+          <td colSpan={6} className="bg-surface px-4 py-3">
+            <p className="mb-1 text-micro uppercase tracking-wide text-muted">
+              Spent on
+            </p>
+            <ul className="flex flex-col gap-1">
+              {coupon.uses.map((use, index) => (
+                <li
+                  key={`${use.orderNumber}-${index}`}
+                  className="flex flex-wrap justify-between gap-3 text-caption"
+                >
+                  <span className="tnum text-ink">{use.orderNumber || "order removed"}</span>
+                  <span className="text-muted">
+                    {offerDeadline(use.at)} · cost you {formatTaka(use.deliverySaved)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+
 function MakeOne({
-  note,
-  setNote,
   busy,
   minted,
   onCreate,
   onCancel,
 }: {
-  note: string;
-  setNote: (value: string) => void;
   busy: boolean;
   minted: Coupon | null;
-  onCreate: () => Promise<void>;
+  onCreate: (body: Record<string, unknown>) => Promise<boolean>;
   onCancel: (coupon: Coupon) => Promise<void>;
 }) {
+  const [note, setNote] = useState("");
+  const [code, setCode] = useState("");
+  const [amount, setAmount] = useState("1");
+  const [unit, setUnit] = useState<"hours" | "days">("days");
+  const [uses, setUses] = useState("1");
   const [copied, setCopied] = useState(false);
+
+  const submit = async () => {
+    const hours = unit === "days" ? Number(amount) * 24 : Number(amount);
+
+    const body: Record<string, unknown> = {
+      ...(note.trim() ? { note: note.trim() } : {}),
+      ...(code.trim() ? { code: code.trim() } : {}),
+      ...(Number.isFinite(hours) && hours > 0 ? { validHours: Math.round(hours) } : {}),
+      /* "unlimited" is sent as null rather than 0 or a huge number, so nothing
+         downstream has to guess which large number meant "no limit". */
+      maxUses: uses === "unlimited" ? null : Number(uses),
+    };
+
+    if (await onCreate(body)) {
+      setNote("");
+      setCode("");
+    }
+  };
 
   return (
     <Card>
       <CardHeader
         title="Make a coupon"
-        hint="Free delivery, one use — for a customer who is not in the abandoned list"
+        hint="Free delivery — on your own terms, for anyone, whether or not they are in the abandoned list"
       />
 
       <div className="p-4 pt-0">
-        <div className="flex flex-wrap items-end gap-3">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Input
-            label="Who is it for?"
+            label="Note / purpose"
             value={note}
-            placeholder="Rahim — phone order"
+            placeholder="Eid campaign — Facebook post"
             onChange={(event) => setNote(event.target.value)}
-            hint="Optional, but the list is unreadable without it."
-            wrapperClassName="flex-1 min-w-[220px]"
+            hint="What it is for. The list is unreadable without it."
           />
-          <Button variant="primary" loading={busy} onClick={() => void onCreate()}>
+
+          <Input
+            label="Code"
+            value={code}
+            placeholder="Leave blank for a random one"
+            onChange={(event) => setCode(event.target.value.toUpperCase())}
+            /* Same reason as the Campaign ID field: Chrome will happily fill
+               the first text box on an admin page with an email address. */
+            autoComplete="off"
+            name="coupon-code"
+            hint="Letters, numbers and dashes."
+            className="tnum uppercase"
+          />
+
+          <div className="flex items-end gap-2">
+            <Input
+              label="Lasts for"
+              type="number"
+              min={1}
+              step={1}
+              value={amount}
+              onChange={(event) => setAmount(event.target.value)}
+              wrapperClassName="flex-1"
+              hint="The deadline is what makes an offer work."
+            />
+            <Select
+              label=""
+              aria-label="Hours or days"
+              value={unit}
+              onChange={(event) => setUnit(event.target.value as "hours" | "days")}
+              wrapperClassName="w-[92px]"
+            >
+              <option value="hours">hours</option>
+              <option value="days">days</option>
+            </Select>
+          </div>
+
+          <Select
+            label="How many times can it be used?"
+            value={uses}
+            onChange={(event) => setUses(event.target.value)}
+            hint="One use is the safe default."
+          >
+            <option value="1">Once only</option>
+            <option value="3">3 times</option>
+            <option value="5">5 times</option>
+            <option value="10">10 times</option>
+            <option value="25">25 times</option>
+            <option value="50">50 times</option>
+            <option value="100">100 times</option>
+            <option value="unlimited">No limit</option>
+          </Select>
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <Button variant="primary" loading={busy} onClick={() => void submit()}>
             <Icon name="plus" size={15} />
             Create
           </Button>
+
+          {/* Said in money rather than left as a principle. Multiplied out,
+              because a 50-use code is not one delivery charge — it is fifty,
+              and that is the number worth seeing before pressing Create. */}
+          <p className="text-caption text-muted">
+            {uses === "unlimited"
+              ? "No limit means no ceiling on what this costs you. Give it a deadline you are comfortable with."
+              : `Each use costs you one delivery charge — up to ${uses} of them.`}
+          </p>
         </div>
 
-        {/* Said plainly rather than left as a principle. The offer costs the
-            same whatever the basket is worth, and here there is no basket for
-            the minimum in Offer rules to measure — so nothing is stopping a
-            code being spent on a 200-taka order. The owner should know that
-            before they hand one out, not after. */}
         <p className="mt-3 rounded-sm bg-surface px-3 py-2 text-caption text-ink-soft">
           The smallest-basket rule under Abandoned → Offer rules does not apply to a coupon made
-          here — there is no basket to measure. Whoever it goes to can spend it on an order of any
+          here — there is no basket to measure. Whoever holds it can spend it on an order of any
           size.
         </p>
 
@@ -316,7 +457,9 @@ function MakeOne({
                 {minted.code}
               </p>
               <p className="text-micro text-muted">
-                Runs out {offerDeadline(minted.expiresAt)}
+                {minted.maxUses === null ? "No use limit" : `Up to ${minted.maxUses} use${minted.maxUses === 1 ? "" : "s"}`}
+                {" · runs out "}
+                {offerDeadline(minted.expiresAt)}
               </p>
             </div>
             <div className="flex gap-2">
@@ -337,7 +480,12 @@ function MakeOne({
               >
                 {copied ? "Copied" : "Copy"}
               </Button>
-              <Button variant="ghost" size="sm" disabled={busy} onClick={() => void onCancel(minted)}>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={busy}
+                onClick={() => void onCancel(minted)}
+              >
                 Withdraw
               </Button>
             </div>
@@ -355,12 +503,12 @@ function Counts({ totals }: { totals: Totals }) {
     <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
       <Stat label="Made" value={String(totals.created)} />
       <Stat label="Running" value={String(totals.active)} tone="good" />
-      <Stat label="Used" value={String(totals.used)} tone="good" />
+      {/* Times used, not coupons used. A ten-use code spent nine times has
+          cost the shop nine deliveries and would read as "0 used" if this
+          counted coupons. */}
+      <Stat label="Times used" value={String(totals.redemptions)} tone="good" />
+      <Stat label="Used up" value={String(totals.used)} />
       <Stat label="Ran out" value={String(totals.expired)} />
-      <Stat label="Cancelled" value={String(totals.cancelled)} />
-      {/* The only figure here that is money. The orders themselves say the
-          delivery charge was zero — that is the point of the offer — so its
-          cost appears nowhere else in the shop. */}
       <Stat
         label="Delivery paid for"
         value={formatTaka(totals.deliveryCost)}

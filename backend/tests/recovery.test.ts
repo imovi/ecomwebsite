@@ -28,6 +28,8 @@ interface Coupon {
   code: string;
   state: "active" | "used" | "cancelled" | "expired";
   cartValue: number;
+  maxUses: number | null;
+  usedCount: number;
   expiresAt: string;
   usedAt: string | null;
 }
@@ -820,5 +822,167 @@ describe("recovery — coupons made for nobody in particular", () => {
       body: {},
     });
     assert.equal(created.status, 401);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Coupons that may be spent more than once                                   */
+/* -------------------------------------------------------------------------- */
+
+describe("recovery — how many times, and for how long", () => {
+  interface FullCoupon extends Coupon {
+    note: string;
+    maxUses: number | null;
+    usedCount: number;
+    uses: { orderNumber: string; deliverySaved: number; at: string }[];
+    phone: string | null;
+    orderNumber: string | null;
+  }
+
+  async function mint(body: Record<string, unknown>) {
+    return api<Envelope<{ coupon: FullCoupon; created: boolean }>>(
+      ctx.baseUrl,
+      "/api/v1/admin/coupons",
+      { method: "POST", accessToken: adminToken, body },
+    );
+  }
+
+  async function readBack(code: string): Promise<FullCoupon> {
+    const listed = await api<Envelope<{ coupons: FullCoupon[] }>>(
+      ctx.baseUrl,
+      "/api/v1/admin/coupons",
+      { accessToken: adminToken },
+    );
+    const row = listed.body.data.coupons.find((c) => c.code === code);
+    assert.ok(row, `coupon ${code} not in the list`);
+    return row;
+  }
+
+  it("takes a code the owner chose", async () => {
+    const result = await mint({ code: "eid-2026", note: "Eid campaign" });
+
+    assert.equal(result.status, 200);
+    /* Folded, so eid-2026 and EID-2026 cannot become two coupons. */
+    assert.equal(result.body.data.coupon.code, "EID-2026");
+  });
+
+  it("refuses a code somebody already has", async () => {
+    const taken = await mint({ code: "EID-2026" });
+
+    assert.equal(taken.status, 409);
+    assert.match(taken.body.error!.message, /already in use/i);
+  });
+
+  it("lets one code be spent the number of times it was given", async () => {
+    const { code } = (await mint({ maxUses: 3, note: "three friends" })).body.data.coupon;
+
+    for (let i = 0; i < 3; i += 1) {
+      const placed = await placeOrder(nextPhone(), code);
+      assert.equal(placed.status, 201, `use ${i + 1} was refused`);
+      assert.equal(placed.body.data.order.deliveryCharge, 0);
+    }
+
+    /* The fourth is refused — the limit is enforced by the same conditional
+       UPDATE that enforced single use, so two orders racing for the last one
+       cannot both win. */
+    const fourth = await placeOrder(nextPhone(), code);
+    assert.equal(fourth.status, 409);
+    assert.match(fourth.body.error!.message, /already been used/i);
+
+    const row = await readBack(code);
+    assert.equal(row.usedCount, 3);
+    assert.equal(row.maxUses, 3);
+    assert.equal(row.state, "used");
+  });
+
+  it("records every order a code was spent on, not just the first", async () => {
+    const { code } = (await mint({ maxUses: 2, note: "two uses" })).body.data.coupon;
+
+    const first = await placeOrder(nextPhone(), code);
+    const second = await placeOrder(nextPhone(), code);
+
+    const row = await readBack(code);
+
+    assert.equal(row.uses.length, 2);
+    assert.deepEqual(
+      row.uses.map((use) => use.orderNumber),
+      [first.body.data.order.orderNumber, second.body.data.order.orderNumber],
+    );
+    /* What each use cost, frozen at the time — the order says zero, which is
+       the point of the offer, so it is recorded nowhere else. */
+    for (const use of row.uses) assert.equal(use.deliverySaved, INSIDE_DHAKA_CHARGE);
+  });
+
+  it("never runs out when no limit was set", async () => {
+    const { code } = (await mint({ maxUses: null, note: "open house" })).body.data.coupon;
+
+    for (let i = 0; i < 4; i += 1) {
+      const placed = await placeOrder(nextPhone(), code);
+      assert.equal(placed.status, 201, `use ${i + 1} was refused`);
+    }
+
+    const row = await readBack(code);
+    assert.equal(row.maxUses, null);
+    assert.equal(row.usedCount, 4);
+    /* Still spendable. Only the deadline can stop this one. */
+    assert.equal(row.state, "active");
+  });
+
+  it("lives for as long as it was given, not the shop default", async () => {
+    const { coupon } = (await mint({ validHours: 24 * 7, note: "a week" })).body.data;
+
+    const hours = (Date.parse(coupon.expiresAt) - Date.now()) / 3_600_000;
+    /* Seven days, within a minute of it. */
+    assert.ok(hours > 167.9 && hours < 168.1, `expected ~168 hours, got ${hours}`);
+  });
+
+  it("still gives a lead offer the shop's own settings, untouched", async () => {
+    await patchSettings({ recovery: { couponHours: 6 } });
+
+    const lead = await createLead(nextPhone());
+    const { coupon } = (await issueCoupon(lead.id)).body.data;
+
+    const hours = (Date.parse(coupon.expiresAt) - Date.now()) / 3_600_000;
+    assert.ok(hours > 5.9 && hours < 6.1, `expected ~6 hours, got ${hours}`);
+    /* And one use, exactly as before this feature existed. The Abandoned page
+       has no field for either and must keep behaving as it did. */
+    assert.equal(coupon.maxUses, 1);
+
+    await patchSettings({ recovery: { couponHours: 24 } });
+  });
+
+  it("counts uses, not coupons, when it reports the cost", async () => {
+    const { code } = (await mint({ maxUses: 2, note: "cost check" })).body.data.coupon;
+    await placeOrder(nextPhone(), code);
+    await placeOrder(nextPhone(), code);
+
+    const listed = await api<Envelope<{ totals: Record<string, number> }>>(
+      ctx.baseUrl,
+      "/api/v1/admin/coupons",
+      { accessToken: adminToken },
+    );
+
+    const { totals } = listed.body.data;
+    /* One coupon, two uses, two delivery charges. A per-coupon count would
+       have under-reported what the shop actually paid. */
+    assert.ok(totals.redemptions! >= 2);
+    assert.equal(totals.deliveryCost, totals.redemptions! * INSIDE_DHAKA_CHARGE);
+  });
+
+  it("refuses a half-spent code once it has expired", async () => {
+    const { code } = (await mint({ maxUses: 5, note: "expires mid-way" })).body.data.coupon;
+
+    const used = await placeOrder(nextPhone(), code);
+    assert.equal(used.status, 201);
+
+    await expireCoupon(code);
+
+    const late = await placeOrder(nextPhone(), code);
+    assert.equal(late.status, 409);
+    assert.match(late.body.error!.message, /expired/i);
+
+    const row = await readBack(code);
+    assert.equal(row.state, "expired");
+    assert.equal(row.usedCount, 1);
   });
 });

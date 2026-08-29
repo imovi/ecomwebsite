@@ -117,9 +117,23 @@ async function graph<T>(path: string, params: Record<string, string>, token: str
 
     /* Meta's own codes, mapped to what the shop can actually do about it. */
     if (response.status === 401 || code === 190) {
+      const subcode = (error as { error_subcode?: number } | undefined)?.error_subcode;
+
+      /**
+       * 463 is "the session has expired", and it is the one an owner will hit
+       * over and over.
+       *
+       * A token copied out of Graph API Explorer lasts an hour or two. It works
+       * when it is pasted, the page shows real figures, and it is dead by the
+       * evening — so the shop concludes the feature is broken rather than that
+       * it used the wrong kind of credential. Naming the fix is the whole
+       * difference between a message that helps and one that just reports.
+       */
       throw new MetaAdsError(
         "unauthorised",
-        "Meta rejected the access token. It may have expired or lost its ads_read permission.",
+        subcode === 463
+          ? "That access token has expired. Tokens from Graph API Explorer only last an hour or two — make a System User token in Business Settings → Users → System Users instead, give it ads_read on this ad account, and those do not expire."
+          : "Meta rejected the access token. It may have been revoked, or it never had ads_read on this ad account.",
       );
     }
     if (code === 4 || code === 17 || code === 613 || response.status === 429) {

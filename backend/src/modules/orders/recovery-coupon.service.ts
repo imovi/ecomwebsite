@@ -1,5 +1,5 @@
 import { randomInt } from "node:crypto";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb, type DatabaseExecutor } from "../../db/client.js";
 import {
   recoveryCoupons,
@@ -9,6 +9,7 @@ import {
   type RecoveryCouponStatus,
 } from "../../db/schema/recovery-coupons.js";
 import { abandonedCheckouts } from "../../db/schema/abandoned-checkouts.js";
+import { couponRedemptions } from "../../db/schema/coupon-redemptions.js";
 import { BadRequestError, ConflictError, NotFoundError } from "../../core/errors.js";
 import { ErrorCode } from "../../core/http-status.js";
 import { createLogger } from "../../core/logger.js";
@@ -77,6 +78,10 @@ export interface CouponDto {
   cartValue: number;
   /** Who it was made for, when it was not made for a lead. */
   note: string;
+  /** How many times it may be spent. Null means no limit. */
+  maxUses: number | null;
+  /** How many times it has been. */
+  usedCount: number;
   expiresAt: string;
   usedAt: string | null;
   usedOrderId: string | null;
@@ -91,9 +96,21 @@ export interface CouponDto {
  * anywhere near it. The column and this function agree eventually; this one is
  * right immediately.
  */
-export function stateOf(row: Pick<RecoveryCouponRow, "status" | "expiresAt">): CouponState {
+export function stateOf(
+  row: Pick<RecoveryCouponRow, "status" | "expiresAt"> &
+    Partial<Pick<RecoveryCouponRow, "maxUses" | "usedCount">>,
+): CouponState {
   if (row.status === "used") return "used";
   if (row.status === "cancelled") return "cancelled";
+  /* Spent out, whether or not the claim got as far as writing the word. Same
+     reasoning as expiry: derive it, so the screen is right immediately. */
+  if (
+    row.maxUses !== null &&
+    row.maxUses !== undefined &&
+    (row.usedCount ?? 0) >= row.maxUses
+  ) {
+    return "used";
+  }
   if (row.expiresAt.getTime() <= Date.now()) return "expired";
   return "active";
 }
@@ -105,6 +122,8 @@ function toDto(row: RecoveryCouponRow): CouponDto {
     state: stateOf(row),
     cartValue: row.cartValue,
     note: row.note,
+    maxUses: row.maxUses,
+    usedCount: row.usedCount,
     expiresAt: row.expiresAt.toISOString(),
     usedAt: row.usedAt?.toISOString() ?? null,
     usedOrderId: row.usedOrderId ?? null,
@@ -217,6 +236,19 @@ export async function generate(input: {
   checkoutId?: string | null | undefined;
   /** Who it is for. Only meaningful without a lead; a lead knows already. */
   note?: string | undefined;
+  /**
+   * A code chosen by hand, rather than generated.
+   *
+   * The restricted alphabet exists for codes a customer hears read down a phone
+   * and has to write down; somebody typing EID2026 themselves has already made
+   * that judgement, so a custom code is allowed letters, digits and dashes.
+   * Refused only if it is already taken.
+   */
+  code?: string | undefined;
+  /** How long it lives. Defaults to the shop's setting. */
+  validHours?: number | undefined;
+  /** How many times it may be spent. Null means no limit. Defaults to 1. */
+  maxUses?: number | null | undefined;
   actor: LeadActor;
 }): Promise<{ coupon: CouponDto; created: boolean }> {
   const db = getDb();
@@ -246,14 +278,36 @@ export async function generate(input: {
     if (live) return { coupon: toDto(live), created: false };
   }
 
-  const expiresAt = new Date(Date.now() + settings.recoveryCouponHours * 60 * 60 * 1000);
+  /* A lead offer always uses the shop's setting — the Abandoned page has no
+     field for this and must keep behaving exactly as it did. Only a coupon
+     minted by hand may name its own. */
+  const hours = lead ? settings.recoveryCouponHours : (input.validHours ?? settings.recoveryCouponHours);
+  const expiresAt = new Date(Date.now() + hours * 60 * 60 * 1000);
+
+  /* Same rule for the use limit: a lead offer is one use, as it always was. */
+  const maxUses = lead ? 1 : input.maxUses === undefined ? 1 : input.maxUses;
+
+  const chosen = input.code ? normalizeCode(input.code) : null;
+  if (chosen) {
+    const taken = await findByCode(chosen, db);
+    if (taken) {
+      throw new ConflictError(
+        `The code ${chosen} is already in use. Pick another.`,
+        ErrorCode.CONFLICT,
+      );
+    }
+  }
 
   /* Retry on a code collision rather than pre-checking for one. A SELECT
      followed by an INSERT is a race; letting the unique index answer is not.
      With thirty characters over six places a second attempt is already
      unlikely, and eight is simply generous. */
-  for (let attempt = 0; attempt < CODE_ATTEMPTS; attempt += 1) {
-    const code = generateCode();
+  /* A chosen code gets one attempt: retrying would silently hand back a
+     different code than the one that was asked for. */
+  const attempts = chosen ? 1 : CODE_ATTEMPTS;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const code = chosen ?? generateCode();
     try {
       const inserted = await db
         .insert(recoveryCoupons)
@@ -264,6 +318,7 @@ export async function generate(input: {
              a free one. The report reads it as such. */
           cartValue: lead?.estimatedValue ?? 0,
           note: lead ? "" : (input.note ?? "").trim(),
+          maxUses,
           expiresAt,
           createdBy: input.actor.adminId,
         })
@@ -311,7 +366,17 @@ export async function generate(input: {
         if (row) return { coupon: toDto(row), created: false };
       }
 
-      if (message.includes("recovery_coupons_code_key")) continue;
+      if (message.includes("recovery_coupons_code_key")) {
+        /* Only reachable for a generated code — a chosen one was checked above,
+           and losing that race means somebody took it in the last millisecond. */
+        if (chosen) {
+          throw new ConflictError(
+            `The code ${chosen} is already in use. Pick another.`,
+            ErrorCode.CONFLICT,
+          );
+        }
+        continue;
+      }
       throw error;
     }
   }
@@ -497,17 +562,37 @@ export async function check(
  */
 export async function redeem(
   rawCode: string,
-  orderId: string,
+  order: { id: string; orderNumber: string },
+  deliverySaved: number,
   tx: DatabaseExecutor,
 ): Promise<RecoveryCouponRow> {
   const code = normalizeCode(rawCode);
 
+  /**
+   * One conditional UPDATE, still.
+   *
+   * Counting rather than flag-flipping is the only change: the count goes up,
+   * and the coupon becomes `used` on the use that reaches its limit. Every
+   * precondition is still in the WHERE clause — including `used_count <
+   * max_uses` — so two orders racing for the LAST use of a five-use code cannot
+   * both win any more than they could for a one-use code. The loser matches no
+   * rows, this throws, and their transaction unwinds with the stock it reserved.
+   *
+   * `max_uses is null` means no limit, so that arm of the test passes always.
+   */
   const claimed = await tx
     .update(recoveryCoupons)
     .set({
-      status: "used",
-      usedOrderId: orderId,
-      usedAt: sql`now()`,
+      usedCount: sql`${recoveryCoupons.usedCount} + 1`,
+      status: sql`case
+        when ${recoveryCoupons.maxUses} is not null
+         and ${recoveryCoupons.usedCount} + 1 >= ${recoveryCoupons.maxUses}
+        then 'used'
+        else ${recoveryCoupons.status}
+      end`,
+      /* The FIRST use only. `coupon_redemptions` holds them all. */
+      usedOrderId: sql`coalesce(${recoveryCoupons.usedOrderId}, ${order.id}::uuid)`,
+      usedAt: sql`coalesce(${recoveryCoupons.usedAt}, now())`,
       updatedAt: sql`now()`,
     })
     .where(
@@ -517,12 +602,26 @@ export async function redeem(
         /* The timestamp, not the label. This is the line that makes the sweep
            optional rather than load-bearing. */
         sql`${recoveryCoupons.expiresAt} > now()`,
+        sql`(${recoveryCoupons.maxUses} is null
+             or ${recoveryCoupons.usedCount} < ${recoveryCoupons.maxUses})`,
       ),
     )
     .returning();
 
   const row = claimed[0];
-  if (row) return row;
+
+  if (row) {
+    /* Inside the same transaction as the claim. If the order rolls back this
+       goes with it, and the count can never disagree with the rows. */
+    await tx.insert(couponRedemptions).values({
+      couponId: row.id,
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      deliverySaved,
+    });
+
+    return row;
+  }
 
   /* Nothing was claimed. Read the row so the customer is told which of the
      reasons it was, rather than getting a blanket refusal at the last step of a
@@ -568,20 +667,31 @@ export async function noteRedemption(
 /* The whole ledger                                                           */
 /* -------------------------------------------------------------------------- */
 
+export interface CouponUse {
+  orderNumber: string;
+  deliverySaved: number;
+  at: string;
+}
+
 export interface CouponListRow extends CouponDto {
   /** The lead's number, when the coupon was made for one. */
   phone: string | null;
-  /** The order it was spent on. */
+  /** The first order it was spent on. `uses` has them all. */
   orderNumber: string | null;
+  /** Every order this code was spent on, oldest first. */
+  uses: CouponUse[];
 }
 
 export interface CouponTotals {
   created: number;
   active: number;
+  /** Coupons that have been spent out — not the number of times. */
   used: number;
   expired: number;
   cancelled: number;
-  /** Delivery charges the shop absorbed on the orders these were spent on. */
+  /** Every individual use, which is what the cost is actually made of. */
+  redemptions: number;
+  /** Delivery charges the shop absorbed, as frozen on each use. */
   deliveryCost: number;
 }
 
@@ -597,9 +707,13 @@ export async function listCoupons(
   options: { state?: CouponState | undefined; limit?: number | undefined } = {},
 ): Promise<CouponListRow[]> {
   const conditions = {
-    active: sql`c.status = 'active' and c.expires_at > now()`,
-    expired: sql`c.status = 'expired' or (c.status = 'active' and c.expires_at <= now())`,
-    used: sql`c.status = 'used'`,
+    active: sql`c.status = 'active' and c.expires_at > now()
+                and (c.max_uses is null or c.used_count < c.max_uses)`,
+    expired: sql`c.status = 'expired'
+                 or (c.status = 'active' and c.expires_at <= now()
+                     and (c.max_uses is null or c.used_count < c.max_uses))`,
+    used: sql`c.status = 'used'
+              or (c.max_uses is not null and c.used_count >= c.max_uses)`,
     cancelled: sql`c.status = 'cancelled'`,
   } as const;
 
@@ -609,6 +723,7 @@ export async function listCoupons(
   const rows = await getDb().execute(sql`
     select
       c.id, c.code, c.status, c.cart_value, c.note,
+      c.max_uses, c.used_count,
       c.expires_at, c.used_at, c.used_order_id, c.created_at,
       a.phone as phone,
       o.order_number as order_number
@@ -625,25 +740,56 @@ export async function listCoupons(
   const text = (value: unknown): string | null =>
     typeof value === "string" ? value : value instanceof Date ? value.toISOString() : null;
 
-  return rows.rows.map((row) => {
+  const mapped = rows.rows.map((row) => {
     const expiresAt = new Date(text(row.expires_at) ?? 0);
     const status = String(row.status) as RecoveryCouponStatus;
+    const maxUses =
+      row.max_uses === null || row.max_uses === undefined ? null : Number(row.max_uses);
+    const usedCount = Number(row.used_count ?? 0);
     const usedAtText = text(row.used_at);
 
     return {
       id: String(row.id),
       code: String(row.code),
-      state: stateOf({ status, expiresAt }),
+      state: stateOf({ status, expiresAt, maxUses, usedCount }),
       cartValue: Number(row.cart_value ?? 0),
       note: typeof row.note === "string" ? row.note : "",
+      maxUses: row.max_uses === null || row.max_uses === undefined ? null : Number(row.max_uses),
+      usedCount: Number(row.used_count ?? 0),
       expiresAt: expiresAt.toISOString(),
       usedAt: usedAtText ? new Date(usedAtText).toISOString() : null,
       usedOrderId: text(row.used_order_id),
       createdAt: new Date(text(row.created_at) ?? 0).toISOString(),
       phone: typeof row.phone === "string" ? row.phone : null,
       orderNumber: typeof row.order_number === "string" ? row.order_number : null,
+      uses: [] as CouponUse[],
     };
   });
+
+  /* One more query for the whole page rather than one per coupon. A code used
+     twenty times is twenty rows, and a table of fifty coupons drawn a query at
+     a time is what makes a panel feel broken. */
+  const ids = mapped.filter((row) => row.usedCount > 0).map((row) => row.id);
+  if (ids.length === 0) return mapped;
+
+  const usesByCoupon = new Map<string, CouponUse[]>();
+  const useRows = await getDb()
+    .select()
+    .from(couponRedemptions)
+    .where(inArray(couponRedemptions.couponId, ids))
+    .orderBy(asc(couponRedemptions.createdAt));
+
+  for (const use of useRows) {
+    const list = usesByCoupon.get(use.couponId) ?? [];
+    list.push({
+      orderNumber: use.orderNumber,
+      deliverySaved: use.deliverySaved,
+      at: use.createdAt.toISOString(),
+    });
+    usesByCoupon.set(use.couponId, list);
+  }
+
+  return mapped.map((row) => ({ ...row, uses: usesByCoupon.get(row.id) ?? [] }));
 }
 
 /**
@@ -653,14 +799,13 @@ export async function listCoupons(
  * coupons, not about leads — and the Coupons page and that report must never
  * be able to disagree about it.
  *
- * The cost is what those orders WOULD have been charged, priced from the
- * settings row: the order itself says zero, which is the entire point of the
- * offer, so the price of it appears nowhere on the order. Counted by zone and
- * multiplied here rather than summed in SQL — bound as query parameters the two
- * charges come back as text, and Postgres will not sum text.
+ * The cost is summed from what each use recorded at the time, not priced from
+ * today's settings. The order itself says the delivery charge was zero — that
+ * is the entire point of the offer — so the price of it lives nowhere else, and
+ * a shop that raised its delivery charge last week must not have last month's
+ * offers silently restated.
  */
 export async function totals(range?: { from: string; to: string }): Promise<CouponTotals> {
-  const settings = await getSettings();
   const window = range
     ? sql`where (c.created_at at time zone 'Asia/Dhaka')::date
             between ${range.from}::date and ${range.to}::date`
@@ -670,22 +815,27 @@ export async function totals(range?: { from: string; to: string }): Promise<Coup
     select
       count(*)::int                                            as created,
       count(*) filter (
-        where c.status = 'active' and c.expires_at > now()
+        where c.status = 'active'
+          and c.expires_at > now()
+          and (c.max_uses is null or c.used_count < c.max_uses)
       )::int                                                   as active,
-      count(*) filter (where c.status = 'used')::int           as used,
+      count(*) filter (
+        where c.status = 'used'
+           or (c.max_uses is not null and c.used_count >= c.max_uses)
+      )::int                                                   as used,
       count(*) filter (
         where c.status = 'expired'
            or (c.status = 'active' and c.expires_at <= now())
       )::int                                                   as expired,
       count(*) filter (where c.status = 'cancelled')::int      as cancelled,
-      count(*) filter (
-        where o.id is not null and o.delivery_zone = 'inside_dhaka'
-      )::int                                                   as used_inside,
-      count(*) filter (
-        where o.id is not null and o.delivery_zone <> 'inside_dhaka'
-      )::int                                                   as used_outside
+      coalesce(sum(u.uses), 0)::int                            as redemptions,
+      coalesce(sum(u.saved), 0)::int                           as delivery_cost
     from recovery_coupons c
-    left join orders o on o.id = c.used_order_id and o.deleted_at is null
+    left join lateral (
+      select count(*) as uses, coalesce(sum(r.delivery_saved), 0) as saved
+        from coupon_redemptions r
+       where r.coupon_id = c.id
+    ) u on true
     ${window}
   `);
 
@@ -698,8 +848,7 @@ export async function totals(range?: { from: string; to: string }): Promise<Coup
     used: n("used"),
     expired: n("expired"),
     cancelled: n("cancelled"),
-    deliveryCost:
-      n("used_inside") * settings.deliveryChargeInsideDhaka +
-      n("used_outside") * settings.deliveryChargeOutsideDhaka,
+    redemptions: n("redemptions"),
+    deliveryCost: n("delivery_cost"),
   };
 }

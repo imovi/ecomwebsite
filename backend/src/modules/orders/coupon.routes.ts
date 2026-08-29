@@ -44,6 +44,34 @@ const createSchema = z
        a required field — but the list is unreadable without it, so the panel
        asks. */
     note: safeString({ max: 120 }).optional(),
+
+    /**
+     * A code chosen by hand. Blank means "generate one".
+     *
+     * Letters, digits and dashes. NOT the restricted alphabet the generator
+     * uses: that exists so a customer hearing a code read down a phone does not
+     * have to ask "oh or zero", and somebody typing EID2026 themselves has
+     * already made that call.
+     */
+    code: z
+      .string()
+      .trim()
+      .min(3, "A code needs at least three characters.")
+      .max(24)
+      .regex(/^[A-Za-z0-9-]+$/, "Letters, numbers and dashes only.")
+      .transform((value) => value.toUpperCase())
+      .optional(),
+
+    /* Up to a year. Past that it is not an offer any more, it is the shop's
+       delivery price, and that belongs in the delivery settings. */
+    validHours: z.coerce.number().int().min(1).max(8760).optional(),
+
+    /**
+     * How many times it may be spent. `null` is unlimited, and is deliberately
+     * spelled rather than encoded as 0 — a shop that typed 0 by accident must
+     * not get an unlimited coupon out of it.
+     */
+    maxUses: z.union([z.coerce.number().int().min(1).max(10000), z.null()]).optional(),
   })
   .strict();
 
@@ -71,6 +99,9 @@ const create: RequestHandler = async (req, res) => {
        deciding by hand. */
     checkoutId: null,
     ...(body.note ? { note: body.note } : {}),
+    ...(body.code ? { code: body.code } : {}),
+    ...(body.validHours ? { validHours: body.validHours } : {}),
+    ...(body.maxUses !== undefined ? { maxUses: body.maxUses } : {}),
     actor: { adminId: req.auth?.adminId ?? null, name: req.auth?.email ?? "Admin" },
   });
 

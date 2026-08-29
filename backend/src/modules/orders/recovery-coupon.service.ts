@@ -6,6 +6,7 @@ import {
   COUPON_ALPHABET,
   COUPON_LENGTH,
   type RecoveryCouponRow,
+  type RecoveryCouponStatus,
 } from "../../db/schema/recovery-coupons.js";
 import { abandonedCheckouts } from "../../db/schema/abandoned-checkouts.js";
 import { BadRequestError, ConflictError, NotFoundError } from "../../core/errors.js";
@@ -74,6 +75,8 @@ export interface CouponDto {
   code: string;
   state: CouponState;
   cartValue: number;
+  /** Who it was made for, when it was not made for a lead. */
+  note: string;
   expiresAt: string;
   usedAt: string | null;
   usedOrderId: string | null;
@@ -101,6 +104,7 @@ function toDto(row: RecoveryCouponRow): CouponDto {
     code: row.code,
     state: stateOf(row),
     cartValue: row.cartValue,
+    note: row.note,
     expiresAt: row.expiresAt.toISOString(),
     usedAt: row.usedAt?.toISOString() ?? null,
     usedOrderId: row.usedOrderId ?? null,
@@ -143,21 +147,18 @@ export async function sweepExpired(executor: DatabaseExecutor = getDb()): Promis
 /* -------------------------------------------------------------------------- */
 
 /**
- * Creates the offer for one lead, or hands back the one already outstanding.
+ * The lead an offer is being made to, with the reasons it may not be.
  *
- * Returning the existing coupon rather than refusing is the point: an operator
- * who taps Generate twice, or comes back to a lead tomorrow, wants the code to
- * read the customer — not an error telling them one already exists somewhere
- * they cannot see.
+ * Only reached when a lead id was supplied. A coupon minted from the Coupons
+ * page has no lead, so none of these checks have anything to run against —
+ * see the note on the minimum below.
  */
-export async function generate(input: {
-  checkoutId: string;
-  actor: LeadActor;
-}): Promise<{ coupon: CouponDto; created: boolean }> {
-  const db = getDb();
-  const settings = await getSettings(db);
-
-  const leadRows = await db
+async function loadLeadForOffer(
+  checkoutId: string,
+  minCartValue: number,
+  db: DatabaseExecutor,
+): Promise<{ id: string; estimatedValue: number }> {
+  const rows = await db
     .select({
       id: abandonedCheckouts.id,
       estimatedValue: abandonedCheckouts.estimatedValue,
@@ -165,10 +166,10 @@ export async function generate(input: {
       reason: abandonedCheckouts.reason,
     })
     .from(abandonedCheckouts)
-    .where(eq(abandonedCheckouts.id, input.checkoutId))
+    .where(eq(abandonedCheckouts.id, checkoutId))
     .limit(1);
 
-  const lead = leadRows[0];
+  const lead = rows[0];
   if (!lead) throw new NotFoundError("That incomplete checkout no longer exists.");
 
   /* Somebody already bought. Handing them a discount now is paying for a sale
@@ -184,31 +185,65 @@ export async function generate(input: {
     );
   }
 
+  if (minCartValue > 0 && lead.estimatedValue < minCartValue) {
+    throw new BadRequestError(
+      `Offers start at ${minCartValue} taka. This cart is ${lead.estimatedValue}.`,
+    );
+  }
+
+  return { id: lead.id, estimatedValue: lead.estimatedValue };
+}
+
+/**
+ * Creates an offer, for a lead or for nobody in particular.
+ *
+ * WITH A LEAD it returns the one already outstanding rather than minting a
+ * second. That is the point: an operator who taps Generate twice, or comes back
+ * to a lead tomorrow, wants the code to read the customer — not an error about
+ * one existing somewhere they cannot see.
+ *
+ * WITHOUT ONE — the Coupons page, for a customer the desk is on the phone to
+ * who was never in the call list — every guard above is skipped, because each
+ * needs a lead to test. That includes the minimum-basket setting: there is no
+ * basket to measure, so the rule cannot be applied and the person typing it is
+ * deciding by hand. The page says so; it must not let an owner believe the
+ * floor is protecting them here.
+ *
+ * Nothing stops several standalone coupons being live at once. The
+ * one-active-per-lead index is partial on `abandoned_checkout_id is not null`
+ * precisely so it does not catch them.
+ */
+export async function generate(input: {
+  checkoutId?: string | null | undefined;
+  /** Who it is for. Only meaningful without a lead; a lead knows already. */
+  note?: string | undefined;
+  actor: LeadActor;
+}): Promise<{ coupon: CouponDto; created: boolean }> {
+  const db = getDb();
+  const settings = await getSettings(db);
+
   /* Clear out anything that has timed out, so the one-active-per-lead index
      does not mistake last week's dead offer for a live one. */
   await sweepExpired(db);
 
-  const existing = await db
-    .select()
-    .from(recoveryCoupons)
-    .where(
-      and(
-        eq(recoveryCoupons.abandonedCheckoutId, lead.id),
-        eq(recoveryCoupons.status, "active"),
-      ),
-    )
-    .limit(1);
+  const lead = input.checkoutId
+    ? await loadLeadForOffer(input.checkoutId, settings.recoveryCouponMinCartValue, db)
+    : null;
 
-  const live = existing[0];
-  if (live) return { coupon: toDto(live), created: false };
+  if (lead) {
+    const existing = await db
+      .select()
+      .from(recoveryCoupons)
+      .where(
+        and(
+          eq(recoveryCoupons.abandonedCheckoutId, lead.id),
+          eq(recoveryCoupons.status, "active"),
+        ),
+      )
+      .limit(1);
 
-  if (
-    settings.recoveryCouponMinCartValue > 0 &&
-    lead.estimatedValue < settings.recoveryCouponMinCartValue
-  ) {
-    throw new BadRequestError(
-      `Offers start at ${settings.recoveryCouponMinCartValue} taka. This cart is ${lead.estimatedValue}.`,
-    );
+    const live = existing[0];
+    if (live) return { coupon: toDto(live), created: false };
   }
 
   const expiresAt = new Date(Date.now() + settings.recoveryCouponHours * 60 * 60 * 1000);
@@ -224,8 +259,11 @@ export async function generate(input: {
         .insert(recoveryCoupons)
         .values({
           code,
-          abandonedCheckoutId: lead.id,
-          cartValue: lead.estimatedValue,
+          abandonedCheckoutId: lead?.id ?? null,
+          /* Zero MEANS zero for a standalone coupon — there was no basket, not
+             a free one. The report reads it as such. */
+          cartValue: lead?.estimatedValue ?? 0,
+          note: lead ? "" : (input.note ?? "").trim(),
           expiresAt,
           createdBy: input.actor.adminId,
         })
@@ -234,16 +272,19 @@ export async function generate(input: {
       const row = inserted[0];
       if (!row) throw new Error("The coupon was not written.");
 
-      await recordLeadEvent({
-        checkoutId: lead.id,
-        type: "coupon_generated",
-        detail: { code: row.code, expiresAt: expiresAt.toISOString() },
-        actor: input.actor,
-      });
+      /* Only a lead has a history to write to. */
+      if (lead) {
+        await recordLeadEvent({
+          checkoutId: lead.id,
+          type: "coupon_generated",
+          detail: { code: row.code, expiresAt: expiresAt.toISOString() },
+          actor: input.actor,
+        });
+      }
 
       log.info(
-        { code: row.code, checkoutId: lead.id, cartValue: lead.estimatedValue },
-        "Recovery coupon issued",
+        { code: row.code, checkoutId: lead?.id ?? null, cartValue: row.cartValue },
+        lead ? "Recovery coupon issued" : "Standalone coupon issued",
       );
 
       return { coupon: toDto(row), created: true };
@@ -253,8 +294,8 @@ export async function generate(input: {
       /* The other unique index — one active coupon per lead. Two operators, or
          two taps, arriving together: the loser reads back the winner's coupon
          instead of failing, which is the same answer they would have got a
-         moment earlier. */
-      if (message.includes("recovery_coupons_one_active_per_lead_idx")) {
+         moment earlier. Cannot fire without a lead. */
+      if (lead && message.includes("recovery_coupons_one_active_per_lead_idx")) {
         const raced = await db
           .select()
           .from(recoveryCoupons)
@@ -521,4 +562,144 @@ export async function noteRedemption(
     detail: { code: coupon.code, orderNumber: order.orderNumber },
     actor: { adminId: null, name: "Customer" },
   });
+}
+
+/* -------------------------------------------------------------------------- */
+/* The whole ledger                                                           */
+/* -------------------------------------------------------------------------- */
+
+export interface CouponListRow extends CouponDto {
+  /** The lead's number, when the coupon was made for one. */
+  phone: string | null;
+  /** The order it was spent on. */
+  orderNumber: string | null;
+}
+
+export interface CouponTotals {
+  created: number;
+  active: number;
+  used: number;
+  expired: number;
+  cancelled: number;
+  /** Delivery charges the shop absorbed on the orders these were spent on. */
+  deliveryCost: number;
+}
+
+/**
+ * Every coupon, newest first.
+ *
+ * Filtered by the state a human sees rather than by the stored column: a
+ * coupon whose 24 hours ran out ten minutes ago must appear under "Expired"
+ * whether or not the nightly sweep has been anywhere near it. Same rule as
+ * `stateOf` — the timestamp decides, the column is a label.
+ */
+export async function listCoupons(
+  options: { state?: CouponState | undefined; limit?: number | undefined } = {},
+): Promise<CouponListRow[]> {
+  const conditions = {
+    active: sql`c.status = 'active' and c.expires_at > now()`,
+    expired: sql`c.status = 'expired' or (c.status = 'active' and c.expires_at <= now())`,
+    used: sql`c.status = 'used'`,
+    cancelled: sql`c.status = 'cancelled'`,
+  } as const;
+
+  const filter = options.state ? sql`where ${conditions[options.state]}` : sql``;
+  const limit = Math.min(Math.max(options.limit ?? 100, 1), 500);
+
+  const rows = await getDb().execute(sql`
+    select
+      c.id, c.code, c.status, c.cart_value, c.note,
+      c.expires_at, c.used_at, c.used_order_id, c.created_at,
+      a.phone as phone,
+      o.order_number as order_number
+    from recovery_coupons c
+    left join abandoned_checkouts a on a.id = c.abandoned_checkout_id
+    left join orders o on o.id = c.used_order_id and o.deleted_at is null
+    ${filter}
+    order by c.created_at desc
+    limit ${limit}
+  `);
+
+  /* Raw SQL hands back `unknown` per column, and `String(unknown)` on a null or
+     a Date turns into "[object Object]" in the middle of a table. */
+  const text = (value: unknown): string | null =>
+    typeof value === "string" ? value : value instanceof Date ? value.toISOString() : null;
+
+  return rows.rows.map((row) => {
+    const expiresAt = new Date(text(row.expires_at) ?? 0);
+    const status = String(row.status) as RecoveryCouponStatus;
+    const usedAtText = text(row.used_at);
+
+    return {
+      id: String(row.id),
+      code: String(row.code),
+      state: stateOf({ status, expiresAt }),
+      cartValue: Number(row.cart_value ?? 0),
+      note: typeof row.note === "string" ? row.note : "",
+      expiresAt: expiresAt.toISOString(),
+      usedAt: usedAtText ? new Date(usedAtText).toISOString() : null,
+      usedOrderId: text(row.used_order_id),
+      createdAt: new Date(text(row.created_at) ?? 0).toISOString(),
+      phone: typeof row.phone === "string" ? row.phone : null,
+      orderNumber: typeof row.order_number === "string" ? row.order_number : null,
+    };
+  });
+}
+
+/**
+ * What was issued, what was spent, and what it cost.
+ *
+ * Lives here rather than in the recovery report because it is a fact about
+ * coupons, not about leads — and the Coupons page and that report must never
+ * be able to disagree about it.
+ *
+ * The cost is what those orders WOULD have been charged, priced from the
+ * settings row: the order itself says zero, which is the entire point of the
+ * offer, so the price of it appears nowhere on the order. Counted by zone and
+ * multiplied here rather than summed in SQL — bound as query parameters the two
+ * charges come back as text, and Postgres will not sum text.
+ */
+export async function totals(range?: { from: string; to: string }): Promise<CouponTotals> {
+  const settings = await getSettings();
+  const window = range
+    ? sql`where (c.created_at at time zone 'Asia/Dhaka')::date
+            between ${range.from}::date and ${range.to}::date`
+    : sql``;
+
+  const rows = await getDb().execute(sql`
+    select
+      count(*)::int                                            as created,
+      count(*) filter (
+        where c.status = 'active' and c.expires_at > now()
+      )::int                                                   as active,
+      count(*) filter (where c.status = 'used')::int           as used,
+      count(*) filter (
+        where c.status = 'expired'
+           or (c.status = 'active' and c.expires_at <= now())
+      )::int                                                   as expired,
+      count(*) filter (where c.status = 'cancelled')::int      as cancelled,
+      count(*) filter (
+        where o.id is not null and o.delivery_zone = 'inside_dhaka'
+      )::int                                                   as used_inside,
+      count(*) filter (
+        where o.id is not null and o.delivery_zone <> 'inside_dhaka'
+      )::int                                                   as used_outside
+    from recovery_coupons c
+    left join orders o on o.id = c.used_order_id and o.deleted_at is null
+    ${window}
+  `);
+
+  const row = rows.rows[0] ?? {};
+  const n = (key: string): number => Number(row[key] ?? 0);
+
+  return {
+    created: n("created"),
+    active: n("active"),
+    used: n("used"),
+    expired: n("expired"),
+    cancelled: n("cancelled"),
+    deliveryCost:
+      n("used_inside") * settings.deliveryChargeInsideDhaka +
+      n("used_outside") * settings.deliveryChargeOutsideDhaka,
+  };
 }

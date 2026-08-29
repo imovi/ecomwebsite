@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { getDb } from "../../db/client.js";
-import { getSettings } from "../settings/settings.service.js";
+import * as coupons from "../orders/recovery-coupon.service.js";
 import { shopDay, type DateRange, type RangePreset } from "./profit.service.js";
 
 /**
@@ -157,63 +157,6 @@ async function leadTotals(range: DateRange): Promise<Record<string, number>> {
 }
 
 /**
- * The coupons, and what they cost.
- *
- * Expiry is computed from the timestamp rather than read from the status
- * column, so this agrees with itself whether or not the sweep has run — see
- * the note on `recovery_coupons.status`.
- *
- * The cost is what those orders WOULD have been charged, taken from the current
- * settings: the order itself says zero, which is the entire point of the offer,
- * so the price of it appears nowhere on the order.
- */
-async function couponTotals(range: DateRange): Promise<Record<string, number>> {
-  const settings = await getSettings();
-
-  const rows = await getDb().execute(sql`
-    select
-      count(*)::int                                                     as generated,
-      count(*) filter (
-        where c.status = 'active' and c.expires_at > now()
-      )::int                                                            as active,
-      count(*) filter (where c.status = 'used')::int                    as used,
-      count(*) filter (
-        where c.status = 'expired'
-           or (c.status = 'active' and c.expires_at <= now())
-      )::int                                                            as expired,
-      count(*) filter (where c.status = 'cancelled')::int               as cancelled,
-
-      -- Counted by zone and priced in TypeScript rather than summed here.
-      -- Binding the two charges as query parameters made them text, and
-      -- summing text is not a thing Postgres will do -- but the readable
-      -- reason to split it is that the charges belong to the settings row
-      -- rather than to this query.
-      count(*) filter (
-        where o.id is not null and o.delivery_zone = 'inside_dhaka'
-      )::int                                                            as used_inside,
-      count(*) filter (
-        where o.id is not null and o.delivery_zone <> 'inside_dhaka'
-      )::int                                                            as used_outside
-    from recovery_coupons c
-    left join orders o
-      on o.id = c.used_order_id and o.deleted_at is null
-    where ${shopDay(sql`c.created_at`)} between ${range.from}::date and ${range.to}::date
-  `);
-
-  const row = rows.rows[0] ?? {};
-  return {
-    generated: num(row, "generated"),
-    active: num(row, "active"),
-    used: num(row, "used"),
-    expired: num(row, "expired"),
-    cancelled: num(row, "cancelled"),
-    deliveryCost:
-      num(row, "used_inside") * settings.deliveryChargeInsideDhaka +
-      num(row, "used_outside") * settings.deliveryChargeOutsideDhaka,
-  };
-}
-
-/**
  * Which products people put down and walk away from.
  *
  * Read out of the cart snapshot on the lead rather than by joining the
@@ -310,7 +253,10 @@ export async function recoveryReport(
 ): Promise<RecoveryReport> {
   const [leads, couponRow, products, reasons, staff] = await Promise.all([
     leadTotals(range),
-    couponTotals(range),
+    /* The coupon figures come from the coupon service, not from a second query
+       here. The Coupons page reads the same function, so the two screens cannot
+       drift into disagreeing about how many were used. */
+    coupons.totals(range),
     byProduct(range),
     byReason(range),
     byStaff(range),
@@ -321,14 +267,14 @@ export async function recoveryReport(
     helpMessagesSent: leads.helpSent ?? 0,
     couponOffersSent: leads.offersSent ?? 0,
     contacted: leads.contacted ?? 0,
-    couponsGenerated: couponRow.generated ?? 0,
-    couponsActive: couponRow.active ?? 0,
-    couponsUsed: couponRow.used ?? 0,
-    couponsExpired: couponRow.expired ?? 0,
-    couponsCancelled: couponRow.cancelled ?? 0,
+    couponsGenerated: couponRow.created,
+    couponsActive: couponRow.active,
+    couponsUsed: couponRow.used,
+    couponsExpired: couponRow.expired,
+    couponsCancelled: couponRow.cancelled,
     recoveredOrders: leads.recovered ?? 0,
     recoveredRevenue: leads.recoveredRevenue ?? 0,
-    freeDeliveryCost: couponRow.deliveryCost ?? 0,
+    freeDeliveryCost: couponRow.deliveryCost,
   };
 
   return {

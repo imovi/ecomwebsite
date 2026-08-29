@@ -9,10 +9,10 @@ import { AsyncState, Card, CardHeader, TableWrap } from "./ui";
 /**
  * Whether chasing incomplete checkouts is paying for itself.
  *
- * Lives on the Performance page rather than on a screen of its own. Recovery is
- * a step in the funnel already drawn above it — checkout started, order placed,
- * order delivered — and putting it somewhere separate would give the shop two
- * pages that answer the same question with different numbers.
+ * The Report tab on the Abandoned page. It answers one question — did chasing
+ * these customers bring any of them back — and deliberately no longer counts
+ * coupons: those are objects with their own page, and the same five figures on
+ * two screens is how a shop ends up with two answers to one question.
  *
  * THE COLUMN THAT KEEPS THE REST HONEST
  * "Came back on their own" counts leads that were recovered with nobody having
@@ -174,22 +174,15 @@ function Body({ data }: { data: RecoveryData }) {
           )}
       </div>
 
-      {/* --- The offers --------------------------------------------------- */}
-      <div>
-        <h3 className="mb-2 text-caption font-medium text-ink">Offers</h3>
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-          <Stat label="Created" value={String(summary.couponsGenerated)} />
-          <Stat label="Still running" value={String(summary.couponsActive)} />
-          <Stat label="Used" value={String(summary.couponsUsed)} tone="good" />
-          <Stat label="Ran out" value={String(summary.couponsExpired)} />
-          <Stat label="Cancelled" value={String(summary.couponsCancelled)} />
-        </div>
-        <p className="mt-2 text-micro text-muted">
-          {summary.couponsGenerated === 0
-            ? "No offers have been made in this period."
-            : `${rates.couponUsePercent}% of offers were used. Recovery rate among customers who were contacted: ${rates.recoveryPercent}%.`}
-        </p>
-      </div>
+      {/* The coupon counts used to sit here. They live on the Coupons page now
+          — the same five figures on two screens is how a shop ends up with two
+          answers to one question. What stays is the line that belongs to THIS
+          report: whether being contacted made a difference. */}
+      <p className="rounded-sm bg-surface px-3 py-2 text-caption text-ink-soft">
+        {summary.contacted === 0
+          ? "Nobody has been messaged or offered anything in this period."
+          : `${rates.recoveryPercent}% of the customers who were contacted came back. Every coupon made, used and expired is on the Coupons page.`}
+      </p>
 
       {/* --- Where it is happening ---------------------------------------- */}
       {data.byProduct.length > 0 && (

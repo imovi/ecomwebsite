@@ -54,12 +54,16 @@ export const recoveryCoupons = pgTable(
     code: text("code").notNull(),
 
     /**
-     * The lead it was made for.
+     * The lead it was made for, or null.
      *
      * `set null` rather than cascade: a deleted lead must not revoke a code the
      * customer is already holding. The coupon outlives the record of why it
      * was issued, which is the right way round — one of them is a promise made
      * to somebody outside the shop.
+     *
+     * Null is also the normal state for a coupon minted from the Coupons page,
+     * which is why the one-active-per-lead index below is partial on `is not
+     * null`: any number of standalone coupons may be live at once.
      */
     abandonedCheckoutId: uuid("abandoned_checkout_id").references(
       () => abandonedCheckouts.id,
@@ -68,6 +72,19 @@ export const recoveryCoupons = pgTable(
 
     /** The cart's worth at the moment of the offer, frozen for the report. */
     cartValue: integer("cart_value").notNull().default(0),
+
+    /**
+     * Who it was made for, when it was not made for a lead.
+     *
+     * A coupon minted from the Coupons page has no abandoned checkout behind it
+     * — the desk is on the phone to somebody who was never in the call list —
+     * so the name and number a lead would have supplied are absent. Without
+     * this the standalone list is a column of anonymous codes.
+     *
+     * Empty for every coupon issued from a lead: those already know whose they
+     * are.
+     */
+    note: text("note").notNull().default(""),
 
     /**
      * What the shop last recorded. `expiresAt` is what actually decides.

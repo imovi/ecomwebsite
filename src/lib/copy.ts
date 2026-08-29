@@ -135,6 +135,10 @@ export const copy = {
     zoneOutside: "Outside Dhaka",
     zoneSuggested: (area: string) => `Matched “${area}”. Change it if wrong.`,
     zoneManual: "Choose your delivery area",
+    /* The row a shopper taps to open the field. Deliberately a question — a
+       customer who was not sent a code reads it, answers "no" in their head and
+       moves on, which is not what a banner saying "SAVE NOW" would get. */
+    couponPrompt: "Have a coupon code?",
     couponPlaceholder: "Coupon code",
     couponApply: "Apply",
     couponRemove: "Remove",

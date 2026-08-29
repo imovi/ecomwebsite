@@ -76,6 +76,9 @@ const ALLOWED_PATHS = [
   /^admin\/ips$/,
   /^admin\/ips\/[^/]+$/,
   /^admin\/abandoned(\/.*)?$/,
+  /* Coupons as objects: the ledger, minting one for nobody in particular, and
+     withdrawing one that has not been spent. */
+  /^admin\/coupons(\/.*)?$/,
   /^admin\/courier\/(status|test|sync|webhook-token)$/,
   /^admin\/courier\/(order|shipment)\/[^/]+(\/send|\/sync)?$/,
   /^auth\/me$/,

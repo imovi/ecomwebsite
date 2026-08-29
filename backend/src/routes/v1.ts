@@ -30,6 +30,7 @@ import {
   abandonedAdminRouter,
   abandonedPublicRouter,
 } from "../modules/orders/abandoned.routes.js";
+import { couponsAdminRouter } from "../modules/orders/coupon.routes.js";
 import { courierAdminRouter } from "../modules/courier/courier.routes.js";
 import { webhookRouter } from "../modules/courier/webhook.routes.js";
 import { marketingAdminRouter } from "../modules/marketing/marketing.routes.js";
@@ -134,6 +135,8 @@ v1Router.use("/admin/marketing", marketingAdminRouter);
    Customers who started a checkout and left. `manager` and above: this is the
    order desk's daily work, not a commercial setting. */
 v1Router.use("/admin/abandoned", abandonedAdminRouter);
+/* Coupons as objects. The lead-shaped routes stay on /admin/abandoned. */
+v1Router.use("/admin/coupons", couponsAdminRouter);
 
 /* --- Courier -------------------------------------------------------------
    Handing parcels over and reading their status back. `manager` and above:

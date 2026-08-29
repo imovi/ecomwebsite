@@ -225,6 +225,13 @@
       "when": 1786634568319,
       "tag": "0031_recovery_coupons",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1786634569319,
+      "tag": "0032_coupon_note",
+      "breakpoints": true
     }
   ]
 }

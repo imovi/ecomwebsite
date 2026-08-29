@@ -203,12 +203,22 @@ function CouponField({ applied, result, onApply, onRemove, busy }: CouponFieldPr
 
   if (!open) {
     return (
+      /* Green, and the same green the applied state below uses — so tapping
+         this and getting a green confirmation is one continuous thing rather
+         than two unrelated boxes. Not red: red is the price colour on this
+         shop and would read as an error.
+
+         It used to be a line of 13px grey text, which is exactly the treatment
+         of the "pay the courier" hint sitting under it — so the one tappable
+         thing in this panel looked like the label that is not tappable, and
+         customers holding a code could not find it. */
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="mt-3 text-caption text-muted underline-offset-4 hover:text-ink hover:underline"
+        className="mt-3 flex w-full items-center justify-center gap-2 rounded-sm border border-positive-soft bg-positive-soft px-3 py-2.5 text-body font-medium text-positive transition-opacity hover:opacity-85"
       >
-        Have a coupon code?
+        <Icon name="bolt" size={16} />
+        {copy.checkout.couponPrompt}
       </button>
     );
   }
@@ -217,10 +227,10 @@ function CouponField({ applied, result, onApply, onRemove, busy }: CouponFieldPr
     <div className="mt-3">
       {working ? (
         <div className="flex items-center justify-between gap-3 rounded-sm bg-positive-soft px-3 py-2">
-          <p className="text-caption font-medium text-positive">
+          <p className="text-body font-medium text-positive">
             {copy.checkout.couponApplied(applied)}
             {result.saved > 0 && (
-              <span className="block font-normal">
+              <span className="block text-caption font-normal">
                 Free delivery — you save {formatTaka(result.saved)}.
               </span>
             )}
@@ -262,7 +272,7 @@ function CouponField({ applied, result, onApply, onRemove, busy }: CouponFieldPr
                as "we do not recognise that" from the shop, which is what
                happened; a browser refusing to submit it says the customer typed
                it wrong, which may not be true and which they cannot fix. */
-            className="tnum min-w-0 flex-1 rounded-sm border border-line bg-white px-3 py-2 text-caption uppercase tracking-wide text-ink placeholder:normal-case placeholder:tracking-normal placeholder:text-muted focus:border-ink focus:outline-none"
+            className="tnum min-w-0 flex-1 rounded-sm border border-line bg-white px-3 py-2.5 text-body uppercase tracking-wide text-ink placeholder:normal-case placeholder:tracking-normal placeholder:text-muted focus:border-ink focus:outline-none"
           />
           <button
             /* `button`, not `submit` — inside the checkout form a submit button
@@ -270,7 +280,7 @@ function CouponField({ applied, result, onApply, onRemove, busy }: CouponFieldPr
             type="button"
             onClick={apply}
             disabled={busy || draft.trim() === ""}
-            className="shrink-0 rounded-sm border border-line px-3 py-2 text-caption font-medium text-ink hover:bg-surface disabled:opacity-40"
+            className="shrink-0 rounded-sm border border-line px-3 py-2.5 text-body font-medium text-ink hover:bg-surface disabled:opacity-40"
           >
             {copy.checkout.couponApply}
           </button>
@@ -283,7 +293,7 @@ function CouponField({ applied, result, onApply, onRemove, busy }: CouponFieldPr
       {result && !working && result.message && (
         <p
           className={cn(
-            "mt-2 text-micro",
+            "mt-2 text-caption",
             refused ? "text-sale" : "text-muted",
           )}
         >

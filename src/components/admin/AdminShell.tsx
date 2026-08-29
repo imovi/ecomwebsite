@@ -42,6 +42,9 @@ const NAV: NavItem[] = [
      have not happened yet. Primary for the same reason — this is money that
      has not been lost, only left. */
   { href: "/admin/abandoned", label: "Abandoned", icon: "cart", primary: true },
+  /* Under Abandoned because most coupons are born there. This page is for the
+     ones that are not — and for seeing every code in one list. */
+  { href: "/admin/coupons", label: "Coupons", icon: "checkCircle" },
   { href: "/admin/products", label: "Products", icon: "mobile", primary: true },
   { href: "/admin/profit", label: "Profit", icon: "cash", primary: true },
   /* Directly under Profit, and deliberately not a primary: the two are read

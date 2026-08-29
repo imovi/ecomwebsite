@@ -660,3 +660,165 @@ describe("recovery — the report", () => {
     assert.equal(anonymous.status, 401);
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* Coupons with no lead behind them                                           */
+/* -------------------------------------------------------------------------- */
+
+describe("recovery — coupons made for nobody in particular", () => {
+  async function mint(note?: string) {
+    return api<Envelope<{ coupon: Coupon & { note: string }; created: boolean }>>(
+      ctx.baseUrl,
+      "/api/v1/admin/coupons",
+      {
+        method: "POST",
+        accessToken: adminToken,
+        body: note === undefined ? {} : { note },
+      },
+    );
+  }
+
+  it("mints one with no abandoned checkout behind it", async () => {
+    const result = await mint("Rahim — phone order");
+
+    assert.equal(result.status, 200);
+    assert.equal(result.body.data.created, true);
+    assert.match(result.body.data.coupon.code, /^[ABCDEFGHJKLMNPQRTUVWXYZ2346789]{6}$/);
+    assert.equal(result.body.data.coupon.note, "Rahim — phone order");
+    /* No basket, so zero MEANS zero rather than "a free one". */
+    assert.equal(result.body.data.coupon.cartValue, 0);
+  });
+
+  it("lets several be live at once", async () => {
+    const first = await mint("one");
+    const second = await mint("two");
+    const third = await mint("three");
+
+    /* The one-active-per-lead index is partial on `abandoned_checkout_id is not
+       null` precisely so it cannot catch these. If it ever stops being partial
+       this is the test that says so. */
+    for (const result of [first, second, third]) {
+      assert.equal(result.status, 200);
+      assert.equal(result.body.data.coupon.state, "active");
+    }
+
+    const codes = new Set([
+      first.body.data.coupon.code,
+      second.body.data.coupon.code,
+      third.body.data.coupon.code,
+    ]);
+    assert.equal(codes.size, 3);
+  });
+
+  it("ignores the smallest-basket rule, because there is no basket", async () => {
+    await patchSettings({ recovery: { couponMinCartValue: 5000 } });
+
+    /* A lead below the floor is still refused... */
+    const lead = await createLead(nextPhone());
+    const refusedForLead = await issueCoupon(lead.id);
+    assert.equal(refusedForLead.status, 400);
+
+    /* ...and a standalone coupon is not, because the rule has nothing to
+       measure. The panel says so where one is created; this pins the
+       behaviour so it cannot change silently. */
+    const standalone = await mint("no basket to measure");
+    assert.equal(standalone.status, 200);
+
+    await patchSettings({ recovery: { couponMinCartValue: 0 } });
+  });
+
+  it("is spent exactly like a lead's, and refused the second time", async () => {
+    const { code } = (await mint("walk-in")).body.data.coupon;
+
+    const first = await placeOrder(nextPhone(), code);
+    assert.equal(first.status, 201);
+    assert.equal(first.body.data.order.deliveryCharge, 0);
+
+    const second = await placeOrder(nextPhone(), code);
+    assert.equal(second.status, 409);
+    assert.match(second.body.error!.message, /already been used/i);
+  });
+
+  it("can be withdrawn before it is spent, and not after", async () => {
+    const live = (await mint("withdraw me")).body.data.coupon;
+
+    const withdrawn = await api(ctx.baseUrl, `/api/v1/admin/coupons/${live.id}`, {
+      method: "DELETE",
+      accessToken: adminToken,
+    });
+    assert.equal(withdrawn.status, 200);
+
+    const refused = await placeOrder(nextPhone(), live.code);
+    assert.equal(refused.status, 409);
+
+    const spent = (await mint("already spent")).body.data.coupon;
+    await placeOrder(nextPhone(), spent.code);
+
+    const tooLate = await api(ctx.baseUrl, `/api/v1/admin/coupons/${spent.id}`, {
+      method: "DELETE",
+      accessToken: adminToken,
+    });
+    /* The order exists. Taking the coupon back now would not take the free
+       delivery back with it. */
+    assert.equal(tooLate.status, 409);
+  });
+
+  it("lists every coupon with the state a human would read", async () => {
+    const listed = await api<
+      Envelope<{
+        coupons: (Coupon & { note: string; phone: string | null; orderNumber: string | null })[];
+        totals: Record<string, number>;
+      }>
+    >(ctx.baseUrl, "/api/v1/admin/coupons", { accessToken: adminToken });
+
+    assert.equal(listed.status, 200);
+    const { coupons, totals } = listed.body.data;
+
+    assert.ok(coupons.length > 0);
+    assert.ok(totals.created! > 0);
+    assert.ok(totals.used! > 0);
+
+    /* A coupon from a lead carries the number it was sent to; a standalone one
+       carries the note instead. Without one or the other the list is a column
+       of anonymous codes. */
+    assert.ok(coupons.some((row) => row.phone !== null));
+    assert.ok(coupons.some((row) => row.note !== ""));
+
+    /* Spent ones name the order they were spent on. */
+    const used = coupons.find((row) => row.state === "used");
+    assert.ok(used?.orderNumber, "a used coupon did not name its order");
+  });
+
+  it("filters on the state a human sees, not the stored word", async () => {
+    const stale = (await mint("about to expire")).body.data.coupon;
+    await expireCoupon(stale.code);
+
+    /* `status` still reads 'active' in the row — the sweep has not run. The
+       filter must go by `expires_at` anyway, or the panel shows a dead coupon
+       as live for as long as it takes a scheduler to notice. */
+    const expired = await api<Envelope<{ coupons: { code: string }[] }>>(
+      ctx.baseUrl,
+      "/api/v1/admin/coupons?state=expired",
+      { accessToken: adminToken },
+    );
+    assert.ok(expired.body.data.coupons.some((row) => row.code === stale.code));
+
+    const active = await api<Envelope<{ coupons: { code: string }[] }>>(
+      ctx.baseUrl,
+      "/api/v1/admin/coupons?state=active",
+      { accessToken: adminToken },
+    );
+    assert.ok(!active.body.data.coupons.some((row) => row.code === stale.code));
+  });
+
+  it("is closed to the public", async () => {
+    const listed = await api(ctx.baseUrl, "/api/v1/admin/coupons");
+    assert.equal(listed.status, 401);
+
+    const created = await api(ctx.baseUrl, "/api/v1/admin/coupons", {
+      method: "POST",
+      body: {},
+    });
+    assert.equal(created.status, 401);
+  });
+});

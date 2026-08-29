@@ -179,6 +179,16 @@ export const products = pgTable(
     stockStatus: stockStatusEnum("stock_status").notNull().default("out_of_stock"),
     /** Below this, the storefront may show an urgency hint. */
     lowStockThreshold: integer("low_stock_threshold").notNull().default(5),
+    /**
+     * When the shop was last warned that this one is running down.
+     *
+     * Set when the warning goes out, cleared when stock climbs back above the
+     * threshold. It means "have we mentioned this dip", not "has this ever been
+     * low" — without it the five-minute scheduler would repeat the same warning
+     * twelve times an hour, which is how an alert gets muted before the night
+     * it matters.
+     */
+    lowStockAlertedAt: timestamp("low_stock_alerted_at", { withTimezone: true }),
 
     /* --- Visibility ----------------------------------------------------- */
     status: productStatusEnum("status").notNull().default("draft"),

@@ -4,6 +4,7 @@ import { config } from "../../config/index.js";
 import { authenticate, requireRole } from "../../middleware/authenticate.js";
 import { sendSuccess } from "../../core/response.js";
 import { BadRequestError, TooManyRequestsError } from "../../core/errors.js";
+import { getPoolStats } from "../../db/client.js";
 import { getSettings } from "../settings/settings.service.js";
 import * as backup from "./backup.service.js";
 import * as telegram from "./telegram.service.js";
@@ -101,6 +102,28 @@ const status: RequestHandler = async (_req, res) => {
         })(),
         columns: sheets.SHEET_COLUMNS,
       },
+      /**
+       * How busy the database connections are, in the one place an owner looks
+       * when something feels wrong.
+       *
+       * These figures have always been on `/health/ready`, which is an endpoint
+       * for machines — nobody reads it, and nothing was watching it. The
+       * scheduler now warns on a standing queue; this is so the answer is also
+       * available on demand rather than only when it is already bad.
+       *
+       * `waiting` is the number that matters: connections in use is normal,
+       * requests QUEUED for one is the shop waiting on its own database.
+       */
+      database: (() => {
+        const pool = getPoolStats();
+        return {
+          driver: config.database.driver,
+          pool: pool ?? null,
+          /* Said as a verdict rather than three numbers, because "3 of 20 busy"
+             means nothing to somebody who has never sized a pool. */
+          healthy: pool === undefined || pool.waiting === 0,
+        };
+      })(),
     },
   });
 };

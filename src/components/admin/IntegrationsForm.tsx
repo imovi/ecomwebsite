@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { cn } from "@/lib/utils";
 import { adminApi, AdminApiError } from "@/lib/admin/client";
 import { useLoad } from "@/lib/admin/use-load";
 import { toast } from "@/lib/stores/toast-store";
@@ -43,6 +44,11 @@ interface IntegrationStatus {
     tab: string;
     serviceAccountEmail: string | null;
     columns: string[];
+  };
+  database: {
+    driver: string;
+    pool: { total: number; idle: number; waiting: number } | null;
+    healthy: boolean;
   };
 }
 
@@ -186,6 +192,8 @@ export function IntegrationsForm() {
                     : "Telegram: not sending yet"
                 }
               />
+
+              <DatabaseCard database={status.database} />
 
               <Card>
                 <CardHeader
@@ -801,5 +809,94 @@ function Steps({ steps }: { steps: string[] }) {
         </li>
       ))}
     </ol>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+
+/**
+ * How busy the database is, in words rather than numbers.
+ *
+ * The figures were always available on `/health/ready` — an endpoint for
+ * machines, which nobody reads and nothing was watching. What was missing was
+ * anywhere a person could look, and anything that says something when it goes
+ * wrong. The scheduler now warns on Telegram when a queue will not clear; this
+ * is the on-demand answer to "is the database why the site feels slow".
+ *
+ * `waiting` is the only number that matters. Connections in use is the pool
+ * working; requests QUEUED for a connection is the shop waiting on itself.
+ */
+function DatabaseCard({
+  database,
+}: {
+  database: {
+    driver: string;
+    pool: { total: number; idle: number; waiting: number } | null;
+    healthy: boolean;
+  };
+}) {
+  const { pool } = database;
+
+  return (
+    <Card>
+      <CardHeader
+        title="Database"
+        hint="Shared connections, like counters at a bank — customers queue for a free one rather than each opening their own."
+      />
+      <div className="flex flex-col gap-3 p-4">
+        {pool === null ? (
+          <p className="text-caption text-muted">
+            Running on the embedded development database, which has no pool to report.
+          </p>
+        ) : (
+          <>
+            <p
+              className={cn(
+                "rounded-sm px-3 py-2 text-caption",
+                database.healthy
+                  ? "bg-positive-soft text-positive"
+                  : "bg-warn-soft text-warn",
+              )}
+            >
+              {database.healthy
+                ? pool.total === 0
+                  ? "Idle — no connections open, which is normal when the shop is quiet."
+                  : `${pool.total - pool.idle} of ${pool.total} connections busy, nobody queued.`
+                : `${pool.waiting} request${pool.waiting === 1 ? "" : "s"} waiting for a free connection.`}
+            </p>
+
+            <dl className="grid grid-cols-3 gap-2 text-caption">
+              <Figure label="Open" value={pool.total} />
+              <Figure label="Free" value={pool.idle} />
+              {/* The one worth watching, and coloured only when it is not zero
+                  — a permanently red number teaches people to ignore it. */}
+              <Figure label="Queued" value={pool.waiting} warn={pool.waiting > 0} />
+            </dl>
+
+            <p className="text-micro text-muted">
+              A short queue during a burst is the pool doing its job. One that does not clear
+              means the server is short of CPU, not of settings — you will get a Telegram
+              message if that happens.
+            </p>
+          </>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function Figure({ label, value, warn }: { label: string; value: number; warn?: boolean }) {
+  return (
+    <div className="rounded-sm border border-line p-3">
+      <dt className="text-micro text-muted">{label}</dt>
+      <dd
+        className={cn(
+          "tnum text-title font-semibold",
+          warn ? "text-warn" : "text-ink",
+        )}
+      >
+        {value}
+      </dd>
+    </div>
   );
 }

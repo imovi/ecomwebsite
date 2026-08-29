@@ -678,6 +678,76 @@ export async function notifyAbandonedCheckout(
   return send(resolved, text);
 }
 
+/** One line per product or option that has run down. */
+export interface LowStockItem {
+  label: string;
+  left: number;
+  threshold: number;
+}
+
+/**
+ * "You are about to run out, and the ads are still running."
+ *
+ * The last line is the point of the message. The shop is not being told about
+ * inventory — it can look that up whenever it likes — it is being told it is
+ * paying for clicks it cannot fulfil, which is the part that is costing money
+ * while nobody is watching.
+ */
+export async function notifyLowStock(
+  items: LowStockItem[],
+  settings?: TelegramConfig,
+): Promise<SendOutcome> {
+  const resolved = settings ?? (await getSettings());
+  const out = items.filter((item) => item.left <= 0).length;
+  const low = items.length - out;
+
+  const headline =
+    out > 0
+      ? `⛔ <b>${out} out of stock</b>${low > 0 ? `, ${low} running low` : ""}`
+      : `📦 <b>${low} running low</b>`;
+
+  const text = [
+    headline,
+    "",
+    ...items.map((item) =>
+      item.left <= 0
+        ? `⛔ ${escapeHtml(item.label)} — <b>out</b>`
+        : `• ${escapeHtml(item.label)} — <b>${item.left}</b> left`,
+    ),
+    "",
+    "<i>Your ads keep spending whether or not you can deliver.</i>",
+  ].join("\n");
+
+  return send(resolved, text);
+}
+
+/**
+ * "The database has a queue, and it is not clearing."
+ *
+ * Deliberately rare and deliberately blunt. This fires only when every counter
+ * has been busy with people waiting across several checks in a row — a spike
+ * during a burst is normal and is not worth a message. A sustained queue means
+ * shoppers are waiting on the database to answer, which on a checkout page is
+ * an abandoned order.
+ */
+export async function notifyDatabaseQueue(
+  input: { waiting: number; total: number; minutes: number },
+  settings?: TelegramConfig,
+): Promise<SendOutcome> {
+  const resolved = settings ?? (await getSettings());
+
+  const text = [
+    "🐌 <b>The site is waiting on the database</b>",
+    "",
+    `${input.waiting} request${input.waiting === 1 ? "" : "s"} queued, all ${input.total} connections busy.`,
+    `Going on for about ${input.minutes} minutes.`,
+    "",
+    "<i>Shoppers are waiting for pages to load. If this keeps happening the server needs more CPU, not more settings.</i>",
+  ].join("\n");
+
+  return send(resolved, text);
+}
+
 export interface DailySummary {
   day: string;
   ordersPlaced: number;

@@ -5,6 +5,9 @@ import { orders } from "../../db/schema/orders.js";
 import { createLogger } from "../../core/logger.js";
 import { getSettings } from "../settings/settings.service.js";
 import { backupToTelegram } from "./backup.service.js";
+import { alertLowStock } from "./stock-alert.service.js";
+import { notifyDatabaseQueue } from "./telegram.service.js";
+import { getPoolStats } from "../../db/client.js";
 import { sweepExpired as sweepCoupons } from "../orders/recovery-coupon.service.js";
 import { purgeExpiredTrash, TRASH_RETENTION_DAYS } from "../orders/order.service.js";
 import * as telegram from "./telegram.service.js";
@@ -255,6 +258,68 @@ async function maybeSendBackup(): Promise<void> {
 }
 
 /**
+ * Warns once when a product runs down, and again only after it is restocked.
+ *
+ * Its own state lives in the database, not here, so a restart does not re-send
+ * everything the shop was already told about — see `stock-alert.service.ts`.
+ */
+async function checkStock(): Promise<void> {
+  const outcome = await alertLowStock();
+  if (outcome.sent) log.info({ count: outcome.count }, "Low stock warning sent");
+}
+
+/**
+ * Watches for a database queue that will not clear.
+ *
+ * WHAT THIS CAN AND CANNOT SEE
+ * It samples once per pass — every five minutes. A burst that saturates the
+ * pool for two seconds is invisible to it, and that is fine: a two-second queue
+ * is the pool doing its job. What it catches is saturation that PERSISTS, which
+ * is the shape that means shoppers are sitting on a spinner.
+ *
+ * Three consecutive samples before it says anything, so one unlucky moment does
+ * not wake anybody. Then silent until the queue clears, because an alert that
+ * repeats every five minutes for an hour is an alert that gets muted.
+ */
+const QUEUE_SAMPLES_BEFORE_ALERT = 3;
+
+let queuedSamples = 0;
+let queueReported = false;
+
+async function watchDatabaseQueue(): Promise<void> {
+  const stats = getPoolStats();
+  /* pglite has no pool. Development is not the place this matters. */
+  if (!stats) return;
+
+  if (stats.waiting > 0) {
+    queuedSamples += 1;
+  } else {
+    if (queueReported) {
+      log.info({ pool: stats }, "Database queue cleared");
+    }
+    queuedSamples = 0;
+    queueReported = false;
+    return;
+  }
+
+  if (queuedSamples < QUEUE_SAMPLES_BEFORE_ALERT || queueReported) return;
+
+  queueReported = true;
+  const minutes = Math.round((queuedSamples * SWEEP_INTERVAL_MS) / 60_000);
+
+  log.error(
+    { waiting: stats.waiting, total: stats.total, minutes },
+    "Database connection pool has a standing queue",
+  );
+
+  try {
+    await notifyDatabaseQueue({ waiting: stats.waiting, total: stats.total, minutes });
+  } catch (error) {
+    log.error({ err: error }, "Could not send the database queue alert");
+  }
+}
+
+/**
  * Retires recovery coupons whose 24 hours are up.
  *
  * Tidiness only. Nothing about money waits on this: redemption tests the
@@ -288,6 +353,8 @@ async function tick(): Promise<void> {
   try {
     await sweepAbandoned();
     await sweepExpiredCoupons();
+    await checkStock();
+    await watchDatabaseQueue();
     await maybeSendSummary();
     await maybeSendBackup();
     await sweepTrash();

@@ -58,6 +58,17 @@ export const productVariants = pgTable(
 
     stockQuantity: integer("stock_quantity").notNull().default(0),
 
+    /**
+     * When the shop was last warned that this option is running down.
+     *
+     * Tracked per variant as well as per product because a product's stock is
+     * the sum of its variants: a shirt with twenty in stock looks healthy while
+     * size M is gone, and that is exactly the case that quietly wastes ad money
+     * — the campaign keeps running, the customer who wanted M leaves, and the
+     * total never dips far enough to warn anybody.
+     */
+    lowStockAlertedAt: timestamp("low_stock_alerted_at", { withTimezone: true }),
+
     /* SET NULL rather than CASCADE: deleting an image must not delete the
        variant that happened to display it. */
     imageId: uuid("image_id").references(() => productImages.id, { onDelete: "set null" }),

@@ -422,7 +422,7 @@ export function OrderTabs({
     { key: "orders" as const, href: "/admin/orders", label: "Orders", count: 0 },
     {
       key: "incomplete" as const,
-      href: "/admin/incomplete",
+      href: "/admin/abandoned",
       label: "Incomplete",
       count: incompleteCount,
     },

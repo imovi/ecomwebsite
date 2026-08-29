@@ -225,7 +225,7 @@ export function Overview() {
                   </p>
                   {/* The screen is called "incomplete", not "abandoned" — the
                       API's word for it and the panel's are not the same one. */}
-                  <Button href="/admin/incomplete" variant="soft" size="sm">
+                  <Button href="/admin/abandoned" variant="soft" size="sm">
                     Call list
                   </Button>
                 </div>

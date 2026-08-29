@@ -40,6 +40,9 @@ const ALLOWED_PATHS = [
   /^admin\/orders(\/.*)?$/,
   /^admin\/reports\/boosts(\/[^/]+)?$/,
   /^admin\/reports\/performance$/,
+  /* Whether chasing incomplete checkouts is paying for itself. Sits on the
+     Performance page, under the funnel it is a part of. */
+  /^admin\/reports\/recovery$/,
   /^admin\/ads\/(campaigns|overview|test)$/,
   /^admin\/ads\/campaigns\/[^/]+(\/report)?$/,
   /^admin\/settings$/,

@@ -57,8 +57,6 @@ export function SettingsForm() {
     freeDeliveryThreshold: "",
     minimumOrderValue: "",
     maxQuantityPerItem: "",
-    couponMinCartValue: "",
-    couponHours: "",
     courierInsideDhaka: "",
     courierOutsideDhaka: "",
     packagingPerOrder: "",
@@ -84,8 +82,6 @@ export function SettingsForm() {
       freeDeliveryThreshold: String(data.delivery.freeDeliveryThreshold),
       minimumOrderValue: String(data.ordering.minimumOrderValue),
       maxQuantityPerItem: String(data.ordering.maxQuantityPerItem),
-      couponMinCartValue: String(data.recovery.couponMinCartValue),
-      couponHours: String(data.recovery.couponHours),
       courierInsideDhaka: String(data.costs.courierInsideDhaka),
       courierOutsideDhaka: String(data.costs.courierOutsideDhaka),
       packagingPerOrder: String(data.costs.packagingPerOrder),
@@ -183,10 +179,6 @@ export function SettingsForm() {
         ordering: {
           minimumOrderValue: Number(form.minimumOrderValue),
           maxQuantityPerItem: Number(form.maxQuantityPerItem),
-        },
-        recovery: {
-          couponMinCartValue: Number(form.couponMinCartValue),
-          couponHours: Number(form.couponHours),
         },
         costs: {
           courierInsideDhaka: Number(form.courierInsideDhaka),
@@ -321,39 +313,6 @@ export function SettingsForm() {
                   onTest={testCourier}
                 />
               )}
-
-              {/* Its own card rather than a row inside "Order rules": these two
-                  govern an offer the desk hands out by hand from the incomplete
-                  checkouts page, not the rules every order obeys. Filing them
-                  together would have an owner adjusting a minimum here and
-                  wondering why the shop still took a small order. */}
-              <Card>
-                <CardHeader
-                  title="Abandoned checkout offers"
-                  hint="The free-delivery coupon the desk can send to someone who did not finish."
-                />
-                <div className="grid gap-4 p-4 sm:grid-cols-2">
-                  <Input
-                    label="Smallest basket worth an offer (৳)"
-                    type="number"
-                    min={0}
-                    step={1}
-                    value={form.couponMinCartValue}
-                    onChange={(event) => set("couponMinCartValue", event.target.value)}
-                    hint="0 for no floor. The offer costs one delivery charge, so on a small basket it can eat most of the margin."
-                  />
-                  <Input
-                    label="Offer lasts (hours)"
-                    type="number"
-                    min={1}
-                    max={720}
-                    step={1}
-                    value={form.couponHours}
-                    onChange={(event) => set("couponHours", event.target.value)}
-                    hint="The deadline is what makes it work. A code with no end is a discount, not an offer."
-                  />
-                </div>
-              </Card>
 
               <Card>
                 <CardHeader title="Order rules" />

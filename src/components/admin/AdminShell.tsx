@@ -38,6 +38,10 @@ interface NavItem {
 const NAV: NavItem[] = [
   { href: "/admin", label: "Overview", icon: "grid", primary: true },
   { href: "/admin/orders", label: "Orders", icon: "package", primary: true },
+  /* Beside Orders because it is the same desk's other list: the orders that
+     have not happened yet. Primary for the same reason — this is money that
+     has not been lost, only left. */
+  { href: "/admin/abandoned", label: "Abandoned", icon: "cart", primary: true },
   { href: "/admin/products", label: "Products", icon: "mobile", primary: true },
   { href: "/admin/profit", label: "Profit", icon: "cash", primary: true },
   /* Directly under Profit, and deliberately not a primary: the two are read
@@ -89,13 +93,15 @@ export function AdminShell({ title, action, children }: AdminShellProps) {
   }
 
   /* `/admin` must not light up for `/admin/orders`, so the root is matched
-     exactly while every other entry matches its subtree. Incomplete checkouts
-     live at their own route but are a tab inside Orders, so that route lights
-     up the Orders entry rather than nothing. */
+     exactly while every other entry matches its subtree.
+
+     Abandoned checkouts have their own entry now, so they light that one. The
+     old `/admin/incomplete` address only ever redirects there and is listed
+     here so the sidebar does not blink Orders on the way through. */
   const isActive = (href: string) => {
     if (href === "/admin") return pathname === "/admin";
-    if (href === "/admin/orders") {
-      return pathname.startsWith("/admin/orders") || pathname.startsWith("/admin/incomplete");
+    if (href === "/admin/abandoned") {
+      return pathname.startsWith("/admin/abandoned") || pathname.startsWith("/admin/incomplete");
     }
     return pathname.startsWith(href);
   };

@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import { getDb } from "../../db/client.js";
 import * as coupons from "../orders/recovery-coupon.service.js";
-import { shopDay, type DateRange, type RangePreset } from "./profit.service.js";
+import { withinShopDays, type DateRange, type RangePreset } from "./profit.service.js";
 
 /**
  * Did chasing incomplete checkouts actually work?
@@ -141,7 +141,7 @@ async function leadTotals(range: DateRange): Promise<Record<string, number>> {
     from abandoned_checkouts a
     left join orders o
       on o.id = a.recovered_order_id and o.deleted_at is null
-    where ${shopDay(sql`a.created_at`)} between ${range.from}::date and ${range.to}::date
+    where ${withinShopDays(sql`a.created_at`, range)}
   `);
 
   const row = rows.rows[0] ?? {};
@@ -174,14 +174,14 @@ async function byProduct(range: DateRange): Promise<RecoveryProduct[]> {
         line->>'name' as name
       from abandoned_checkouts a,
            jsonb_array_elements(a.contents) as line
-      where ${shopDay(sql`a.created_at`)} between ${range.from}::date and ${range.to}::date
+      where ${withinShopDays(sql`a.created_at`, range)}
     ),
     coupon_lines as (
       select distinct i.product_name as name, c.id as coupon_id
       from recovery_coupons c
       join orders o      on o.id = c.used_order_id and o.deleted_at is null
       join order_items i on i.order_id = o.id
-      where ${shopDay(sql`c.created_at`)} between ${range.from}::date and ${range.to}::date
+      where ${withinShopDays(sql`c.created_at`, range)}
     )
     select
       l.name,
@@ -217,7 +217,7 @@ async function byReason(range: DateRange): Promise<{ reason: string; count: numb
     select a.reason, count(*)::int as n
     from abandoned_checkouts a
     where a.reason <> ''
-      and ${shopDay(sql`a.created_at`)} between ${range.from}::date and ${range.to}::date
+      and ${withinShopDays(sql`a.created_at`, range)}
     group by a.reason
     order by n desc
   `);
@@ -238,7 +238,7 @@ async function byStaff(range: DateRange): Promise<{ name: string; handled: numbe
     select e.actor_name as name, count(distinct e.checkout_id)::int as handled
     from abandoned_checkout_events e
     where e.actor_admin_id is not null
-      and ${shopDay(sql`e.created_at`)} between ${range.from}::date and ${range.to}::date
+      and ${withinShopDays(sql`e.created_at`, range)}
     group by e.actor_name
     order by handled desc
     limit 20

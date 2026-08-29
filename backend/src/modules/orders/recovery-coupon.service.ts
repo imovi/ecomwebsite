@@ -14,6 +14,7 @@ import { BadRequestError, ConflictError, NotFoundError } from "../../core/errors
 import { ErrorCode } from "../../core/http-status.js";
 import { createLogger } from "../../core/logger.js";
 import { getSettings } from "../settings/settings.service.js";
+import { withinShopDays, type DateRange } from "../reports/profit.service.js";
 import { recordLeadEvent, type LeadActor } from "./abandoned-event.repository.js";
 
 /**
@@ -805,11 +806,10 @@ export async function listCoupons(
  * a shop that raised its delivery charge last week must not have last month's
  * offers silently restated.
  */
-export async function totals(range?: { from: string; to: string }): Promise<CouponTotals> {
-  const window = range
-    ? sql`where (c.created_at at time zone 'Asia/Dhaka')::date
-            between ${range.from}::date and ${range.to}::date`
-    : sql``;
+export async function totals(range?: DateRange): Promise<CouponTotals> {
+  /* Raw column against computed instants, so `recovery_coupons`'s own
+     created-at index can answer it. See `withinShopDays`. */
+  const window = range ? sql`where ${withinShopDays(sql`c.created_at`, range)}` : sql``;
 
   const rows = await getDb().execute(sql`
     select

@@ -56,7 +56,11 @@ export const abandonedCheckoutEvents = pgTable(
 
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
   },
-  (table) => [index("abandoned_checkout_events_checkout_idx").on(table.checkoutId, table.createdAt)],
+  (table) => [
+    index("abandoned_checkout_events_checkout_idx").on(table.checkoutId, table.createdAt),
+    /* "Who worked the list" counts events per staff member over a date range. */
+    index("abandoned_checkout_events_created_at_idx").on(table.createdAt),
+  ],
 );
 
 export type AbandonedCheckoutEventRow = typeof abandonedCheckoutEvents.$inferSelect;

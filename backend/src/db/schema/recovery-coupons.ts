@@ -138,6 +138,14 @@ export const recoveryCoupons = pgTable(
       .where(sql`${table.status} = 'active' and ${table.abandonedCheckoutId} is not null`),
 
     index("recovery_coupons_status_created_idx").on(table.status, table.createdAt.desc()),
+    /* A date range across every status; the composite above leads on status. */
+    index("recovery_coupons_created_at_idx").on(table.createdAt),
+    /* Redemption looks a code up and tests whether it is live. Partial, so it
+       covers only the rows a checkout can claim — that set stays small however
+       many spent coupons pile up behind it. */
+    index("recovery_coupons_claimable_idx")
+      .on(table.code)
+      .where(sql`${table.status} = 'active'`),
 
     check(
       "recovery_coupons_status_known",

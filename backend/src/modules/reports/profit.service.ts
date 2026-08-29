@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, isNull, lte, sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { getDb } from "../../db/client.js";
 import { orders } from "../../db/schema/orders.js";
@@ -72,6 +72,56 @@ export function shopDate(at: Date = new Date()): string {
  */
 export function shopDay(column: SQL | AnyPgColumn): SQL {
   return sql`(${column} at time zone 'Asia/Dhaka')::date`;
+}
+
+/**
+ * The instants a range of shop days actually covers.
+ *
+ * WHY THIS EXISTS RATHER THAN COMPARING `shopDay(column)` TO THE DATES
+ * -------------------------------------------------------------------
+ * Because `shopDay(column) between '2026-08-01' and '2026-08-31'` wraps the
+ * column in a conversion, and Postgres cannot use an index on a column that
+ * appears inside a function call. Every report was therefore reading the whole
+ * table and converting every row's timestamp before it could decide which ones
+ * to keep — with two orders that costs nothing, and at twenty thousand it is the
+ * whole Profit page, on every click of every date chip.
+ *
+ * Comparing the RAW column against two computed instants is the same question
+ * asked in a way an index can answer: `orders_created_at_idx` and friends
+ * already exist, and a range scan on a plain btree is the cheapest thing this
+ * database can do.
+ *
+ * HALF-OPEN ON PURPOSE
+ * `>= start` and `< end`, where `end` is midnight at the START of the day after
+ * `to`. Writing `<= end` would need end-of-day to be expressible, and the
+ * honest end of 31 August is not 23:59:59 — it is 23:59:59.999999, and a
+ * timestamp landing in that last microsecond would be silently dropped from the
+ * month it belongs to.
+ *
+ * SAFE BECAUSE DHAKA HAS NO DAYLIGHT SAVING. The offset is a constant +6, so a
+ * shop day is always exactly the same 24 hours of UTC. This shortcut would be
+ * wrong in a country that changes its clocks, and `shopDay` above stays the
+ * authority for grouping BY day — only the filtering moved.
+ */
+export function shopDayRange(range: DateRange): { start: Date; end: Date } {
+  const offsetMs = REPORT_UTC_OFFSET_MINUTES * 60_000;
+
+  return {
+    start: new Date(Date.parse(`${range.from}T00:00:00Z`) - offsetMs),
+    end: new Date(Date.parse(`${range.to}T00:00:00Z`) + 86_400_000 - offsetMs),
+  };
+}
+
+/**
+ * "This column falls inside these shop days", as a WHERE clause an index can use.
+ *
+ * A NULL column fails both comparisons and is excluded, which is exactly what
+ * `shopDay(NULL) between …` did — an order with no `delivered_at` was never in
+ * a delivered-date range and still is not.
+ */
+export function withinShopDays(column: SQL | AnyPgColumn, range: DateRange): SQL {
+  const { start, end } = shopDayRange(range);
+  return sql`${column} >= ${start} and ${column} < ${end}`;
 }
 
 function addDays(isoDate: string, days: number): string {
@@ -248,8 +298,7 @@ async function realisedOrders(range: DateRange) {
         eq(orders.status, "delivered"),
         /* Dated by delivery, not placement: an order placed in March and
            delivered in April is April's income. */
-        gte(shopDay(orders.deliveredAt), sql`${range.from}::date`),
-        lte(shopDay(orders.deliveredAt), sql`${range.to}::date`),
+        withinShopDays(orders.deliveredAt, range),
       ),
     );
 
@@ -500,8 +549,7 @@ export async function profitReport(
       and(
         isNull(orders.deletedAt),
         eq(orders.status, "returned"),
-        gte(shopDay(orders.returnedAt), sql`${range.from}::date`),
-        lte(shopDay(orders.returnedAt), sql`${range.to}::date`),
+        withinShopDays(orders.returnedAt, range),
       ),
     );
 
@@ -515,8 +563,7 @@ export async function profitReport(
       and(
         isNull(orders.deletedAt),
         eq(orders.status, "cancelled"),
-        gte(shopDay(orders.cancelledAt), sql`${range.from}::date`),
-        lte(shopDay(orders.cancelledAt), sql`${range.to}::date`),
+        withinShopDays(orders.cancelledAt, range),
       ),
     );
 

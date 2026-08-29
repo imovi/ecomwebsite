@@ -5,7 +5,9 @@ import { orderItems } from "../../db/schema/order-items.js";
 import { products } from "../../db/schema/products.js";
 import { abandonedCheckouts } from "../../db/schema/abandoned-checkouts.js";
 import { productAdSpend } from "../../db/schema/product-ad-spend.js";
-import { shopDay, type DateRange, type RangePreset } from "./profit.service.js";
+/* `shopDay` still groups the daily chart BY day, which genuinely needs the
+   conversion; only the filtering moved to the indexable form. */
+import { shopDay, withinShopDays, type DateRange, type RangePreset } from "./profit.service.js";
 
 /**
  * Marketing performance.
@@ -144,8 +146,7 @@ function ratio(value: number, cost: number): number | null {
 function placedInRange(range: DateRange) {
   return and(
     isNull(orders.deletedAt),
-    gte(shopDay(orders.createdAt), sql`${range.from}::date`),
-    lte(shopDay(orders.createdAt), sql`${range.to}::date`),
+    withinShopDays(orders.createdAt, range),
   );
 }
 
@@ -321,8 +322,7 @@ async function checkoutsStarted(range: DateRange): Promise<{ started: number }> 
         and(
           isNull(abandonedCheckouts.recoveredOrderId),
           ne(abandonedCheckouts.status, "dismissed"),
-          gte(shopDay(abandonedCheckouts.createdAt), sql`${range.from}::date`),
-          lte(shopDay(abandonedCheckouts.createdAt), sql`${range.to}::date`),
+          withinShopDays(abandonedCheckouts.createdAt, range),
         ),
       ),
     getDb()

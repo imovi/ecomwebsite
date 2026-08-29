@@ -154,6 +154,9 @@ export const abandonedCheckouts = pgTable(
 
     index("abandoned_checkouts_status_seen_idx").on(table.status, table.lastSeenAt.desc()),
     index("abandoned_checkouts_phone_idx").on(table.phone),
+    /* The recovery report groups leads by the day they were recorded. The
+       status index above leads on status and cannot serve a plain date range. */
+    index("abandoned_checkouts_created_at_idx").on(table.createdAt),
 
     check(
       "abandoned_checkouts_status_known",

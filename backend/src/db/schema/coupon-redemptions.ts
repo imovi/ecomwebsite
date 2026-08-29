@@ -47,6 +47,11 @@ export const couponRedemptions = pgTable(
   },
   (table) => [
     index("coupon_redemptions_coupon_idx").on(table.couponId, table.createdAt),
+    /* "Which orders used coupons". Partial: a redemption whose order was purged
+       joins to nothing and does not belong in the index. */
+    index("coupon_redemptions_order_idx")
+      .on(table.orderId)
+      .where(sql`${table.orderId} is not null`),
     check("coupon_redemptions_saved_non_negative", sql`${table.deliverySaved} >= 0`),
   ],
 );

@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { getDb } from "../../db/client.js";
 import { adCampaigns } from "../../db/schema/ad-campaigns.js";
 import { products } from "../../db/schema/products.js";
@@ -7,7 +7,7 @@ import { orderItems } from "../../db/schema/order-items.js";
 import { BadRequestError, ConflictError, NotFoundError } from "../../core/errors.js";
 import { createLogger } from "../../core/logger.js";
 import { getSettings } from "../settings/settings.service.js";
-import { shopDay, type DateRange } from "../reports/profit.service.js";
+import { withinShopDays, type DateRange } from "../reports/profit.service.js";
 import {
   campaignInsights,
   campaignMeta,
@@ -325,8 +325,7 @@ async function productOutcome(
       and(
         eq(orderItems.productId, productId),
         isNull(orders.deletedAt),
-        gte(shopDay(orders.createdAt), sql`${range.from}::date`),
-        lte(shopDay(orders.createdAt), sql`${range.to}::date`),
+        withinShopDays(orders.createdAt, range),
       ),
     );
 

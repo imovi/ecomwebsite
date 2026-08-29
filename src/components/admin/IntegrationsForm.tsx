@@ -28,6 +28,7 @@ interface IntegrationStatus {
     chatConfigured: boolean;
     enabled: boolean;
     chatId: string;
+    backupChatId: string;
     /** Buttons and commands — fails independently of the alerts themselves. */
     botEnabled: boolean;
     allowedUserIds: string;
@@ -74,6 +75,7 @@ export function IntegrationsForm() {
 
   const [botToken, setBotToken] = useState("");
   const [chatId, setChatId] = useState("");
+  const [backupChatId, setBackupChatId] = useState("");
   const [credentials, setCredentials] = useState("");
   const [sheetId, setSheetId] = useState("");
   const [tab, setTab] = useState("Orders");
@@ -84,6 +86,7 @@ export function IntegrationsForm() {
   const hydrate = (data: ApiStoreSettings) => {
     setSettings(data);
     setChatId(data.integrations.telegram.chatId);
+    setBackupChatId(data.integrations.telegram.backupChatId);
     setSheetId(data.integrations.googleSheets.sheetId);
     setTab(data.integrations.googleSheets.tab);
     /* Secrets always start blank — the API never returns them. */
@@ -250,10 +253,9 @@ export function IntegrationsForm() {
                   <Input
                     label="Chat ID"
                     value={chatId}
-                    inputMode="numeric"
-                    placeholder="-1001234567890"
-                    onChange={(event) => setChatId(event.target.value.trim())}
-                    hint="Where alerts are sent. Use Find my chat below if you do not know it."
+                    placeholder="-1001234567890, 852271924"
+                    onChange={(event) => setChatId(event.target.value)}
+                    hint="Where order alerts go. Separate several with commas and every admin gets their own copy, with their own Confirm buttons. Use Find my chat below if you do not know an id."
                   />
 
                   <div className="flex flex-wrap gap-2">
@@ -308,6 +310,67 @@ export function IntegrationsForm() {
                       ))}
                     </div>
                   )}
+
+                  {/* The backup, kept visually apart from the alerts above.
+                      They use the same bot and nothing else: the alerts are
+                      read by whoever is working the orders, and this file is
+                      every customer's name, phone and address. */}
+                  <div className="flex flex-col gap-3 rounded-sm border border-line p-3">
+                    <div>
+                      <p className="text-caption font-semibold text-ink">Database backup</p>
+                      <p className="text-micro text-muted">
+                        A copy of the whole database, sent here every night at 3:30am. Product
+                        photos are not included — they are already public on the shop.
+                      </p>
+                    </div>
+
+                    <Input
+                      label="Backup chat ID"
+                      value={backupChatId}
+                      inputMode="numeric"
+                      placeholder="852271924"
+                      onChange={(event) => setBackupChatId(event.target.value.trim())}
+                      hint="Your own chat, not the staff group. The file is not encrypted, so whoever can read this chat can read every customer's address."
+                    />
+
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        loading={busy}
+                        onClick={() =>
+                          void save({ telegram: { backupChatId } }, "Backup chat saved")
+                        }
+                      >
+                        Save backup chat
+                      </Button>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        loading={busy}
+                        disabled={backupChatId.trim() === ""}
+                        onClick={() =>
+                          void runTest(
+                            "admin/integrations/telegram/backup-now",
+                            "telegram",
+                            setTelegramResult,
+                          )
+                        }
+                      >
+                        Send a backup now
+                      </Button>
+                    </div>
+
+                    {settings.integrations.telegram.backupChatId.trim() === "" && (
+                      <p className="flex items-start gap-1.5 text-micro text-warn">
+                        <span aria-hidden="true">⚠</span>
+                        <span>
+                          No backup is being taken. This shop has lost its database once
+                          already.
+                        </span>
+                      </p>
+                    )}
+                  </div>
 
                   <ErrorBanner
                     message={saveError?.scope === "telegram" ? saveError.message : null}

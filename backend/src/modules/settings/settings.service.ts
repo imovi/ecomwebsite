@@ -149,7 +149,10 @@ export interface SettingsDto {
     telegram: {
       hasBotToken: boolean;
       botTokenHint: string;
+      /** One chat id, or several separated by commas — order alerts go to all. */
       chatId: string;
+      /** Where the nightly database backup goes. Usually the owner alone. */
+      backupChatId: string;
       enabled: boolean;
       /** Public Telegram user ids, so unlike the token these are returned. */
       allowedUserIds: string;
@@ -260,6 +263,7 @@ export function toSettingsDto(row: StoreSettingsRow): SettingsDto {
         hasBotToken: row.telegramBotToken !== "",
         botTokenHint: tokenHint(row.telegramBotToken),
         chatId: row.telegramChatId,
+        backupChatId: row.telegramBackupChatId,
         enabled: row.telegramEnabled,
         /* Public ids, not a secret — returned so the form can show and edit
            them, unlike the token beside it. */
@@ -372,6 +376,8 @@ export interface UpdateSettingsInput {
       /** Omitted keeps the stored token; `null` clears it. */
       botToken?: string | null;
       chatId?: string;
+      /** The backup destination. Separate from the alert chats on purpose. */
+      backupChatId?: string;
       enabled?: boolean;
       /** Comma-separated Telegram user ids; empty means everyone in the chat. */
       allowedUserIds?: string;
@@ -485,6 +491,9 @@ export async function updateSettings(input: UpdateSettingsInput): Promise<Settin
   const telegram = input.integrations?.telegram;
   if (telegram?.botToken !== undefined) patch.telegramBotToken = telegram.botToken ?? "";
   if (telegram?.chatId !== undefined) patch.telegramChatId = telegram.chatId;
+  if (telegram?.backupChatId !== undefined) {
+    patch.telegramBackupChatId = telegram.backupChatId;
+  }
   if (telegram?.enabled !== undefined) patch.telegramEnabled = telegram.enabled;
   if (telegram?.allowedUserIds !== undefined) {
     /* Stored normalised — the form allows spaces around the commas, and the

@@ -4,6 +4,7 @@ import { abandonedCheckouts } from "../../db/schema/abandoned-checkouts.js";
 import { orders } from "../../db/schema/orders.js";
 import { createLogger } from "../../core/logger.js";
 import { getSettings } from "../settings/settings.service.js";
+import { backupToTelegram } from "./backup.service.js";
 import { purgeExpiredTrash, TRASH_RETENTION_DAYS } from "../orders/order.service.js";
 import * as telegram from "./telegram.service.js";
 
@@ -207,6 +208,52 @@ async function sweepTrash(): Promise<void> {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Backup                                                                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The hour the database is sent, in the shop's own time.
+ *
+ * Half past three in the morning: after the last order of the night has been
+ * placed and long before the first of the day, so the file is a clean edge
+ * rather than a snapshot of a shop mid-sale.
+ */
+const BACKUP_HOUR = 3;
+
+let lastBackupDay = "";
+
+/**
+ * Sends one backup a day, and says so in the log either way.
+ *
+ * The previous backup on this server failed every night for days without
+ * anyone noticing, because nothing said it had. A failure here is logged at
+ * error level with the reason, so `docker compose logs api | grep backup`
+ * answers "is my data safe" in one line.
+ */
+async function maybeSendBackup(): Promise<void> {
+  const day = shopDay();
+  const shopHour = Number(
+    new Date().toLocaleString("en-GB", { timeZone: "Asia/Dhaka", hour: "2-digit", hour12: false }),
+  );
+
+  if (shopHour < BACKUP_HOUR || lastBackupDay === day) return;
+
+  /* Marked before the attempt, not after. A Telegram outage at 3am must not
+     turn into a retry every five minutes for the rest of the day. */
+  lastBackupDay = day;
+
+  const outcome = await backupToTelegram();
+  if (outcome.sent) {
+    log.info({ day, bytes: outcome.bytes }, "Database backup sent");
+  } else if (outcome.reason !== "No backup chat is configured.") {
+    /* Not configured is not a failure — it is a shop that has not set it up,
+       and logging it as an error every night would train the owner to ignore
+       the one message that matters. */
+    log.error({ day, reason: outcome.reason }, "Database backup FAILED");
+  }
+}
+
+/* -------------------------------------------------------------------------- */
 
 let timer: NodeJS.Timeout | null = null;
 let running = false;
@@ -218,6 +265,7 @@ async function tick(): Promise<void> {
   try {
     await sweepAbandoned();
     await maybeSendSummary();
+    await maybeSendBackup();
     await sweepTrash();
   } catch (error) {
     /* Swallowed: this runs unattended, and an unhandled rejection would take
@@ -234,6 +282,8 @@ export function startTelegramScheduler(): void {
   /* Today's summary is not sent on boot: a restart at 11pm would otherwise
      repeat it, and a restart at 9am would send yesterday's under today's date. */
   lastSummaryDay = shopDay();
+  /* Same reasoning as the summary: a restart must not re-send today's. */
+  lastBackupDay = shopDay();
 
   timer = setInterval(() => void tick(), SWEEP_INTERVAL_MS);
   timer.unref();

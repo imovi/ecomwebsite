@@ -264,9 +264,40 @@ const updateSettingsSchema = z
               ])
               .optional(),
 
-            /* Signed integer as text: channels are large negatives. */
+            /**
+             * Where order alerts go. One chat id, or several with commas.
+             *
+             * Signed integers as text: channels are large negatives. Spaces
+             * around the commas are tolerated and stripped — people type a
+             * list the way they would write one, and rejecting "123, 456" for
+             * a space would be a needless argument with the owner.
+             */
             chatId: z
-              .union([z.literal(""), z.string().trim().regex(/^-?\d{1,20}$/, "A chat id is a number.")])
+              .union([
+                z.literal(""),
+                z
+                  .string()
+                  .trim()
+                  .transform((value) =>
+                    value
+                      .split(",")
+                      .map((id) => id.trim())
+                      .filter((id) => id !== "")
+                      .join(","),
+                  )
+                  .refine(
+                    (value) => value.split(",").every((id) => /^-?\d{1,20}$/.test(id)),
+                    "Each chat id is a number. Separate several with commas.",
+                  ),
+              ])
+              .optional(),
+
+            /* One chat, not a list: the database is not a thing to broadcast. */
+            backupChatId: z
+              .union([
+                z.literal(""),
+                z.string().trim().regex(/^-?\d{1,20}$/, "A chat id is a number."),
+              ])
               .optional(),
 
             enabled: z.boolean().optional(),

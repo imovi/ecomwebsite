@@ -60,8 +60,16 @@ export async function verifySecret(presented: string | null): Promise<boolean> {
   return timingSafeEqual(a, b);
 }
 
+/**
+ * Any of the chats the alerts are sent to may press the buttons.
+ *
+ * Membership of the list, not equality with one id: the moment alerts go to
+ * more than one person, an equality check leaves everyone but the first
+ * unable to act on the message they were just sent — the buttons would appear
+ * and do nothing, which is worse than not sending them the alert at all.
+ */
 function isAllowedChat(settings: telegram.TelegramConfig, chatId: string): boolean {
-  return settings.telegramChatId.trim() !== "" && settings.telegramChatId.trim() === chatId;
+  return telegram.alertChatIds(settings).includes(chatId);
 }
 
 function isAllowedUser(settings: telegram.TelegramConfig, userId: string): boolean {

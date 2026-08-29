@@ -39,6 +39,7 @@ export type TelegramConfig = Pick<
   StoreSettingsRow,
   | "telegramBotToken"
   | "telegramChatId"
+  | "telegramBackupChatId"
   | "telegramEnabled"
   | "telegramWebhookSecret"
   | "telegramAllowedUserIds"
@@ -46,9 +47,28 @@ export type TelegramConfig = Pick<
 
 export type TelegramProblem = "disabled" | "missing_token" | "missing_chat";
 
+/**
+ * The chats an alert goes to.
+ *
+ * Commas, because that is what someone types when asked for "the chat ids".
+ * Duplicates are dropped rather than delivered twice — the same id pasted into
+ * the field twice is a slip, and two identical alerts with two sets of Confirm
+ * buttons is a way to confirm an order twice.
+ */
+export function alertChatIds(settings: TelegramConfig): string[] {
+  return [
+    ...new Set(
+      settings.telegramChatId
+        .split(",")
+        .map((id) => id.trim())
+        .filter((id) => id !== ""),
+    ),
+  ];
+}
+
 export function configProblem(settings: TelegramConfig): TelegramProblem | null {
   if (settings.telegramBotToken.trim() === "") return "missing_token";
-  if (settings.telegramChatId.trim() === "") return "missing_chat";
+  if (alertChatIds(settings).length === 0) return "missing_chat";
   if (!settings.telegramEnabled) return "disabled";
   return null;
 }
@@ -136,34 +156,125 @@ async function send(
     };
   }
 
+  const chats = alertChatIds(settings);
+
+  const payload = {
+    text,
+    parse_mode: "HTML" as const,
+    /* Order alerts carry a link to the admin panel; a link preview card for it
+       would be a login page screenshot on every message. */
+    link_preview_options: { is_disabled: true },
+    ...(options.buttons
+      ? {
+          reply_markup: {
+            inline_keyboard: options.buttons.map((row) =>
+              row.map((button) => ({ text: button.text, callback_data: button.callbackData })),
+            ),
+          },
+        }
+      : {}),
+  };
+
+  /* Sent one chat at a time, and one failing does not stop the others.
+     A staff member who has blocked the bot, or a chat id typed with a digit
+     missing, must not silently cost the owner their order alert — which is
+     exactly what a single request for all recipients would do. */
+  const failures: string[] = [];
+  let delivered = 0;
+
+  for (const chatId of chats) {
+    try {
+      const result = await callTelegram(settings.telegramBotToken, "sendMessage", {
+        chat_id: chatId,
+        ...payload,
+      });
+
+      if (result.ok) delivered += 1;
+      else {
+        log.error({ chatId, description: result.description }, "Telegram rejected the message");
+        failures.push(`${chatId}: ${result.description ?? "rejected"}`);
+      }
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "Network error";
+      log.error({ err: error, chatId }, "Telegram message not delivered");
+      failures.push(`${chatId}: ${reason}`);
+    }
+  }
+
+  /* Reported as sent if it reached anybody. The alert's job is to put the order
+     in front of a human; one unreachable phone has not stopped that, and
+     failing the whole send would retry against the chats that already got it. */
+  if (delivered > 0) {
+    return failures.length > 0 ? { sent: true, reason: failures.join("; ") } : { sent: true };
+  }
+
+  return { sent: false, reason: failures.join("; ") || "No chat accepted the message." };
+}
+
+/**
+ * Sends a file to the backup chat.
+ *
+ * `sendDocument` rather than a message, and multipart rather than JSON, because
+ * this is the one call that carries bytes. Telegram's own limit for a bot
+ * upload is 50 MB; a gzipped dump of a shop this size is measured in kilobytes,
+ * and the guard below exists for the day that stops being true rather than for
+ * today.
+ *
+ * Deliberately its own destination. The alert chats are read by whoever is
+ * working the orders; this file is every customer's name, phone and address.
+ */
+export async function sendBackupDocument(
+  settings: TelegramConfig,
+  file: { name: string; bytes: Uint8Array },
+  caption: string,
+): Promise<SendOutcome> {
+  const token = settings.telegramBotToken.trim();
+  const chatId = settings.telegramBackupChatId.trim();
+
+  if (token === "") return { sent: false, reason: "No bot token is configured." };
+  if (chatId === "") return { sent: false, reason: "No backup chat is configured." };
+
+  const LIMIT = 45 * 1024 * 1024;
+  if (file.bytes.byteLength > LIMIT) {
+    return {
+      sent: false,
+      reason: `The backup is ${Math.round(file.bytes.byteLength / 1024 / 1024)} MB, past what a bot may upload. Move to the off-server repository backup.`,
+    };
+  }
+
+  const form = new FormData();
+  form.set("chat_id", chatId);
+  form.set("caption", caption);
+  /* Copied into a fresh ArrayBuffer rather than passed as the view: a
+     Uint8Array over a pooled Node buffer can carry a byteOffset, and Blob would
+     then read from the start of the pool instead of the start of the dump. */
+  const bytes = new Uint8Array(file.bytes.byteLength);
+  bytes.set(file.bytes);
+  form.set("document", new Blob([bytes.buffer], { type: "application/gzip" }), file.name);
+
   try {
-    const result = await callTelegram(settings.telegramBotToken, "sendMessage", {
-      chat_id: settings.telegramChatId.trim(),
-      text,
-      parse_mode: "HTML",
-      /* Order alerts carry a link to the admin panel; a link preview card for it
-         would be a login page screenshot on every message. */
-      link_preview_options: { is_disabled: true },
-      ...(options.buttons
-        ? {
-            reply_markup: {
-              inline_keyboard: options.buttons.map((row) =>
-                row.map((button) => ({ text: button.text, callback_data: button.callbackData })),
-              ),
-            },
-          }
-        : {}),
+    const response = await fetch(`${API}/bot${token}/sendDocument`, {
+      method: "POST",
+      body: form,
+      /* Longer than a message: this one is an upload. */
+      signal: AbortSignal.timeout(120_000),
     });
 
-    if (!result.ok) {
-      log.error({ description: result.description }, "Telegram rejected the message");
-      return { sent: false, reason: result.description ?? "Telegram rejected the message." };
+    const body = (await response.json().catch(() => null)) as {
+      ok?: boolean;
+      description?: string;
+    } | null;
+
+    if (!response.ok || !body?.ok) {
+      const reason = body?.description ?? `Telegram answered ${response.status}.`;
+      log.error({ reason }, "Backup not delivered to Telegram");
+      return { sent: false, reason };
     }
 
     return { sent: true };
   } catch (error) {
     const reason = error instanceof Error ? error.message : "Network error";
-    log.error({ err: error }, "Telegram message not delivered");
+    log.error({ err: error }, "Backup not delivered to Telegram");
     return { sent: false, reason };
   }
 }

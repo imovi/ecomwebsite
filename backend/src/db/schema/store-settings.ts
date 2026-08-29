@@ -232,13 +232,29 @@ export const storeSettings = pgTable(
     telegramBotToken: text("telegram_bot_token").notNull().default(""),
 
     /**
-     * Where messages go: a personal chat, a group, or a channel.
+     * Where order alerts go. One chat, or several separated by commas.
+     *
+     * Several, because a shop is rarely one person: the owner wants the alert
+     * on their own phone and so does whoever is making the confirmation calls,
+     * and a shared group means the owner cannot mute the desk's chatter without
+     * muting the orders. Each id listed here gets its own copy of the message,
+     * with its own buttons.
      *
      * Text, not an integer: channel ids are large negatives, and group ids
      * exceed what a 32-bit column holds. Storing the string Telegram gives back
      * avoids a class of silent truncation bugs.
      */
     telegramChatId: text("telegram_chat_id").notNull().default(""),
+
+    /**
+     * Where the nightly database backup is sent. Usually the owner alone.
+     *
+     * Deliberately NOT the alert chat. The alerts are read by whoever is
+     * working the orders; the backup is every customer's name, phone and
+     * address in one file, and it belongs to the person who owns the business.
+     * Empty means no backup is sent.
+     */
+    telegramBackupChatId: text("telegram_backup_chat_id").notNull().default(""),
 
     telegramEnabled: boolean("telegram_enabled").notNull().default(false),
 

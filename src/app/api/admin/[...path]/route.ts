@@ -48,7 +48,7 @@ const ALLOWED_PATHS = [
   /^admin\/banners(\/.*)?$/,
   /^admin\/marketing\/(status|test-event)$/,
   /^admin\/team(\/.*)?$/,
-  /^admin\/integrations\/(status|telegram\/(test|find-chats|bot\/(enable|disable))|sheets\/test)$/,
+  /^admin\/integrations\/(status|telegram\/(test|find-chats|backup-now|bot\/(enable|disable))|sheets\/test)$/,
   /^admin\/expenses(\/.*)?$/,
   /* Reads only, and `profit.csv` is a distinct path rather than a query flag
      so the allowlist can name it. */

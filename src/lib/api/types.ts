@@ -592,7 +592,10 @@ export interface ApiStoreSettings {
     telegram: {
       hasBotToken: boolean;
       botTokenHint: string;
+      /** One chat id, or several separated by commas — alerts go to all. */
       chatId: string;
+      /** Where the nightly database backup goes. Empty means none is taken. */
+      backupChatId: string;
       enabled: boolean;
       /**
        * Who may press the bot's buttons, comma separated. Not a secret — these

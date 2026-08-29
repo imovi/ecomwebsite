@@ -3,8 +3,9 @@ import { ipKeyGenerator, rateLimit } from "express-rate-limit";
 import { config } from "../../config/index.js";
 import { authenticate, requireRole } from "../../middleware/authenticate.js";
 import { sendSuccess } from "../../core/response.js";
-import { TooManyRequestsError } from "../../core/errors.js";
+import { BadRequestError, TooManyRequestsError } from "../../core/errors.js";
 import { getSettings } from "../settings/settings.service.js";
+import * as backup from "./backup.service.js";
 import * as telegram from "./telegram.service.js";
 import * as sheets from "./google-sheets.service.js";
 
@@ -60,6 +61,10 @@ const status: RequestHandler = async (_req, res) => {
         chatConfigured: settings.telegramChatId.trim() !== "",
         enabled: settings.telegramEnabled,
         chatId: settings.telegramChatId,
+        /* Where the nightly database backup goes. Empty means it is not being
+           taken — the one state the panel has to make impossible to miss. */
+        backupChatId: settings.telegramBackupChatId,
+        backupConfigured: settings.telegramBackupChatId.trim() !== "",
         /**
          * The interactive half: buttons and commands.
          *
@@ -134,7 +139,26 @@ const disableBot: RequestHandler = async (_req, res) => {
   sendSuccess(res, { result: await telegram.disableBot() });
 };
 
+/**
+ * Takes a backup and sends it, now.
+ *
+ * A button rather than only a nightly job, because "is my backup working" is a
+ * question that deserves an answer in ten seconds rather than tomorrow morning
+ * — and because the previous backup on this server was broken for days, which
+ * nobody could have discovered without one.
+ */
+const backupNow: RequestHandler = async (_req, res) => {
+  const outcome = await backup.backupToTelegram();
+
+  if (!outcome.sent) {
+    throw new BadRequestError(outcome.reason ?? "The backup could not be sent.");
+  }
+
+  sendSuccess(res, { sent: true, bytes: outcome.bytes ?? 0 });
+};
+
 integrationsAdminRouter.get("/status", status);
+integrationsAdminRouter.post("/telegram/backup-now", diagnosticRateLimit, backupNow);
 integrationsAdminRouter.post("/telegram/test", diagnosticRateLimit, testTelegram);
 integrationsAdminRouter.post("/telegram/find-chats", diagnosticRateLimit, findChats);
 integrationsAdminRouter.post("/telegram/bot/enable", diagnosticRateLimit, enableBot);

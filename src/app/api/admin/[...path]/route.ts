@@ -39,6 +39,7 @@ const ALLOWED_PATHS = [
   /^admin\/categories(\/.*)?$/,
   /^admin\/orders(\/.*)?$/,
   /^admin\/reports\/boosts(\/[^/]+)?$/,
+  /^admin\/reports\/performance$/,
   /^admin\/settings$/,
   /^admin\/settings\/logo$/,
   /^admin\/settings\/favicon$/,

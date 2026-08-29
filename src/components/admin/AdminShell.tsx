@@ -40,6 +40,11 @@ const NAV: NavItem[] = [
   { href: "/admin/orders", label: "Orders", icon: "package", primary: true },
   { href: "/admin/products", label: "Products", icon: "mobile", primary: true },
   { href: "/admin/profit", label: "Profit", icon: "cash", primary: true },
+  /* Directly under Profit, and deliberately not a primary: the two are read
+     together — "did I make money" and then "is the advertising why" — but the
+     second is a weekly question, and the bottom bar only has room for daily
+     ones. */
+  { href: "/admin/performance", label: "Performance", icon: "rocket" },
   /* Beside Orders in the More menu rather than in the primary bar: it is read
      when somebody is deciding whether to trust a caller, not on every shift. */
   { href: "/admin/customers", label: "Customers", icon: "users" },

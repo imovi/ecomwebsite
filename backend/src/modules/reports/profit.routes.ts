@@ -5,6 +5,7 @@ import { validate, validated } from "../../middleware/validate.js";
 import { sendSuccess } from "../../core/response.js";
 import { safeString, uuidSchema } from "../../lib/validation/schemas.js";
 import * as service from "./profit.service.js";
+import * as performance from "./performance.service.js";
 import * as adSpend from "./product-ad-spend.service.js";
 
 /**
@@ -120,6 +121,22 @@ const deleteBoost: RequestHandler = async (req, res) => {
   await adSpend.remove(params.id);
   sendSuccess(res, { deleted: true });
 };
+
+/**
+ * Marketing performance — the funnel, the delivery rate and what the ads
+ * actually returned. Same range vocabulary as the profit report, deliberately:
+ * an owner comparing the two screens should not have to re-pick the dates.
+ */
+const performanceReport: RequestHandler = async (req, res) => {
+  const { query } = validated<unknown, RangeQuery>(req);
+  const range = service.resolveRange(query.preset, query);
+
+  sendSuccess(res, {
+    report: await performance.performanceReport(range, { preset: query.preset }),
+  });
+};
+
+reportsAdminRouter.get("/performance", validate({ query: rangeQuerySchema }), performanceReport);
 
 reportsAdminRouter.get("/profit", validate({ query: rangeQuerySchema }), profit);
 reportsAdminRouter.get("/profit.csv", validate({ query: rangeQuerySchema }), profitCsv);

@@ -70,7 +70,7 @@ export function shopDate(at: Date = new Date()): string {
  * being fixed alone would be worse than none, because the totals would stop
  * adding up between sections of the same report.
  */
-function shopDay(column: SQL | AnyPgColumn): SQL {
+export function shopDay(column: SQL | AnyPgColumn): SQL {
   return sql`(${column} at time zone 'Asia/Dhaka')::date`;
 }
 

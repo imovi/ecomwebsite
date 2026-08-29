@@ -7,6 +7,7 @@ import { cn, formatTaka } from "@/lib/utils";
 import { AdminShell } from "./AdminShell";
 import { AdsCampaigns } from "./AdsCampaigns";
 import { RangePicker, rangeQuery, type RangePreset } from "./RangePicker";
+import { RecoveryReport } from "./RecoveryReport";
 import { AsyncState, Card, CardHeader, PageBody, TableWrap } from "./ui";
 import { Icon } from "@/components/ui/Icon";
 
@@ -147,6 +148,10 @@ export function PerformanceDashboard() {
                   the funnel explains why. */}
               <AdsCampaigns query={query} />
               <Funnel report={report} />
+              {/* Directly under the funnel, because it is the same funnel: the
+                  gap between "started a checkout" and "placed an order" is
+                  exactly what this section is about recovering. */}
+              <RecoveryReport query={query} />
               <ByProduct report={report} />
               <Trend report={report} />
             </div>

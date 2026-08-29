@@ -104,3 +104,140 @@ export function whatsappHref(phone: string, message: string): string | null {
   if (!number) return null;
   return `https://wa.me/${number}?text=${encodeURIComponent(message)}`;
 }
+
+/* -------------------------------------------------------------------------- */
+/* Chasing an incomplete checkout                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Messages for a customer who never finished.
+ *
+ * A different job from the order messages above, and a different tone. There is
+ * no order number to quote and nothing has been agreed — this person put a
+ * basket down and walked away, and the only honest reason to write to them is
+ * that they might have hit a problem. So the message names what they were
+ * buying, offers help, and gives them a way back. It does not chase.
+ *
+ * Bangla, like every other message in this file: the reader is a Bangladeshi
+ * customer on WhatsApp, being spoken to rather than shown a page.
+ */
+
+export interface RecoveryLead {
+  id: string;
+  customerName: string | null;
+  contents: { name: string; variantLabel: string | null; quantity: number }[];
+  estimatedValue: number;
+}
+
+/**
+ * Where the customer picks their basket back up.
+ *
+ * The lead id and nothing else. The page rebuilds the cart from it and opens
+ * the checkout form EMPTY — no name, no phone, no address. WhatsApp messages
+ * get forwarded, and a link that filled in somebody's home address would hand
+ * it to whoever it was forwarded to.
+ *
+ * Empty when the site address is unset, and every template drops the line
+ * rather than printing a broken one.
+ */
+export function resumeCheckoutHref(leadId: string, couponCode?: string): string {
+  const site = process.env.NEXT_PUBLIC_SITE_URL ?? "";
+  if (!site) return "";
+
+  const base = `${site.replace(/\/+$/, "")}/checkout/resume/${leadId}`;
+  return couponCode ? `${base}?c=${encodeURIComponent(couponCode)}` : base;
+}
+
+/** "30 Aug, 3:30 PM" in the shop's own time, which is the customer's too. */
+export function offerDeadline(iso: string): string {
+  return new Date(iso).toLocaleString("en-GB", {
+    timeZone: "Asia/Dhaka",
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+/** Greeting that works whether or not they got as far as typing a name. */
+function salutation(name: string | null): string {
+  const trimmed = name?.trim();
+  return trimmed ? `আসসালামু আলাইকুম ${trimmed},` : "আসসালামু আলাইকুম,";
+}
+
+function basketLines(lead: RecoveryLead): string {
+  return lead.contents
+    .map(
+      (line) =>
+        `• ${line.name}${line.variantLabel ? ` (${line.variantLabel})` : ""} × ${line.quantity}`,
+    )
+    .join("\n");
+}
+
+/** Drops the blank rows left by an absent link, so nothing prints as a gap. */
+function joinLines(lines: string[]): string {
+  return lines
+    .filter((line, index, all) => !(line === "" && all[index - 1] === ""))
+    .join("\n")
+    .trim();
+}
+
+/**
+ * "We noticed you did not finish — can we help?"
+ *
+ * The estimated total is shown because on cash on delivery the amount at the
+ * door is the thing customers are actually weighing up, and a message that
+ * hides it invites the reply asking for it.
+ */
+export function recoveryMessage(
+  lead: RecoveryLead,
+  options: { storeName: string },
+): string {
+  const link = resumeCheckoutHref(lead.id);
+
+  return joinLines([
+    salutation(lead.customerName),
+    "আপনি আমাদের ওয়েবসাইট থেকে নিচের পণ্যটি অর্ডার করতে চেয়েছিলেন, কিন্তু চেকআউট সম্পূর্ণ হয়নি।",
+    "",
+    basketLines(lead),
+    "",
+    `আনুমানিক মোট: ${formatTaka(lead.estimatedValue)} (ডেলিভারি চার্জ আলাদা)`,
+    "",
+    "কোনো সমস্যা হয়েছিল, বা কিছু জানার থাকলে আমাদের বলুন — আমরা সাহায্য করব।",
+    link ? `অর্ডারটি শেষ করতে: ${link}` : "",
+    "",
+    `— ${options.storeName}`,
+  ]);
+}
+
+/**
+ * "Here is free delivery, for the next 24 hours."
+ *
+ * The code, the deadline and the fact that it works once, in that order —
+ * those are the three things a customer needs and the three things a shop gets
+ * asked about afterwards if it leaves any of them out.
+ */
+export function couponOfferMessage(
+  lead: RecoveryLead,
+  coupon: { code: string; expiresAt: string },
+  options: { storeName: string },
+): string {
+  const link = resumeCheckoutHref(lead.id, coupon.code);
+
+  return joinLines([
+    salutation(lead.customerName),
+    "আপনার অসম্পূর্ণ অর্ডারটির জন্য আমরা একটি ফ্রি ডেলিভারি অফার রেখেছি।",
+    "",
+    "চেকআউটের সময় এই কুপন কোডটি ব্যবহার করুন:",
+    coupon.code,
+    "",
+    `অফারটি ${offerDeadline(coupon.expiresAt)} পর্যন্ত চলবে এবং একবারই ব্যবহার করা যাবে।`,
+    "",
+    basketLines(lead),
+    "",
+    link ? `অর্ডারটি শেষ করতে: ${link}` : "",
+    "",
+    `— ${options.storeName}`,
+  ]);
+}

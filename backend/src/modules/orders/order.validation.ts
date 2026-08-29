@@ -39,6 +39,23 @@ export const bdPhoneSchema = z
     "Enter a valid Bangladeshi mobile number, e.g. 01712345678.",
   );
 
+/**
+ * A recovery coupon code as the customer types it.
+ *
+ * Bounded and folded to upper case here rather than in the service, so
+ * everything downstream compares one form. Deliberately NOT pattern-matched
+ * against the generator's alphabet: a typo should come back as "we do not
+ * recognise that code" from the lookup, which is what happened, rather than as
+ * a validation error about characters — the customer cannot act on the
+ * difference and one of the two messages blames them for it.
+ */
+export const couponCodeSchema = z
+  .string()
+  .trim()
+  .min(4, "Enter the coupon code.")
+  .max(24)
+  .transform((value) => value.toUpperCase());
+
 const quantitySchema = z
   .number()
   .int("Quantity must be a whole number.")
@@ -70,6 +87,15 @@ export const quoteSchema = z
     items: z.array(cartItemSchema).min(1, "Your cart is empty.").max(50),
     areaText: safeString({ max: 200 }).optional(),
     deliveryZone: z.enum(deliveryZoneEnum.enumValues).optional(),
+    /**
+     * A recovery coupon, checked but never spent here.
+     *
+     * The quote reports whether it would apply and what it is worth, so the
+     * summary can show the delivery charge falling to zero before the customer
+     * commits. Claiming it at quote time would burn the code for anybody who
+     * pasted it and then changed their mind.
+     */
+    couponCode: couponCodeSchema.optional(),
   })
   .strict();
 
@@ -101,6 +127,18 @@ export const placeOrderSchema = z
      */
     fbc: safeString({ max: 255 }).nullish(),
     fbp: safeString({ max: 255 }).nullish(),
+
+    /**
+     * The coupon actually being spent.
+     *
+     * This one IS a price input, which is why it is the single exception to the
+     * rule below — and why it is safe: it names a row the shop issued rather
+     * than an amount the client chose. What it is worth is read from the
+     * settings and the coupon, never from the request, and the code is claimed
+     * by a conditional UPDATE inside the order transaction. A client that sends
+     * a code it was never given gets a 409 and no order.
+     */
+    couponCode: couponCodeSchema.nullish(),
 
     /* Deliberately absent: price, subtotal, deliveryCharge, grandTotal.
        Accepting any of them from an unauthenticated request would let a

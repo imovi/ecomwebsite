@@ -5,6 +5,7 @@ import { orders } from "../../db/schema/orders.js";
 import { createLogger } from "../../core/logger.js";
 import { getSettings } from "../settings/settings.service.js";
 import { backupToTelegram } from "./backup.service.js";
+import { sweepExpired as sweepCoupons } from "../orders/recovery-coupon.service.js";
 import { purgeExpiredTrash, TRASH_RETENTION_DAYS } from "../orders/order.service.js";
 import * as telegram from "./telegram.service.js";
 
@@ -253,6 +254,28 @@ async function maybeSendBackup(): Promise<void> {
   }
 }
 
+/**
+ * Retires recovery coupons whose 24 hours are up.
+ *
+ * Tidiness only. Nothing about money waits on this: redemption tests the
+ * coupon's own `expires_at`, so a coupon is refused the second it runs out
+ * whether or not this pass has been anywhere near it. What this buys is a panel
+ * that says "Expired" instead of "Active", and the room for the shop to issue
+ * that lead a fresh offer — the one-active-per-lead index counts a timed-out
+ * row as live until it is retired.
+ *
+ * Deliberately not given its own timer or its own hour. A second scheduled job
+ * is a second thing that can quietly stop, and this shop has already been
+ * bitten by exactly that.
+ */
+async function sweepExpiredCoupons(): Promise<void> {
+  try {
+    await sweepCoupons();
+  } catch (error) {
+    log.error({ err: error }, "Could not retire expired recovery coupons");
+  }
+}
+
 /* -------------------------------------------------------------------------- */
 
 let timer: NodeJS.Timeout | null = null;
@@ -264,6 +287,7 @@ async function tick(): Promise<void> {
 
   try {
     await sweepAbandoned();
+    await sweepExpiredCoupons();
     await maybeSendSummary();
     await maybeSendBackup();
     await sweepTrash();

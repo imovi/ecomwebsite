@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { DeliveryZone, StoreSettings } from "@/types";
+import type { ApiCouponQuote } from "@/lib/api/types";
 import { useResolvedCart } from "@/lib/hooks/use-resolved-cart";
 import { suggestZone, type ZoneSuggestion } from "@/lib/geo";
 import { trackInitiateCheckout } from "@/lib/analytics/events";
@@ -97,6 +98,18 @@ export function CheckoutForm({ settings }: { settings: StoreSettings }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const buyNowMode = searchParams.get("mode") === "buynow";
+
+  /**
+   * A recovery coupon, usually arriving in the WhatsApp link as `?c=`.
+   *
+   * Seeded from the URL rather than typed, because that is how almost every
+   * one of these reaches a customer — the shop sends a link with the code in
+   * it, and asking them to copy it back out of the message they just tapped is
+   * a step that loses people. Typing one still works; the field is there.
+   */
+  const [couponCode, setCouponCode] = useState(
+    () => searchParams.get("c")?.trim().toUpperCase() ?? "",
+  );
 
   const items = useCartStore((s) => s.items);
   const buyNow = useCartStore((s) => s.buyNow);
@@ -237,6 +250,7 @@ export function CheckoutForm({ settings }: { settings: StoreSettings }) {
     deliveryCharge: number;
     grandTotal: number;
     amountToFreeDelivery: number;
+    coupon: ApiCouponQuote | null;
   } | null>(null);
   const [pricing, setPricing] = useState(false);
 
@@ -274,6 +288,7 @@ export function CheckoutForm({ settings }: { settings: StoreSettings }) {
           qty: l.qty,
         })),
         ...(zone ? { deliveryZone: zone } : {}),
+        ...(couponCode ? { couponCode } : {}),
       }).then((result) => {
         if (cancelled) return;
         setPricing(false);
@@ -283,6 +298,7 @@ export function CheckoutForm({ settings }: { settings: StoreSettings }) {
             deliveryCharge: result.deliveryCharge,
             grandTotal: result.grandTotal,
             amountToFreeDelivery: result.amountToFreeDelivery,
+            coupon: result.coupon,
           });
         }
       });
@@ -295,7 +311,7 @@ export function CheckoutForm({ settings }: { settings: StoreSettings }) {
     /* Keyed on the cart contents and the zone rather than the array identity,
        which changes on every render. */
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cartKey, zone]);
+  }, [cartKey, zone, couponCode]);
 
   /**
    * Report reaching checkout, so both platforms can report a
@@ -430,6 +446,9 @@ export function CheckoutForm({ settings }: { settings: StoreSettings }) {
       /* Stable for this checkout attempt — across a retry, a re-render AND a
          reload — so a submit that timed out on the way back returns the
          original order instead of creating a second. */
+      /* Only when the quote said it actually took the charge off. Sending a
+         code that did nothing would have the API spend it for no benefit. */
+      ...(quote?.coupon?.applied ? { couponCode } : {}),
       idempotencyKey: currentAttemptKey(),
       /* Read here rather than earlier: these are cookies, and reading them at
          submit means the value is whatever the browser holds at the moment the
@@ -587,6 +606,16 @@ export function CheckoutForm({ settings }: { settings: StoreSettings }) {
           zoneChosen={zone !== null}
           freeDeliveryRemaining={freeDeliveryRemaining}
           isPricing={pricing}
+          coupon={{
+            applied: couponCode,
+            /* Only the verdict for the code currently in play. A stale one from
+               the previous code would flash the wrong answer for the length of
+               a re-quote, which is exactly when the shopper is reading it. */
+            result: quote?.coupon?.code === couponCode ? quote.coupon : null,
+            onApply: setCouponCode,
+            onRemove: () => setCouponCode(""),
+            busy: pricing,
+          }}
         />
 
         {/* Sticky on mobile, inline on desktop. */}

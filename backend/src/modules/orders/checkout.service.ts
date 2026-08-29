@@ -7,6 +7,7 @@ import { BadRequestError, ConflictError, ValidationError } from "../../core/erro
 import { ErrorCode } from "../../core/http-status.js";
 import { createLogger } from "../../core/logger.js";
 import { markRecovered } from "./abandoned.service.js";
+import * as coupons from "./recovery-coupon.service.js";
 import { orderEvents as orderEventBus } from "../../lib/events/order-events.js";
 import { suggestDeliveryZone } from "../../lib/geo/delivery-zone.js";
 import { calculateTotals, getSettings } from "../settings/settings.service.js";
@@ -292,6 +293,67 @@ export interface QuoteResult {
   freeDeliveryThreshold: number;
   /** How much more to spend to qualify for free delivery. 0 when it applies. */
   amountToFreeDelivery: number;
+  /** Present only when a code was supplied. Null means none was. */
+  coupon: CouponQuote | null;
+}
+
+/** What a supplied coupon code does to this cart, or why it does nothing. */
+export interface CouponQuote {
+  code: string;
+  applied: boolean;
+  /** The delivery charge it removed. 0 when delivery was already free. */
+  saved: number;
+  /** Set when the code was refused, so the summary can say which of them. */
+  reason?: coupons.CouponRefusal;
+  message?: string;
+}
+
+/**
+ * Applies a coupon to a priced cart.
+ *
+ * Shared by the quote and by placement so the two cannot drift — a summary
+ * promising free delivery and an order charging for it is the failure this
+ * shape exists to prevent.
+ *
+ * A coupon on a cart that ALREADY has free delivery is reported as valid but
+ * not applied, and — at placement — deliberately left unspent. Burning a
+ * one-time offer to save nothing is a worse outcome for the customer than
+ * telling them to keep it, and they would have no way of knowing it happened.
+ */
+function applyCoupon(
+  check: coupons.CouponCheck,
+  deliveryCharge: number,
+): { quote: CouponQuote; deliveryCharge: number } {
+  if (!check.valid) {
+    const reason = check.reason ?? "unknown";
+    return {
+      quote: {
+        code: check.code,
+        applied: false,
+        saved: 0,
+        reason,
+        message: coupons.refusalMessage(reason),
+      },
+      deliveryCharge,
+    };
+  }
+
+  if (deliveryCharge === 0) {
+    return {
+      quote: {
+        code: check.code,
+        applied: false,
+        saved: 0,
+        message: "Delivery is already free on this order — your code is still unused.",
+      },
+      deliveryCharge,
+    };
+  }
+
+  return {
+    quote: { code: check.code, applied: true, saved: deliveryCharge },
+    deliveryCharge: 0,
+  };
 }
 
 /**
@@ -330,6 +392,30 @@ export async function quote(input: QuoteInput): Promise<QuoteResult> {
     ? calculateTotals(settings, zone, subtotal)
     : { subtotal, deliveryCharge: 0, grandTotal: subtotal };
 
+  /* Read, never claimed. See `couponCode` on the quote schema: a code that
+     reserved itself the moment it was typed would be burnt by every shopper who
+     pasted one and then went to look at something else. */
+  let deliveryCharge = totals.deliveryCharge;
+  let couponQuote: CouponQuote | null = null;
+
+  if (input.couponCode) {
+    /* Only meaningful once a zone is known — before that the charge is 0
+       because nothing has been worked out yet, not because it is free, and
+       reporting "already free" then would be a lie the customer acts on. */
+    if (!zone) {
+      couponQuote = {
+        code: input.couponCode,
+        applied: false,
+        saved: 0,
+        message: "Choose your delivery area to see the offer applied.",
+      };
+    } else {
+      const applied = applyCoupon(await coupons.check(input.couponCode, db), deliveryCharge);
+      couponQuote = applied.quote;
+      deliveryCharge = applied.deliveryCharge;
+    }
+  }
+
   return {
     items: lines.map((line) => ({
       productId: line.product.id,
@@ -341,8 +427,8 @@ export async function quote(input: QuoteInput): Promise<QuoteResult> {
       lineTotal: line.unitPrice * line.quantity,
     })),
     subtotal: totals.subtotal,
-    deliveryCharge: totals.deliveryCharge,
-    grandTotal: totals.grandTotal,
+    deliveryCharge,
+    grandTotal: totals.subtotal + deliveryCharge,
     deliveryZone: zone,
     zoneInferred: inferred,
     zoneMatchedOn: matched,
@@ -351,6 +437,7 @@ export async function quote(input: QuoteInput): Promise<QuoteResult> {
       settings.freeDeliveryThreshold > 0 && subtotal < settings.freeDeliveryThreshold
         ? settings.freeDeliveryThreshold - subtotal
         : 0,
+    coupon: couponQuote,
   };
 }
 
@@ -440,6 +527,42 @@ export async function placeOrder(
 
     const totals = calculateTotals(settings, zone, subtotal);
 
+    /**
+     * Price the coupon in, but do not spend it yet.
+     *
+     * This read decides what the order is WRITTEN with; the claim happens after
+     * the order row exists, because the coupon has to point at it. The gap
+     * between the two is covered by the claim itself being conditional — see
+     * `redeem` — so a code that someone else spends in between fails there and
+     * takes this whole transaction down with it rather than producing an order
+     * with a delivery charge nobody paid for.
+     */
+    let deliveryCharge = totals.deliveryCharge;
+    let couponToSpend: string | null = null;
+
+    if (input.couponCode) {
+      /* Read on the transaction's own connection. See `findByCode`: going
+         through `getDb()` here would deadlock against this very transaction. */
+      const applied = applyCoupon(await coupons.check(input.couponCode, tx), deliveryCharge);
+
+      if (applied.quote.reason) {
+        /* Refuse the order rather than quietly charging for delivery after the
+           summary said it was free. On cash on delivery the amount at the door
+           is what causes refusals, and a customer who agreed to one number and
+           is asked for another has been misled — by us, at the door, in front
+           of a courier. The checkout re-quotes and they decide again. */
+        throw new ConflictError(
+          `${applied.quote.message ?? "That coupon cannot be used."} The delivery charge is ${totals.deliveryCharge} taka.`,
+          ErrorCode.CONFLICT,
+        );
+      }
+
+      deliveryCharge = applied.deliveryCharge;
+      /* Only claim it when it actually took the charge off. A coupon on a cart
+         that already had free delivery stays live for next time. */
+      if (applied.quote.applied) couponToSpend = applied.quote.code;
+    }
+
     /* Decrement first. If anything is short, the whole transaction unwinds
        before an order number is consumed on a doomed order. */
     const stockLines = toStockLines(lines);
@@ -458,8 +581,8 @@ export async function placeOrder(
         areaText: input.areaText,
         deliveryZone: zone,
         subtotal: totals.subtotal,
-        deliveryCharge: totals.deliveryCharge,
-        grandTotal: totals.grandTotal,
+        deliveryCharge,
+        grandTotal: totals.subtotal + deliveryCharge,
         itemCount: lines.length,
         totalQuantity: lines.reduce((sum, line) => sum + line.quantity, 0),
         paymentMethod: "cod",
@@ -484,6 +607,11 @@ export async function placeOrder(
       },
       tx,
     );
+
+    /* The claim. One conditional UPDATE carrying every precondition; whoever
+       the database serialises second matches nothing, this throws, and their
+       stock goes back. */
+    const spent = couponToSpend ? await coupons.redeem(couponToSpend, order.id, tx) : null;
 
     const items = await insertOrderItems(
       lines.map((line) => ({
@@ -532,7 +660,7 @@ export async function placeOrder(
       tx,
     );
 
-    return { order, items };
+    return { order, items, coupon: spent };
   });
 
   log.info(
@@ -586,8 +714,26 @@ export async function placeOrder(
    * paid for in stock. Matching on the phone rather than a session covers the
    * customer who gave up on their phone and finished on a laptop.
    */
+  /* The offer first, then the recovery. Both are bookkeeping for the call
+     list, but the lead's history is read as a story and this is the order the
+     story happened in: the customer used the code, and that is why there is an
+     order to close the lead with. Written the other way round the timeline
+     reads as though the coupon were spent after the sale. */
+  if (created.coupon) {
+    try {
+      await coupons.noteRedemption(created.coupon, {
+        id: created.order.id,
+        orderNumber: created.order.orderNumber,
+      });
+    } catch (error) {
+      log.error({ err: error, orderId: created.order.id }, "Could not record the coupon use");
+    }
+  }
+
   try {
-    await markRecovered(created.order.phone, created.order.id);
+    await markRecovered(created.order.phone, created.order.id, {
+      orderNumber: created.order.orderNumber,
+    });
   } catch (error) {
     log.error({ err: error, orderId: created.order.id }, "Could not close the abandoned lead");
   }

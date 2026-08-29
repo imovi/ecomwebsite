@@ -36,6 +36,8 @@ export * from "./ad-campaigns.js";
 
 /* Phase 5 — recovering incomplete checkouts */
 export * from "./abandoned-checkouts.js";
+export * from "./abandoned-checkout-events.js";
+export * from "./recovery-coupons.js";
 
 /* Phase 6 — courier hand-off */
 export * from "./courier-shipments.js";

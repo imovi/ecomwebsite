@@ -218,6 +218,13 @@
       "when": 1786634567319,
       "tag": "0030_telegram_backup_chat",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1786634568319,
+      "tag": "0031_recovery_coupons",
+      "breakpoints": true
     }
   ]
 }

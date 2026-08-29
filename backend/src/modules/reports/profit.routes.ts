@@ -6,6 +6,7 @@ import { sendSuccess } from "../../core/response.js";
 import { safeString, uuidSchema } from "../../lib/validation/schemas.js";
 import * as service from "./profit.service.js";
 import * as performance from "./performance.service.js";
+import * as recovery from "./recovery.service.js";
 import * as adSpend from "./product-ad-spend.service.js";
 
 /**
@@ -137,6 +138,23 @@ const performanceReport: RequestHandler = async (req, res) => {
 };
 
 reportsAdminRouter.get("/performance", validate({ query: rangeQuerySchema }), performanceReport);
+
+/**
+ * Whether chasing incomplete checkouts is paying for itself.
+ *
+ * Same range vocabulary as the two reports beside it, so an owner comparing
+ * screens does not have to re-pick the dates on each one.
+ */
+const recoveryReport: RequestHandler = async (req, res) => {
+  const { query } = validated<unknown, RangeQuery>(req);
+  const range = service.resolveRange(query.preset, query);
+
+  sendSuccess(res, {
+    report: await recovery.recoveryReport(range, { preset: query.preset }),
+  });
+};
+
+reportsAdminRouter.get("/recovery", validate({ query: rangeQuerySchema }), recoveryReport);
 
 reportsAdminRouter.get("/profit", validate({ query: rangeQuerySchema }), profit);
 reportsAdminRouter.get("/profit.csv", validate({ query: rangeQuerySchema }), profitCsv);

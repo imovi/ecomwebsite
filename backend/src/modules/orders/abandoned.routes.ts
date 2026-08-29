@@ -14,13 +14,16 @@ import { uuidSchema, safeString } from "../../lib/validation/schemas.js";
    as the same person and the lead actually closes. */
 import { bdPhoneSchema } from "./order.validation.js";
 import { deliveryZoneEnum } from "../../db/schema/order-enums.js";
-import { ABANDONED_STATUSES } from "../../db/schema/abandoned-checkouts.js";
+import { ABANDONED_REASONS, ABANDONED_STATUSES } from "../../db/schema/abandoned-checkouts.js";
 import * as service from "./abandoned.service.js";
+import * as coupons from "./recovery-coupon.service.js";
+import type { LeadActor } from "./abandoned-event.repository.js";
 
 /**
  * Incomplete checkouts.
  *
  *   POST /api/v1/checkout/incomplete   public, called as the customer types
+ *   GET  /api/v1/checkout/resume/:id   public, the cart behind a WhatsApp link
  *   /api/v1/admin/abandoned            the shop's call list
  *
  * The public endpoint takes a phone number from an unauthenticated stranger, so
@@ -99,6 +102,27 @@ abandonedPublicRouter.post(
   record,
 );
 
+/**
+ * The cart behind a resume link.
+ *
+ * Rate limited on the same allowance as recording one: it is an unauthenticated
+ * read keyed by a UUID, and without a ceiling it is a free way to grind through
+ * the id space from anywhere. The ids are not guessable and the payload holds no
+ * contact details — see `resumeCart` — so a limit is the belt on top of that
+ * rather than the thing keeping anybody out.
+ */
+const resume: RequestHandler = async (req, res) => {
+  const { params } = validated<unknown, unknown, { id: string }>(req);
+  sendSuccess(res, await service.resumeCart(params.id));
+};
+
+abandonedPublicRouter.get(
+  "/resume/:id",
+  recordRateLimit,
+  validate({ params: z.object({ id: uuidSchema }) }),
+  resume,
+);
+
 /* -------------------------------------------------------------------------- */
 /* Admin                                                                      */
 /* -------------------------------------------------------------------------- */
@@ -125,13 +149,29 @@ const updateSchema = z
   .object({
     status: z.enum(ABANDONED_STATUSES).optional(),
     note: safeString({ max: 500 }).optional(),
+    /* Empty clears it. A reason recorded by mistake has to be removable, and
+       "do not contact" in particular gates whether an offer may be made. */
+    reason: z.union([z.enum(ABANDONED_REASONS), z.literal("")]).optional(),
   })
   .strict()
   .refine((value) => Object.keys(value).length > 0, {
-    message: "Provide a status, a note, or both.",
+    message: "Provide a status, a note or a reason.",
   });
 
+const sentSchema = z.object({ kind: z.enum(["help", "coupon_offer"]) }).strict();
+
 const idParamSchema = z.object({ id: uuidSchema });
+
+/**
+ * Who the history credits.
+ *
+ * The email rather than a display name, matching what the order timeline
+ * records — one convention across both, and an address is at least unambiguous
+ * about which of two people called Rahim it was.
+ */
+function actorOf(req: Parameters<RequestHandler>[0]): LeadActor {
+  return { adminId: req.auth?.adminId ?? null, name: req.auth?.email ?? "Admin" };
+}
 
 const list: RequestHandler = async (req, res) => {
   const { query } = validated<unknown, z.infer<typeof listQuerySchema>>(req);
@@ -141,9 +181,33 @@ const list: RequestHandler = async (req, res) => {
 
 const update: RequestHandler = async (req, res) => {
   const { body, params } = validated<z.infer<typeof updateSchema>, unknown, { id: string }>(req);
+  sendSuccess(res, { checkout: await service.update(params.id, body, actorOf(req)) });
+};
+
+/** Confirms a message actually went out — pressed after sending, not before. */
+const markSent: RequestHandler = async (req, res) => {
+  const { body, params } = validated<z.infer<typeof sentSchema>, unknown, { id: string }>(req);
   sendSuccess(res, {
-    checkout: await service.update(params.id, body, req.auth?.adminId ?? null),
+    checkout: await service.markMessageSent(params.id, body.kind, actorOf(req)),
   });
+};
+
+/**
+ * Issues the offer, or hands back the one already outstanding.
+ *
+ * 200 either way, with `created` saying which happened. A second tap is not an
+ * error — the operator wants the code, and telling them one already exists
+ * somewhere they cannot see would be the least useful possible answer.
+ */
+const issueCoupon: RequestHandler = async (req, res) => {
+  const { params } = validated<unknown, unknown, { id: string }>(req);
+  const result = await coupons.generate({ checkoutId: params.id, actor: actorOf(req) });
+  sendSuccess(res, result);
+};
+
+const cancelCoupon: RequestHandler = async (req, res) => {
+  const { params } = validated<unknown, unknown, { id: string }>(req);
+  sendSuccess(res, { coupon: await coupons.cancelForLead(params.id, actorOf(req)) });
 };
 
 const remove: RequestHandler = async (req, res) => {
@@ -155,3 +219,15 @@ const remove: RequestHandler = async (req, res) => {
 abandonedAdminRouter.get("/", validate({ query: listQuerySchema }), list);
 abandonedAdminRouter.patch("/:id", validate({ params: idParamSchema, body: updateSchema }), update);
 abandonedAdminRouter.delete("/:id", validate({ params: idParamSchema }), remove);
+
+abandonedAdminRouter.post(
+  "/:id/sent",
+  validate({ params: idParamSchema, body: sentSchema }),
+  markSent,
+);
+
+/* The offer. POST creates or returns; DELETE withdraws one that has not been
+   spent — a coupon the customer has already used cannot be taken back, because
+   the order exists, and `cancel` refuses it rather than pretending. */
+abandonedAdminRouter.post("/:id/coupon", validate({ params: idParamSchema }), issueCoupon);
+abandonedAdminRouter.delete("/:id/coupon", validate({ params: idParamSchema }), cancelCoupon);

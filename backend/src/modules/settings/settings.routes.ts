@@ -63,6 +63,17 @@ const updateSettingsSchema = z
       })
       .strict()
       .optional(),
+
+    /* The recovery offer. Hours is bounded at 720 — a month — because past
+       that the offer has stopped being an offer and become the shop's delivery
+       price, which belongs in the delivery settings above instead. */
+    recovery: z
+      .object({
+        couponMinCartValue: money.optional(),
+        couponHours: z.number().int().min(1).max(720).optional(),
+      })
+      .strict()
+      .optional(),
     /* Courier hand-off. The key and secret are write-only, like every other
        credential here: omitted keeps the stored value, `null` clears it. */
     courier: z

@@ -211,8 +211,15 @@ constraints, generated columns and transaction behaviour are all exercised.
 
 Reviews and ratings (an empty review section hurts a new store more than it
 helps — the product-page trust badges do that job instead), customer accounts,
-wishlists, coupons, online payment, email/SMS transports, and an analytics
-dashboard.
+wishlists, a general discount system, online payment, email/SMS transports, and
+an analytics dashboard.
+
+There is one coupon, and it is deliberately not a discount system: a one-time
+free-delivery code the desk hands to a single abandoned checkout, valid for a
+day. It exists because the order desk could not otherwise keep a promise it was
+already making on the phone — `orders` refuses admin edits to the delivery
+charge on purpose. Anything wider (percentage off, campaign codes, stacking)
+would be a different feature with different accounting behind it.
 
 What *is* attached to the order event bus: Meta's Conversions API, Telegram
 alerts and the Google Sheets export. Each is a subscriber that reads its own

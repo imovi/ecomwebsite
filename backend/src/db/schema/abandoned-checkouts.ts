@@ -37,6 +37,31 @@ export interface AbandonedLine {
 export const ABANDONED_STATUSES = ["open", "contacted", "dismissed"] as const;
 export type AbandonedStatus = (typeof ABANDONED_STATUSES)[number];
 
+/**
+ * Why a checkout was abandoned, as the desk heard it.
+ *
+ * A closed list rather than free text because the point is the tally: one
+ * customer saying the delivery charge is too high is a conversation, forty
+ * saying it is a pricing decision. The free-text `note` is still there for
+ * everything a list cannot hold.
+ *
+ * Stored as the raw string and validated at the boundary rather than as a
+ * database enum — adding a reason should be a one-line change here, not a
+ * migration on a table the order desk is using.
+ */
+export const ABANDONED_REASONS = [
+  "price_too_high",
+  "delivery_charge",
+  "product_question",
+  "buying_later",
+  "delivery_area",
+  "checkout_problem",
+  "no_response",
+  "do_not_contact",
+] as const;
+
+export type AbandonedReason = (typeof ABANDONED_REASONS)[number];
+
 export const abandonedCheckouts = pgTable(
   "abandoned_checkouts",
   {
@@ -94,6 +119,27 @@ export const abandonedCheckouts = pgTable(
      * `updated_at` would re-alert the same person repeatedly.
      */
     alertedAt: timestamp("alerted_at", { withTimezone: true }),
+
+    /**
+     * When the desk confirmed it sent the recovery message.
+     *
+     * Set by a button the operator presses AFTER sending, not by opening the
+     * WhatsApp link. The link only writes the message into the chat — the shop
+     * still reads it, adjusts it, and may decide not to send at all. A flag set
+     * on the click would mark half the list as messaged when it was not, and a
+     * status nobody believes is a status nobody reads.
+     */
+    helpMessageSentAt: timestamp("help_message_sent_at", { withTimezone: true }),
+    couponOfferSentAt: timestamp("coupon_offer_sent_at", { withTimezone: true }),
+
+    /**
+     * Why this one died, from a short list. Empty means nobody has said.
+     *
+     * Separate from `note`, which stays free text. The note is what the customer
+     * said; this is the part the report can add up — and "delivery charge is too
+     * high" appearing forty times is a pricing decision, not a call-list entry.
+     */
+    reason: text("reason").notNull().default(""),
 
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().default(sql`now()`),

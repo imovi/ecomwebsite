@@ -40,6 +40,27 @@ export const storeSettings = pgTable(
     /** Cap on units of any single line, to blunt joke orders on a COD store. */
     maxQuantityPerItem: integer("max_quantity_per_item").notNull().default(10),
 
+    /* --- Recovering incomplete checkouts --------------------------------- */
+    /**
+     * Below this cart value the desk cannot generate a free-delivery offer.
+     *
+     * 0 means no floor, which is where a shop starts. It exists because the
+     * offer costs a fixed amount — one delivery charge — so on a small cart the
+     * shop can end up paying most of its own margin to recover a sale worth
+     * less than the courier. What that line is depends on the goods, so it is a
+     * setting rather than a constant.
+     */
+    recoveryCouponMinCartValue: integer("recovery_coupon_min_cart_value").notNull().default(0),
+    /**
+     * How long an offer lives, in hours.
+     *
+     * The urgency is the mechanism — an offer with no deadline is a discount,
+     * and a customer who can use it whenever has no reason to use it today. A
+     * setting rather than a constant because a shop may want six hours during a
+     * campaign or three days over Eid, and neither should need a deploy.
+     */
+    recoveryCouponHours: integer("recovery_coupon_hours").notNull().default(24),
+
     /**
      * What every new order number starts with — `GNG-` gives `GNG-10042`.
      *
@@ -366,6 +387,11 @@ export const storeSettings = pgTable(
           and ${table.freeDeliveryThreshold} >= 0
           and ${table.minimumOrderValue} >= 0
           and ${table.maxQuantityPerItem} > 0`,
+    ),
+    check(
+      "store_settings_recovery_coupon_sane",
+      sql`${table.recoveryCouponMinCartValue} >= 0
+          and ${table.recoveryCouponHours} between 1 and 720`,
     ),
     check(
       "store_settings_courier_provider_known",

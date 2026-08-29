@@ -314,6 +314,16 @@ export type ApiOrderStatus =
   | "cancelled"
   | "returned";
 
+/** What a recovery coupon does to a priced cart, or why it does nothing. */
+export interface ApiCouponQuote {
+  code: string;
+  applied: boolean;
+  /** The delivery charge it removed. 0 when delivery was already free. */
+  saved: number;
+  reason?: "unknown" | "used" | "expired" | "cancelled";
+  message?: string;
+}
+
 export interface ApiQuote {
   items: {
     productId: string;
@@ -328,6 +338,8 @@ export interface ApiQuote {
   deliveryCharge: number;
   grandTotal: number;
   deliveryZone: ApiDeliveryZone | null;
+  /** Present only when a code was sent. Null means none was. */
+  coupon: ApiCouponQuote | null;
   zoneInferred: boolean;
   zoneMatchedOn: string | null;
   freeDeliveryThreshold: number;
@@ -515,6 +527,11 @@ export interface ApiStoreSettings {
   ordering: {
     minimumOrderValue: number;
     maxQuantityPerItem: number;
+  };
+  /** The rules behind the free-delivery offer sent to abandoned checkouts. */
+  recovery: {
+    couponMinCartValue: number;
+    couponHours: number;
   };
   /**
    * What an order costs the shop, as opposed to what it charges for.

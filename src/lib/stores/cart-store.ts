@@ -59,6 +59,16 @@ interface CartState {
    * a re-render observe a half-pruned cart.
    */
   removeLines: (lines: { productId: string; variantId?: string | undefined }[]) => void;
+  /**
+   * Swaps the whole cart for a known-good set of lines.
+   *
+   * For resuming an abandoned checkout from a WhatsApp link. Replaces rather
+   * than merges: the customer tapped a link about one specific basket, and
+   * quietly adding it to whatever else was in the cart from three days ago
+   * would hand them an order they did not agree to at a total they did not
+   * expect — on cash on delivery, at the door.
+   */
+  replaceItems: (lines: CartLine[]) => void;
   clear: () => void;
 
   startBuyNow: (line: CartLine) => void;
@@ -126,6 +136,8 @@ export const useCartStore = create<CartState>()(
              the cart is clean. */
           return items.length === state.items.length ? state : { items };
         }),
+
+      replaceItems: (lines) => set({ items: lines.filter((line) => line.qty > 0) }),
 
       clear: () => set({ items: [] }),
 

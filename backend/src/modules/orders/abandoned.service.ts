@@ -4,6 +4,7 @@ import {
   abandonedCheckouts,
   type AbandonedCheckoutRow,
   type AbandonedLine,
+  type AbandonedReason,
   type AbandonedStatus,
 } from "../../db/schema/abandoned-checkouts.js";
 import { products } from "../../db/schema/products.js";
@@ -11,6 +12,14 @@ import { productVariants } from "../../db/schema/product-variants.js";
 import { NotFoundError } from "../../core/errors.js";
 import { createLogger } from "../../core/logger.js";
 import type { DeliveryZone } from "../../db/schema/order-enums.js";
+import * as coupons from "./recovery-coupon.service.js";
+import {
+  listLeadEventsFor,
+  recordLeadEvent,
+  CUSTOMER_LEAD_ACTOR,
+  type LeadActor,
+  type LeadEventDto,
+} from "./abandoned-event.repository.js";
 
 /**
  * Incomplete checkouts.
@@ -21,10 +30,15 @@ import type { DeliveryZone } from "../../db/schema/order-enums.js";
  * shop a list worth working through.
  *
  * WHAT IS DELIBERATELY NOT DONE HERE
- * No marketing list, no export, no automated messaging. The record exists so
- * somebody can ring a customer about the order they were halfway through, and
- * it removes itself the moment that order arrives. Anything beyond that is a
- * different feature with different consent behind it.
+ * No marketing list, no export, and nothing sends itself. The shop can now
+ * message a lead and offer it free delivery, but every one of those is a button
+ * an operator presses about one customer they were already going to ring — the
+ * WhatsApp link opens a chat with the text written, and a human sends it.
+ *
+ * That distinction is the consent boundary, not a limitation to be tidied away
+ * later. A customer who typed their number into a checkout agreed to be
+ * contacted about that checkout. They did not agree to a broadcast list, and an
+ * automated send is how one turns into the other without anybody deciding to.
  */
 
 const log = createLogger("abandoned");
@@ -178,8 +192,9 @@ export async function record(input: RecordAbandonedInput): Promise<void> {
 export async function markRecovered(
   phone: string,
   orderId: string,
-  executor: DatabaseExecutor = getDb(),
+  options: { orderNumber?: string | undefined; executor?: DatabaseExecutor | undefined } = {},
 ): Promise<void> {
+  const executor = options.executor ?? getDb();
   const normalized = normalizePhone(phone);
 
   const updated = await executor
@@ -197,8 +212,24 @@ export async function markRecovered(
     )
     .returning({ id: abandonedCheckouts.id });
 
-  if (updated.length > 0) {
-    log.info({ orderId, count: updated.length }, "Incomplete checkout recovered by an order");
+  if (updated.length === 0) return;
+
+  log.info({ orderId, count: updated.length }, "Incomplete checkout recovered by an order");
+
+  /* One line per lead so the card can say what closed it. Matching is still on
+     the phone, NOT on the resume link — most customers who are messaged go to
+     the site themselves rather than tapping the link, and crediting only the
+     link would report a recovery rate well below the real one. */
+  for (const lead of updated) {
+    await recordLeadEvent(
+      {
+        checkoutId: lead.id,
+        type: "recovered",
+        detail: options.orderNumber ? { orderNumber: options.orderNumber } : {},
+        actor: CUSTOMER_LEAD_ACTOR,
+      },
+      executor,
+    );
   }
 }
 
@@ -218,13 +249,68 @@ export interface AbandonedDto {
   estimatedValue: number;
   status: AbandonedStatus;
   note: string;
+  reason: AbandonedReason | "";
   contactedAt: string | null;
+  helpMessageSentAt: string | null;
+  couponOfferSentAt: string | null;
   recovered: boolean;
+  /** The most recent offer made to this lead, whatever became of it. */
+  coupon: coupons.CouponDto | null;
+  /** What has been done about this one, oldest first. */
+  events: LeadEventDto[];
+  /** Where the lead stands, so the card needs one badge instead of five. */
+  stage: LeadStage;
   lastSeenAt: string;
   createdAt: string;
 }
 
-function toDto(row: AbandonedCheckoutRow): AbandonedDto {
+/**
+ * One word for where a lead has got to.
+ *
+ * Derived, never stored. The three stored statuses — open, contacted,
+ * dismissed — still mean exactly what they meant before this feature existed,
+ * and `openCount` still counts the same rows, so the badge on the nav did not
+ * quietly change meaning underneath the shop. Everything richer is computed
+ * from facts already recorded elsewhere: a timestamp, a coupon, an order.
+ *
+ * The alternative was widening the status column and its CHECK constraint, and
+ * then owning the question of what a lead with an expired coupon AND a sent
+ * help message is. Two sources of truth that can disagree is how a list stops
+ * being believed.
+ */
+export type LeadStage =
+  | "open"
+  | "called"
+  | "help_message_sent"
+  | "coupon_active"
+  | "coupon_offer_sent"
+  | "coupon_expired"
+  | "recovered"
+  | "dismissed";
+
+function stageOf(row: AbandonedCheckoutRow, coupon: coupons.CouponDto | null): LeadStage {
+  /* Most final first. A recovered lead is recovered whatever else happened on
+     the way to it. */
+  if (row.recoveredOrderId) return "recovered";
+  if (row.status === "dismissed") return "dismissed";
+
+  if (coupon?.state === "active") {
+    return row.couponOfferSentAt ? "coupon_offer_sent" : "coupon_active";
+  }
+  /* An offer was made and ran out. Worth telling apart from never having made
+     one: it says this customer has already passed on it once. */
+  if (coupon?.state === "expired") return "coupon_expired";
+
+  if (row.helpMessageSentAt) return "help_message_sent";
+  if (row.status === "contacted") return "called";
+  return "open";
+}
+
+function toDto(
+  row: AbandonedCheckoutRow,
+  coupon: coupons.CouponDto | null,
+  events: LeadEventDto[],
+): AbandonedDto {
   return {
     id: row.id,
     phone: row.phone,
@@ -237,11 +323,36 @@ function toDto(row: AbandonedCheckoutRow): AbandonedDto {
     estimatedValue: row.estimatedValue,
     status: row.status,
     note: row.note,
+    reason: (row.reason || "") as AbandonedReason | "",
     contactedAt: row.contactedAt?.toISOString() ?? null,
+    helpMessageSentAt: row.helpMessageSentAt?.toISOString() ?? null,
+    couponOfferSentAt: row.couponOfferSentAt?.toISOString() ?? null,
     recovered: row.recoveredOrderId !== null,
+    coupon,
+    events,
+    stage: stageOf(row, coupon),
     lastSeenAt: row.lastSeenAt.toISOString(),
     createdAt: row.createdAt.toISOString(),
   };
+}
+
+/**
+ * Loads the coupons and histories for a page of leads.
+ *
+ * Two queries for the whole page rather than two per card. The list renders
+ * every lead with its history, and the per-card version was fifty round trips
+ * to draw one screen.
+ */
+async function decorate(rows: AbandonedCheckoutRow[]): Promise<AbandonedDto[]> {
+  const ids = rows.map((row) => row.id);
+  const [couponsByLead, eventsByLead] = await Promise.all([
+    coupons.latestFor(ids),
+    listLeadEventsFor(ids),
+  ]);
+
+  return rows.map((row) =>
+    toDto(row, couponsByLead.get(row.id) ?? null, eventsByLead.get(row.id) ?? []),
+  );
 }
 
 export async function list(
@@ -261,7 +372,7 @@ export async function list(
     .orderBy(desc(abandonedCheckouts.lastSeenAt))
     .limit(200);
 
-  return rows.map(toDto);
+  return decorate(rows);
 }
 
 /** How many are waiting for a call — for the badge on the nav. */
@@ -276,20 +387,40 @@ export async function openCount(): Promise<number> {
   return rows[0]?.count ?? 0;
 }
 
+async function loadOne(id: string): Promise<AbandonedDto> {
+  const rows = await getDb()
+    .select()
+    .from(abandonedCheckouts)
+    .where(eq(abandonedCheckouts.id, id))
+    .limit(1);
+
+  const row = rows[0];
+  if (!row) throw new NotFoundError("That incomplete checkout no longer exists.");
+
+  const dto = (await decorate([row]))[0];
+  if (!dto) throw new NotFoundError("That incomplete checkout no longer exists.");
+  return dto;
+}
+
 export async function update(
   id: string,
-  input: { status?: AbandonedStatus | undefined; note?: string | undefined },
-  actorId: string | null,
+  input: {
+    status?: AbandonedStatus | undefined;
+    note?: string | undefined;
+    reason?: AbandonedReason | "" | undefined;
+  },
+  actor: LeadActor,
 ): Promise<AbandonedDto> {
   const patch: Partial<AbandonedCheckoutRow> = {};
   if (input.note !== undefined) patch.note = input.note;
+  if (input.reason !== undefined) patch.reason = input.reason;
 
   if (input.status !== undefined) {
     patch.status = input.status;
     /* Stamp who rang and when, so "did anyone call this person?" is a fact
        rather than a guess — the same reason order status changes are logged. */
     if (input.status === "contacted") {
-      patch.contactedBy = actorId;
+      patch.contactedBy = actor.adminId;
       patch.contactedAt = new Date();
     }
   }
@@ -303,7 +434,61 @@ export async function update(
   const row = rows[0];
   if (!row) throw new NotFoundError("That incomplete checkout no longer exists.");
 
-  return toDto(row);
+  /* History for the parts that change what happens next. The note is included
+     because what the customer actually said is the most useful thing on this
+     card three days later, and the reason tag with it — so the report can count
+     the same thing being said forty times. */
+  if (input.status === "contacted") {
+    await recordLeadEvent({ checkoutId: row.id, type: "called", actor });
+  }
+  if (input.status === "dismissed") {
+    await recordLeadEvent({ checkoutId: row.id, type: "dismissed", actor });
+  }
+  if (input.note !== undefined && input.note.trim() !== "") {
+    await recordLeadEvent({
+      checkoutId: row.id,
+      type: "note_added",
+      detail: { note: input.note, ...(row.reason ? { reason: row.reason } : {}) },
+      actor,
+    });
+  }
+
+  return loadOne(row.id);
+}
+
+/**
+ * Records that the desk sent a message, after it sent one.
+ *
+ * Separate from opening the WhatsApp link, and the separation is the point.
+ * The link writes text into a chat; whether it is then sent is a decision the
+ * operator makes while reading it, and often they will adjust it or ring
+ * instead. A flag set on the click would mark half the list as messaged when it
+ * was not, and a status nobody believes is a status nobody reads.
+ */
+export async function markMessageSent(
+  id: string,
+  kind: "help" | "coupon_offer",
+  actor: LeadActor,
+): Promise<AbandonedDto> {
+  const patch =
+    kind === "help" ? { helpMessageSentAt: new Date() } : { couponOfferSentAt: new Date() };
+
+  const rows = await getDb()
+    .update(abandonedCheckouts)
+    .set({ ...patch, updatedAt: sql`now()` })
+    .where(eq(abandonedCheckouts.id, id))
+    .returning({ id: abandonedCheckouts.id });
+
+  const row = rows[0];
+  if (!row) throw new NotFoundError("That incomplete checkout no longer exists.");
+
+  await recordLeadEvent({
+    checkoutId: row.id,
+    type: kind === "help" ? "help_message_sent" : "coupon_offer_sent",
+    actor,
+  });
+
+  return loadOne(row.id);
 }
 
 export async function remove(id: string): Promise<void> {
@@ -313,4 +498,50 @@ export async function remove(id: string): Promise<void> {
     .returning({ id: abandonedCheckouts.id });
 
   if (rows.length === 0) throw new NotFoundError("That incomplete checkout no longer exists.");
+}
+
+/* -------------------------------------------------------------------------- */
+/* Resuming a checkout                                                        */
+/* -------------------------------------------------------------------------- */
+
+export interface ResumeCart {
+  items: { productId: string; variantId: string | null; quantity: number }[];
+}
+
+/**
+ * The cart behind a resume link — and nothing else.
+ *
+ * Public and unauthenticated, because the link goes out over WhatsApp and the
+ * customer who taps it is not signed into anything.
+ *
+ * DELIBERATELY NOT THE CUSTOMER'S DETAILS
+ * The obvious version of this pre-fills the name, phone and address so there is
+ * nothing to retype. It also means anybody the link is forwarded to — and
+ * WhatsApp messages are forwarded constantly — can read a stranger's home
+ * address. The cart is not sensitive; the contact details are. So this returns
+ * ids and quantities, the form opens empty, and the customer types their own
+ * number as they would have done anyway.
+ *
+ * The lead id is the token. A v4 UUID is not guessable, and guessing one buys
+ * you somebody's shopping list.
+ */
+export async function resumeCart(id: string): Promise<ResumeCart> {
+  const rows = await getDb()
+    .select({ contents: abandonedCheckouts.contents })
+    .from(abandonedCheckouts)
+    .where(eq(abandonedCheckouts.id, id))
+    .limit(1);
+
+  const row = rows[0];
+  if (!row) throw new NotFoundError("That link is no longer valid.");
+
+  /* No prices either. The storefront re-prices from the catalogue, so a cart
+     saved last week cannot resurrect last week's price. */
+  return {
+    items: row.contents.map((line) => ({
+      productId: line.productId,
+      variantId: line.variantId,
+      quantity: line.quantity,
+    })),
+  };
 }

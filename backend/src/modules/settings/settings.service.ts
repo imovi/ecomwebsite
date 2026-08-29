@@ -36,6 +36,17 @@ export interface SettingsDto {
     maxQuantityPerItem: number;
   };
   /**
+   * The rules behind the free-delivery offer sent to abandoned checkouts.
+   *
+   * Here rather than as constants because both are business decisions an owner
+   * revisits — a floor below which recovering a sale costs more than it is
+   * worth, and a deadline they may want shorter during a campaign.
+   */
+  recovery: {
+    couponMinCartValue: number;
+    couponHours: number;
+  };
+  /**
    * What an order costs the shop, as opposed to what it charges for.
    *
    * `courier` is deliberately separate from `delivery` above: one is what the
@@ -205,6 +216,10 @@ export function toSettingsDto(row: StoreSettingsRow): SettingsDto {
       minimumOrderValue: row.minimumOrderValue,
       maxQuantityPerItem: row.maxQuantityPerItem,
     },
+    recovery: {
+      couponMinCartValue: row.recoveryCouponMinCartValue,
+      couponHours: row.recoveryCouponHours,
+    },
     costs: {
       courierInsideDhaka: row.courierCostInsideDhaka,
       courierOutsideDhaka: row.courierCostOutsideDhaka,
@@ -319,6 +334,10 @@ export interface UpdateSettingsInput {
     minimumOrderValue?: number;
     maxQuantityPerItem?: number;
   };
+  recovery?: {
+    couponMinCartValue?: number;
+    couponHours?: number;
+  };
   courier?: {
     provider?: string;
     /** Omitted keeps the stored key; `null` clears it. */
@@ -409,6 +428,12 @@ export async function updateSettings(input: UpdateSettingsInput): Promise<Settin
   }
   if (input.ordering?.maxQuantityPerItem !== undefined) {
     patch.maxQuantityPerItem = input.ordering.maxQuantityPerItem;
+  }
+  if (input.recovery?.couponMinCartValue !== undefined) {
+    patch.recoveryCouponMinCartValue = input.recovery.couponMinCartValue;
+  }
+  if (input.recovery?.couponHours !== undefined) {
+    patch.recoveryCouponHours = input.recovery.couponHours;
   }
   if (input.store?.name !== undefined) patch.storeName = input.store.name;
   if (input.store?.phone !== undefined) patch.storePhone = input.store.phone;

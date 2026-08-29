@@ -229,6 +229,10 @@ export async function sendBackupDocument(
   file: { name: string; bytes: Uint8Array },
   caption: string,
 ): Promise<SendOutcome> {
+  /* Follows the file rather than being assumed. Telling Telegram a plain SQL
+     file is gzip makes phones offer to unpack something that is already
+     readable — the exact confusion this file is meant to avoid. */
+  const mediaType = file.name.endsWith(".gz") ? "application/gzip" : "text/plain; charset=utf-8";
   const token = settings.telegramBotToken.trim();
   const chatId = settings.telegramBackupChatId.trim();
 
@@ -246,12 +250,15 @@ export async function sendBackupDocument(
   const form = new FormData();
   form.set("chat_id", chatId);
   form.set("caption", caption);
+  /* The caption carries <b> and <code>, the same as every other message the
+     bot sends. Without this Telegram prints the tags. */
+  form.set("parse_mode", "HTML");
   /* Copied into a fresh ArrayBuffer rather than passed as the view: a
      Uint8Array over a pooled Node buffer can carry a byteOffset, and Blob would
      then read from the start of the pool instead of the start of the dump. */
   const bytes = new Uint8Array(file.bytes.byteLength);
   bytes.set(file.bytes);
-  form.set("document", new Blob([bytes.buffer], { type: "application/gzip" }), file.name);
+  form.set("document", new Blob([bytes.buffer], { type: mediaType }), file.name);
 
   try {
     const response = await fetch(`${API}/bot${token}/sendDocument`, {

@@ -1,116 +1,119 @@
-# Putting the shop back after a server is lost
+# Putting the shop back on a new server
 
-This is the other half of `deploy/backup-to-git.sh`. Read it before you need
-it — the moment you need it is the worst moment to read anything.
+Read this before you need it. The moment you need it is the worst moment to
+read anything.
 
-Nothing here needs the old server. Everything comes from two places: this
-repository, and the private data repository the backup pushes to.
+This shop has already lost a database once, to a suspended host. Nothing below
+needs the old server to still exist.
 
 ## What you must have
 
-1. **The private key.** One line beginning `AGE-SECRET-KEY-1…`, written when
-   backups were set up and kept in your password manager. Without it the
-   database copies are unreadable — that is what makes them safe to keep on
-   GitHub, and it is also the one thing nobody can replace for you.
-2. **Access to the two repositories** — the code and the data.
+1. **A backup file.** The bot sends one to your Telegram every night at 3:30am,
+   named like `hinar-2026-08-30-0330.sql`. Any of them will do; the newest
+   loses the least. Open it in a text editor if you want to see what is in it —
+   it is plain SQL, not an archive.
+2. **This repository.** The code.
 3. **A server** with Docker, and DNS pointing at it.
+
+That is the whole list. There is no key to find and nothing to decrypt, which
+is the point: a backup you cannot open after losing the server is not a backup.
+
+---
 
 ## 1. Bring up an empty shop
 
 ```bash
-git clone https://github.com/<you>/<code-repo>.git /opt/gng
+git clone https://github.com/<you>/<this-repo>.git /opt/gng
 cd /opt/gng
 bash deploy/bootstrap.sh
 ```
 
-Answer the questions as before. It writes a fresh `.env`, builds, migrates and
-creates an admin account. The shop will be running and empty — that is
-expected; the next step replaces its database wholesale.
+It asks for your domain, admin email, WhatsApp number and hotline, then writes
+a fresh `.env`, builds, migrates and creates an admin account. The shop will be
+running and **empty** — expected. The next step replaces its database wholesale.
 
-## 2. Fetch the backup
+## 2. Get the backup onto the server
 
-```bash
-git clone https://<TOKEN>@github.com/<you>/habushop-data.git /root/gng-backup-repo
-```
-
-## 3. Decrypt
-
-Put your private key on the machine just long enough to use it:
+Save the file from Telegram to your computer, then:
 
 ```bash
-# paste the key, then Ctrl-D
-cat > /root/key.age
-chmod 600 /root/key.age
-
-age -d -i /root/key.age -o /root/restore.dump \
-  /root/gng-backup-repo/db/latest.dump.age
+scp hinar-2026-08-30-0330.sql root@YOUR_SERVER_IP:/root/
 ```
 
-To go back to a particular day, use `db/YYYY-MM-DD.dump.age` instead.
+If it ends in `.gz` — which only happens once a shop is very large — unzip it
+first: `gunzip hinar-2026-08-30-0330.sql.gz`.
 
-## 4. Put the database back
-
-The dump carries its own schema, so the tables `bootstrap.sh` just created are
-dropped first. Nothing of value is in them yet.
+## 3. Put the database back
 
 ```bash
 cd /opt/gng
 docker compose stop api web
 
+# The backup carries its own tables, so clear the empty ones bootstrap made.
 docker compose exec -T postgres sh -lc \
   'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"'
 
 docker compose exec -T postgres sh -lc \
-  'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner --no-privileges' \
-  < /root/restore.dump
+  'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < /root/hinar-2026-08-30-0330.sql
 
 docker compose start api web
 ```
 
-## 5. Put the photos back
+## 4. Check
 
 ```bash
-docker run --rm \
-  -v gng_uploads:/dst \
-  -v /root/gng-backup-repo/uploads:/src:ro \
-  alpine sh -c 'cp -r /src/. /dst/ && chown -R 1000:1000 /dst'
-
-docker compose restart web
-```
-
-## 6. Check, then clean up
-
-```bash
-curl -s -o /dev/null -w '%{http_code}\n' https://habushop.com/
 docker compose exec -T postgres sh -lc \
   'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -t -c "select count(*) from orders;"'
+
+curl -s -o /dev/null -w '%{http_code}\n' https://hinarbd.com/
 ```
 
-Then remove the key from the server:
+Orders back, page answering 200 — done. Your old admin password works again:
+the restored database brought its own accounts with it, and the one
+`bootstrap.sh` printed in step 1 went with the database it was created in.
 
-```bash
-shred -u /root/key.age /root/restore.dump
-```
-
-Your old admin password works again — the restored database brought its own
-accounts back, and the one `bootstrap.sh` printed during step 1 is gone with
-the database it was created in.
+---
 
 ## What does not come back
 
-The backup holds the database and the photos. It does not hold `.env`, so
-`JWT_ACCESS_SECRET` and the database password are new ones. The only visible
-effect: everyone signed into the admin panel is signed out once. Nothing else
-depends on those values surviving.
+**Product photos.** They live in a Docker volume, not in the database. The
+backup deliberately leaves them out — they are already public on the storefront
+and would turn a small nightly message into a huge one. Re-upload them from the
+admin panel, or keep your own copy of the originals.
 
-## Testing it
+**`.env`.** `JWT_ACCESS_SECRET` and the database password are new ones. The only
+visible effect is that everyone signed into the admin panel is signed out once.
 
-A backup nobody has restored is a guess. Once, on any spare machine, decrypt
-`latest.dump.age` and check it opens:
+**The Meta and courier credentials** are inside the database, so those do come
+back.
+
+---
+
+## Test it once, before you need it
+
+A backup nobody has restored is a guess. Open the newest file in a text editor
+and look for a line beginning `COPY public.orders` with your own order numbers
+under it. If that is there, the backup is real.
+
+To be thorough, restore it onto any spare machine or a local Postgres:
 
 ```bash
-age -d -i /root/key.age /root/gng-backup-repo/db/latest.dump.age \
-  | pg_restore --list | head
+psql -U postgres -d scratch < hinar-2026-08-30-0330.sql
+psql -U postgres -d scratch -c 'select count(*) from orders;'
 ```
 
-If that prints a list of tables, the backup is real.
+---
+
+## The other backup
+
+`deploy/backup-to-git.sh` pushes an **encrypted** copy to a private GitHub
+repository, and `deploy/backup-setup.sh` sets it up. It is currently **off** —
+its timer is disabled, because this shop's GitHub account is public and an
+encrypted database in a public repository is still a database in a public
+repository.
+
+Turn it on only with a **private** repository. It gives you history in a third
+place, which Telegram does not: Telegram keeps what is in the chat, and a chat
+can be cleared. Restoring from it needs the `AGE-SECRET-KEY-1…` private key
+written when it was set up — which must be kept somewhere other than the
+server, or the copies are unreadable exactly when they are needed.

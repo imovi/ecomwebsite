@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
 import { gzipSync } from "node:zlib";
+import { sql } from "drizzle-orm";
+import { getDb } from "../../db/client.js";
 import { config } from "../../config/index.js";
 import { createLogger } from "../../core/logger.js";
 import { getSettings } from "../settings/settings.service.js";
@@ -42,6 +44,16 @@ const MAX_DUMP_BYTES = 200 * 1024 * 1024;
 
 /** A dump under this is a failed pg_dump, not an empty shop. */
 const MIN_DUMP_BYTES = 1024;
+
+/**
+ * Above this the file is gzipped rather than sent as readable SQL.
+ *
+ * Twenty megabytes of SQL is a shop with tens of thousands of orders. Below
+ * that, being readable is worth more than the bytes saved — the owner opening
+ * the file and recognising their own orders in it is the only check on a
+ * backup that anybody actually performs.
+ */
+const PLAIN_LIMIT_BYTES = 20 * 1024 * 1024;
 
 export interface BackupOutcome {
   sent: boolean;
@@ -119,11 +131,53 @@ async function dumpDatabase(): Promise<Buffer> {
   });
 }
 
-/** `hinar-2026-08-30-0230.sql.gz` — sortable, and says what it is. */
-function backupName(storeName: string, at: Date): string {
+/** `hinar-2026-08-30-0230.sql` — sortable, and says what it is. */
+function backupName(storeName: string, at: Date, gzipped: boolean): string {
   const slug = (storeName || "shop").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   const stamp = at.toISOString().slice(0, 16).replace("T", "-").replace(":", "");
-  return `${slug || "shop"}-${stamp}.sql.gz`;
+  return `${slug || "shop"}-${stamp}.sql${gzipped ? ".gz" : ""}`;
+}
+
+/**
+ * What is in the file, in a sentence.
+ *
+ * The point of this is not decoration. A backup that silently captured an empty
+ * database looks exactly like a good one until the day it is needed, and the
+ * owner is the only person who can tell "3 products, 12 orders" is wrong at a
+ * glance. Cheap counts, read from the same database that was just dumped.
+ */
+async function summarise(): Promise<string> {
+  try {
+    const rows = await getDb().execute(sql`
+      select
+        (select count(*) from products)                              as products,
+        (select count(*) from orders where deleted_at is null)       as orders,
+        (select count(distinct phone) from orders
+          where deleted_at is null)                                  as customers,
+        (select count(*) from admins)                                as admins,
+        (select order_number from orders where deleted_at is null
+          order by created_at desc limit 1)                          as newest
+    `);
+
+    const row = rows.rows[0];
+    if (!row) return "";
+
+    const n = (key: string): number => Number(row[key] ?? 0);
+    const parts = [
+      `${n("products")} products`,
+      `${n("orders")} orders`,
+      `${n("customers")} customers`,
+      `${n("admins")} admin accounts`,
+    ];
+
+    const newest = typeof row.newest === "string" ? row.newest : "";
+    return parts.join(" · ") + (newest ? `
+Newest order ${newest}` : "");
+  } catch {
+    /* A summary that cannot be read must not stop the backup being sent. The
+       file is the thing that matters; this is a label on it. */
+    return "";
+  }
 }
 
 /**
@@ -150,42 +204,76 @@ export async function backupToTelegram(): Promise<BackupOutcome> {
     return { sent: false, reason: "Backups run against a real Postgres, not the embedded one." };
   }
 
-  let sql: Buffer;
+  let dump: Buffer;
   try {
-    sql = await dumpDatabase();
+    dump = await dumpDatabase();
   } catch (error) {
     const reason = error instanceof Error ? error.message : "The dump failed.";
     log.error({ err: error }, "Database dump failed");
     return { sent: false, reason };
   }
 
-  if (sql.byteLength < MIN_DUMP_BYTES) {
+  if (dump.byteLength < MIN_DUMP_BYTES) {
     /* A pg_dump that dies part way still exits with something on stdout. A
        backup that is quietly empty is worse than no backup, because it looks
        like one until the day it is needed. */
     return { sent: false, reason: "The dump came back too small to be real." };
   }
 
-  const gz = gzipSync(sql, { level: 9 });
+  /* Sent as plain SQL, not as an archive.
+     The owner should be able to open the file and see their own shop in it —
+     a `.gz` is something you have to go and find a tool for, and a backup
+     nobody can look inside is a backup nobody checks. Compression only starts
+     when the file would otherwise be awkward to send, and the name says which
+     one it is. */
+  const plain = dump.byteLength <= PLAIN_LIMIT_BYTES;
+  const bytes = plain ? dump : gzipSync(dump, { level: 9 });
   const at = new Date();
-  const name = backupName(settings.storeName, at);
+  const name = backupName(settings.storeName, at, !plain);
 
-  const kb = Math.max(1, Math.round(gz.byteLength / 1024));
-  const caption =
-    `🗄 Database backup — ${at.toISOString().slice(0, 16).replace("T", " ")} UTC\n` +
-    `${kb} KB · restore with: gunzip -c ${name.replace(".gz", ".gz")} | psql`;
+  const shopTime = at.toLocaleString("en-GB", {
+    timeZone: "Asia/Dhaka",
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+  const contents = await summarise();
 
-  const outcome = await telegram.sendBackupDocument(
-    settings,
-    { name, bytes: gz },
-    caption,
-  );
+  /* Telegram caps a caption at 1024 characters, so this stays short on
+     purpose: what it is, what is inside it, and the one command that puts it
+     back. Anything longer is a document nobody reads at 3am. */
+  const restore = plain
+    ? `<code>docker compose exec -T postgres psql -U gng -d gng &lt; ${name}</code>`
+    : `<code>gunzip -c ${name} | docker compose exec -T postgres psql -U gng -d gng</code>`;
+
+  const caption = [
+    `🗄 <b>${settings.storeName || "Shop"}</b> — database backup`,
+    shopTime,
+    "",
+    contents,
+    "",
+    plain
+      ? "Plain SQL. Open it in any text editor and you can read every row."
+      : "Gzipped — the plain file had grown too large to send.",
+    "",
+    "To put it back, on this server or a new one:",
+    restore,
+    "",
+    "Full steps: deploy/RESTORE.md",
+  ]
+    .filter((line, index, all) => !(line === "" && all[index - 1] === ""))
+    .join("\n");
+
+  const outcome = await telegram.sendBackupDocument(settings, { name, bytes }, caption);
 
   if (outcome.sent) {
-    log.info({ bytes: gz.byteLength, name }, "Database backup sent to Telegram");
-    return { sent: true, bytes: gz.byteLength };
+    log.info({ bytes: bytes.byteLength, name, plain }, "Database backup sent to Telegram");
+    return { sent: true, bytes: bytes.byteLength };
   }
 
   log.error({ reason: outcome.reason }, "Database backup not sent");
-  return { sent: false, bytes: gz.byteLength, ...(outcome.reason ? { reason: outcome.reason } : {}) };
+  return {
+    sent: false,
+    bytes: bytes.byteLength,
+    ...(outcome.reason ? { reason: outcome.reason } : {}),
+  };
 }

@@ -339,7 +339,7 @@ export function SettingsForm() {
                     label="Order number prefix"
                     value={form.orderNumberPrefix}
                     onChange={(event) => set("orderNumberPrefix", event.target.value)}
-                    placeholder="GNG-"
+                    placeholder="HINAR-"
                     hint={`New orders will look like ${
                       form.orderNumberPrefix.trim().toUpperCase() || ""
                     }10043. Letters, numbers and dashes only. Leave blank for just the number.`}

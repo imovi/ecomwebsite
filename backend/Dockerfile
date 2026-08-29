@@ -44,7 +44,14 @@ ENV NODE_OPTIONS=--max-old-space-size=512
 # `dumb-init` reaps zombies and forwards signals, so SIGTERM from the
 # orchestrator actually reaches Node and in-flight requests drain instead of
 # being killed mid-transaction.
-RUN apk add --no-cache dumb-init
+#
+# `postgresql17-client` is here for one reason —
+# the nightly database backup shells out to pg_dump from this container. The
+# major version is pinned to the server's (postgres:17.2 in docker-compose.yml)
+# because pg_dump refuses to dump a server newer than itself, and an
+# unversioned `postgresql-client` would start doing exactly that the day Alpine
+# moves on. If the database is upgraded, this line moves with it.
+RUN apk add --no-cache dumb-init postgresql17-client
 
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist

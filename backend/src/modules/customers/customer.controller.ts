@@ -40,7 +40,7 @@ const exportCustomers: RequestHandler = async (req, res) => {
     /* Downloaded rather than rendered: this is an export, and a browser handed
        JSON inline shows it as a wall of text in a tab. */
     res.setHeader("content-type", "application/json; charset=utf-8");
-    res.setHeader("content-disposition", `attachment; filename="gng-customers-${stamp}.json"`);
+    res.setHeader("content-disposition", `attachment; filename="hinar-customers-${stamp}.json"`);
     res.send(JSON.stringify({ exportedAt: new Date().toISOString(), truncated, customers }, null, 2));
     return;
   }
@@ -87,7 +87,7 @@ const exportCustomers: RequestHandler = async (req, res) => {
     .join("\r\n");
 
   res.setHeader("content-type", "text/csv; charset=utf-8");
-  res.setHeader("content-disposition", `attachment; filename="gng-customers-${stamp}.csv"`);
+  res.setHeader("content-disposition", `attachment; filename="hinar-customers-${stamp}.csv"`);
   /* Written as an escape, not as a literal BOM character: an invisible byte in
      source is a byte the next person deletes by accident. */
   res.send(BOM + csv);

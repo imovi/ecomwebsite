@@ -51,7 +51,7 @@ export const storeSettings = pgTable(
      * The counter behind it is a Postgres sequence and keeps running across a
      * change, so numbers stay unique whatever the prefix has been.
      */
-    orderNumberPrefix: text("order_number_prefix").notNull().default("GNG-"),
+    orderNumberPrefix: text("order_number_prefix").notNull().default("HINAR-"),
 
     /* --- Store identity, used on invoices -------------------------------- */
     storeName: text("store_name").notNull().default("HABU SHOP"),

@@ -199,7 +199,7 @@ export function ProductVariantStaging({
 }: {
   draft: VariantDraft;
   onChange: (draft: VariantDraft) => void;
-  /** Seeds generated SKUs, so "GNG-TSHIRT" becomes "GNG-TSHIRT-RED-XL". */
+  /** Seeds generated SKUs, so "HINAR-TSHIRT" becomes "HINAR-TSHIRT-RED-XL". */
   productSku: string;
   /** Seeds a generated row's price — most variants cost what the product does. */
   productPrice: string;

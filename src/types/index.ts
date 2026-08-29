@@ -192,7 +192,7 @@ export interface OrderItem {
 
 export interface Order {
   id: string;
-  /** Short, speakable over the phone, e.g. "GNG-10247". */
+  /** Short, speakable over the phone, e.g. "HINAR-10247". */
   orderNumber: string;
   customerName: string;
   phone: string;

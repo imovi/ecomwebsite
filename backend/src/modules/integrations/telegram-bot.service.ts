@@ -145,7 +145,7 @@ const HELP = [
   "",
   "/today — today's orders and takings",
   "/pending — orders still waiting for a call",
-  "/order GNG-10001 — look up one order",
+  "/order HINAR-10001 — look up one order",
   "/stock — products low or out of stock",
   "/help — this list",
   "",
@@ -299,7 +299,7 @@ async function handleCommand(
     case "/order":
       reply = rest[0]
         ? await orderReport(rest[0])
-        : "Give me an order number, like <code>/order GNG-10001</code>";
+        : "Give me an order number, like <code>/order HINAR-10001</code>";
       break;
     case "/stock":
       reply = await stockReport();

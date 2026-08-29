@@ -61,7 +61,7 @@ const profitCsv: RequestHandler = async (req, res) => {
   res.setHeader("content-type", "text/csv; charset=utf-8");
   res.setHeader(
     "content-disposition",
-    `attachment; filename="gng-profit-${range.from}-to-${range.to}.csv"`,
+    `attachment; filename="hinar-profit-${range.from}-to-${range.to}.csv"`,
   );
   res.send(service.toCsv(report));
 };

@@ -37,6 +37,7 @@ const TIMEOUT_MS = 6000;
 
 export type TelegramConfig = Pick<
   StoreSettingsRow,
+  | "storeName"
   | "telegramBotToken"
   | "telegramChatId"
   | "telegramBackupChatId"
@@ -752,7 +753,7 @@ export async function sendTestMessage(settings?: TelegramConfig): Promise<SendOu
   return send(
     resolved,
     [
-      "✅ <b>gng is connected</b>",
+      `✅ <b>${escapeHtml(resolved.storeName || "The shop")} is connected</b>`,
       "",
       "Order alerts will arrive in this chat.",
     ].join("\n"),

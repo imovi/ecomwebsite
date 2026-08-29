@@ -1,8 +1,8 @@
 {
-  "name": "gng-backend",
+  "name": "hinar-backend",
   "version": "1.0.0",
   "private": true,
-  "description": "gng e-commerce backend \u2014 Phase 1 foundation",
+  "description": "HINAR e-commerce backend \u2014 Phase 1 foundation",
   "type": "module",
   "engines": {
     "node": ">=20.9.0"

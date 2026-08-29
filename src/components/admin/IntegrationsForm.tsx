@@ -678,7 +678,7 @@ function BotCard({
                 <code>/pending</code> — orders still waiting for a call
               </li>
               <li className="text-micro text-muted">
-                <code>/order GNG-10001</code> — look up one order
+                <code>/order HINAR-10001</code> — look up one order
               </li>
               <li className="text-micro text-muted">
                 <code>/stock</code> — products low or out of stock

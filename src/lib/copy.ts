@@ -172,7 +172,7 @@ export const copy = {
     title: "Track your order",
     intro: "Enter your order ID and the phone number you ordered with.",
     orderId: "Order ID",
-    orderIdPlaceholder: "GNG-10247",
+    orderIdPlaceholder: "HINAR-10247",
     phone: "Phone number",
     submit: "Track order",
     notFound: "No order found with that ID and phone number.",

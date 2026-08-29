@@ -159,7 +159,7 @@ export const policies: Policy[] = [
       {
         heading: "Before you call",
         paragraphs: [
-          "Have your Order ID ready — it looks like GNG-10247 and is on your order confirmation page. You can also check your order status yourself on the Track order page.",
+          "Have your Order ID ready — it looks like HINAR-10247 and is on your order confirmation page. You can also check your order status yourself on the Track order page.",
         ],
       },
     ],

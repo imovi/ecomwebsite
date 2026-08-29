@@ -45,7 +45,7 @@ import type { DeliveryZone, OrderStatus, PaymentMethod } from "../../db/schema/o
  * already issued.
  */
 export async function nextOrderNumber(
-  prefix = "GNG-",
+  prefix = "HINAR-",
   executor: DatabaseExecutor = getDb(),
 ): Promise<string> {
   const result = await executor.execute<{ order_number: string }>(

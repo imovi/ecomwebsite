@@ -158,6 +158,45 @@ export const storeSettings = pgTable(
     /** Content of the `facebook-domain-verification` meta tag. */
     metaDomainVerification: text("meta_domain_verification").notNull().default(""),
 
+    /* --- Reading ad spend back out of Meta -------------------------------
+       Separate from the Conversions API above, and deliberately so: that token
+       only needs permission to WRITE events, this one needs `ads_read` on the
+       whole account, which can see every campaign's spend and results the shop
+       has ever run. Two capabilities, two tokens, so revoking the reporting one
+       does not stop conversions being sent. */
+
+    /**
+     * Ad account the campaigns belong to, as `act_<digits>`.
+     *
+     * Stored with the prefix Meta uses so it can be pasted straight from Ads
+     * Manager without the shop having to know which half to keep.
+     */
+    metaAdAccountId: text("meta_ad_account_id").notNull().default(""),
+
+    /**
+     * `ads_read` access token. A SECRET, and a more dangerous one than the
+     * Conversions API token beside it.
+     *
+     * Returned to the admin panel only as a masked hint, never in full — the
+     * same rule the CAPI token follows, for the same reason.
+     */
+    metaAdsToken: text("meta_ads_token").notNull().default(""),
+
+    /**
+     * Taka per US dollar, in paisa. 12250 means ৳122.50.
+     *
+     * Meta bills in the ad account's currency, which for a Bangladeshi shop is
+     * almost always USD, while every other figure in this system is taka. A
+     * rate has to come from somewhere, and it is NOT fetched: an exchange rate
+     * pulled live would silently restate last month's ad spend every time the
+     * market moved, so a report an owner read on Monday would disagree with
+     * itself on Friday. The shop sets what it was actually charged.
+     *
+     * Zero means "not set", and the reports say so rather than converting at a
+     * rate nobody chose.
+     */
+    usdRatePaisa: integer("usd_rate_paisa").notNull().default(0),
+
     /**
      * Master switch, separate from "is a pixel id present".
      *

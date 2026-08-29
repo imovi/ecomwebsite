@@ -40,6 +40,8 @@ const ALLOWED_PATHS = [
   /^admin\/orders(\/.*)?$/,
   /^admin\/reports\/boosts(\/[^/]+)?$/,
   /^admin\/reports\/performance$/,
+  /^admin\/ads\/(campaigns|overview|test)$/,
+  /^admin\/ads\/campaigns\/[^/]+(\/report)?$/,
   /^admin\/settings$/,
   /^admin\/settings\/logo$/,
   /^admin\/settings\/favicon$/,

@@ -5,6 +5,7 @@ import { adminApi, AdminApiError } from "@/lib/admin/client";
 import { useLoad } from "@/lib/admin/use-load";
 import { cn, formatTaka } from "@/lib/utils";
 import { AdminShell } from "./AdminShell";
+import { AdsCampaigns } from "./AdsCampaigns";
 import { RangePicker, rangeQuery, type RangePreset } from "./RangePicker";
 import { AsyncState, Card, CardHeader, PageBody, TableWrap } from "./ui";
 import { Icon } from "@/components/ui/Icon";
@@ -123,7 +124,10 @@ export function PerformanceDashboard() {
 
   return (
     <AdminShell title="Performance">
-      <PageBody>
+      {/* One continuous report, not two independent columns: PageBody's default
+          two-column grid at 2xl put the range chips alone on the left and every
+          figure on the right, with half the window empty between them. */}
+      <PageBody columns={false}>
         <RangePicker
           preset={preset}
           custom={custom}
@@ -138,6 +142,10 @@ export function PerformanceDashboard() {
           {report && (
             <div className="flex flex-col gap-5">
               <Headline report={report} />
+              {/* Campaigns sit under the headline and above the funnel: the
+                  headline is the verdict, campaigns are where it came from, and
+                  the funnel explains why. */}
+              <AdsCampaigns query={query} />
               <Funnel report={report} />
               <ByProduct report={report} />
               <Trend report={report} />

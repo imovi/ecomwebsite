@@ -31,6 +31,8 @@ export * from "./order-events.js";
 
 /* Phase 4 — profit and loss */
 export * from "./expenses.js";
+/* Campaigns the shop has registered, so their spend can be read back. */
+export * from "./ad-campaigns.js";
 
 /* Phase 5 — recovering incomplete checkouts */
 export * from "./abandoned-checkouts.js";

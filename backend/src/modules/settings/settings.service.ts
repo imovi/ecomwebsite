@@ -103,6 +103,20 @@ export interface SettingsDto {
     gtmEnabled: boolean;
   };
   /**
+   * Reading ad spend back out of Meta.
+   *
+   * A different permission from the Conversions API token above — `ads_read`
+   * over the whole account — so it is a different token and its own section.
+   * The token itself never leaves the server; only a hint does.
+   */
+  ads: {
+    adAccountId: string;
+    hasToken: boolean;
+    tokenHint: string;
+    /** Paisa per US dollar. 0 means unset. */
+    usdRatePaisa: number;
+  };
+  /**
    * Courier hand-off.
    *
    * The key and secret are absent by design, like every other credential here.
@@ -220,6 +234,17 @@ export function toSettingsDto(row: StoreSettingsRow): SettingsDto {
       gtmContainerId: row.googleGtmContainerId,
       gtmEnabled: row.googleGtmEnabled,
     },
+    /* Reading spend back OUT of Meta. Separate from `tracking` above, which
+       writes events in: two capabilities, two tokens, two sections, so
+       revoking one cannot be mistaken for revoking the other. */
+    ads: {
+      adAccountId: row.metaAdAccountId,
+      hasToken: row.metaAdsToken !== "",
+      tokenHint: tokenHint(row.metaAdsToken),
+      /* Paisa per dollar. Zero means the shop has not set one, and the reports
+         refuse to convert rather than inventing a rate. */
+      usdRatePaisa: row.usdRatePaisa,
+    },
     courier: {
       provider: row.courierProvider,
       hasCredentials: row.courierApiKey !== "" && row.courierApiSecret !== "",
@@ -334,6 +359,14 @@ export interface UpdateSettingsInput {
     gtmContainerId?: string;
     gtmEnabled?: boolean;
   };
+  ads?: {
+    /** `act_<digits>`, as Ads Manager prints it. */
+    adAccountId?: string;
+    /** Omitted leaves it alone; `null` clears; a string replaces. */
+    token?: string | null;
+    /** Paisa per US dollar. 0 clears it back to "not set". */
+    usdRatePaisa?: number;
+  };
   integrations?: {
     telegram?: {
       /** Omitted keeps the stored token; `null` clears it. */
@@ -412,6 +445,19 @@ export async function updateSettings(input: UpdateSettingsInput): Promise<Settin
   }
   if (input.tracking?.gtmEnabled !== undefined) {
     patch.googleGtmEnabled = input.tracking.gtmEnabled;
+  }
+
+  if (input.ads?.adAccountId !== undefined) {
+    patch.metaAdAccountId = input.ads.adAccountId;
+  }
+  if (input.ads?.token !== undefined) {
+    /* Same rule as the CAPI token: `null` clears, omitted leaves alone. The
+       panel only ever holds a masked hint, so it cannot send the real one back
+       and must not be able to blank it by saving the form untouched. */
+    patch.metaAdsToken = input.ads.token ?? "";
+  }
+  if (input.ads?.usdRatePaisa !== undefined) {
+    patch.usdRatePaisa = input.ads.usdRatePaisa;
   }
 
   const courier = input.courier;

@@ -23,6 +23,7 @@ import {
   bannerPublicRouter,
 } from "../modules/banners/banner.routes.js";
 import { integrationsAdminRouter } from "../modules/integrations/integrations.routes.js";
+import { adsAdminRouter } from "../modules/ads/ads.routes.js";
 import { expensesAdminRouter } from "../modules/reports/expense.routes.js";
 import { reportsAdminRouter } from "../modules/reports/profit.routes.js";
 import {
@@ -151,6 +152,7 @@ v1Router.use("/admin/expenses", expensesAdminRouter);
    Reads only. Margins and buying prices are the shop's most sensitive
    commercial numbers, so this sits at `admin`, not `manager`. */
 v1Router.use("/admin/reports", reportsAdminRouter);
+v1Router.use("/admin/ads", adsAdminRouter);
 
 /* --- Order integrations --------------------------------------------------
    Telegram alerts and the Google Sheets export. Configured in store settings;

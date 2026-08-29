@@ -208,6 +208,42 @@ const updateSettingsSchema = z
       .strict()
       .optional(),
 
+    /* Reading spend back out of Meta. A different token from the Conversions
+       API one above, with a wider permission, so it is entered and revoked
+       separately. */
+    ads: z
+      .object({
+        /* Accepted with or without the `act_` prefix Ads Manager prints, and
+           stored with it — the shop should not have to know which half to
+           keep. An empty string clears it. */
+        adAccountId: z
+          .union([
+            z.literal(""),
+            z
+              .string()
+              .trim()
+              .regex(/^(act_)?[0-9]{5,32}$/, "An ad account id looks like act_1234567890.")
+              .transform((value) => (value.startsWith("act_") ? value : `act_${value}`)),
+          ])
+          .optional(),
+
+        /* Omitted leaves the stored token alone; `null` clears it. The panel
+           only ever holds a masked hint and so can never re-send the real one. */
+        token: z.union([z.null(), z.string().trim().min(20).max(500)]).optional(),
+
+        /* Taka per dollar, entered as a decimal and stored as paisa. Bounded
+           either side of anything the rate has ever plausibly been: a slipped
+           decimal point that turns ৳122 into ৳12,200 would silently multiply
+           every ad figure in the shop by a hundred. */
+        usdRate: z
+          .number()
+          .min(0)
+          .max(1000)
+          .optional(),
+      })
+      .strict()
+      .optional(),
+
     integrations: z
       .object({
         telegram: z
@@ -301,7 +337,28 @@ const read: RequestHandler = async (_req, res) => {
 
 const update: RequestHandler = async (req, res) => {
   const { body } = validated<UpdateSettingsBody>(req);
-  sendSuccess(res, { settings: await service.updateSettings(body) });
+
+  /* The panel sends a rate the way a person writes one — 122.5 taka to the
+     dollar — and the column stores paisa, because every other money value in
+     this system is an integer and a float here would round differently on
+     every report that touched it. Converted once, at the boundary. */
+  const { ads, ...rest } = body;
+  const patch: service.UpdateSettingsInput = {
+    ...rest,
+    ...(ads
+      ? {
+          ads: {
+            ...(ads.adAccountId !== undefined ? { adAccountId: ads.adAccountId } : {}),
+            ...(ads.token !== undefined ? { token: ads.token } : {}),
+            ...(ads.usdRate !== undefined
+              ? { usdRatePaisa: Math.round(ads.usdRate * 100) }
+              : {}),
+          },
+        }
+      : {}),
+  };
+
+  sendSuccess(res, { settings: await service.updateSettings(patch) });
 };
 
 /** POST /api/v1/admin/settings/logo — multipart, field name `logo`. */

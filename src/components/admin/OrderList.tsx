@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { adminApi, AdminApiError, qs } from "@/lib/admin/client";
 import { downloadCsv, toCsv } from "@/lib/admin/csv";
 import { useOpenCheckoutCount } from "@/lib/admin/use-open-checkouts";
@@ -25,6 +26,9 @@ import {
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
+
+/** The presets a link may name. Anything else falls back to today. */
+const PRESETS: DateRangePreset[] = ["today", "yesterday", "last7", "last30", "all"];
 
 /** Matches the storefront's status vocabulary so staff and customer agree. */
 const STATUS_TONE: Record<ApiOrderStatus, "neutral" | "positive" | "warn" | "saleSoft" | "ink"> = {
@@ -53,7 +57,12 @@ const FILTERS: { value: string; label: string }[] = [
   { value: "confirmed", label: "Confirmed" },
   { value: "shipped", label: "Shipped" },
   { value: "delivered", label: "Delivered" },
-  { value: "cancelled", label: "Cancelled" },
+  /* Cancelled and returned together, because they are one thing to a shop:
+     an order that earned nothing. Returned had no chip of its own before, so
+     those orders were unreachable from this screen — and the dashboard tile
+     that counts them both now lands here. `csvEnum` on the API takes the
+     comma. */
+  { value: "cancelled,returned", label: "Cancelled / back" },
 ];
 
 /**
@@ -67,12 +76,26 @@ export function OrderList() {
   /* Shown on the Incomplete tab, so the desk sees the waiting calls from here. */
   const openCheckouts = useOpenCheckoutCount();
 
+  /**
+   * Where the dashboard's pipeline tiles land.
+   *
+   * Read once, as the initial state rather than as a controlled value: this
+   * screen is worked in for minutes at a time and its own chips must keep
+   * working afterwards. A URL that kept overriding them would make the filter
+   * bar look broken.
+   *
+   * The range comes across too. A tile counting orders placed in the last
+   * thirty days that opened a queue showing only today would show a different
+   * number from the one that was clicked, which reads as a bug in both screens.
+   */
+  const params = useSearchParams();
+
   const [orders, setOrders] = useState<ApiOrderListItem[]>([]);
   /* Delivery rates for the rows on screen. Cache only — never a live sign-in;
      see the hook. */
   const fraud = useCachedFraud(orders.map((order) => order.phone));
   const [total, setTotal] = useState(0);
-  const [status, setStatus] = useState("");
+  const [status, setStatus] = useState(() => params.get("status") ?? "");
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -88,8 +111,17 @@ export function OrderList() {
      that opens on every order ever placed buries the ones that arrived this
      morning. The other presets are one tap away when something older is
      being chased. */
-  const [preset, setPreset] = useState<DateRangePreset>("today");
-  const [custom, setCustom] = useState<{ from: string; to: string } | null>(null);
+  const [preset, setPreset] = useState<DateRangePreset>(() => {
+    const asked = params.get("range");
+    return PRESETS.includes(asked as DateRangePreset) ? (asked as DateRangePreset) : "today";
+  });
+  const [custom, setCustom] = useState<{ from: string; to: string } | null>(() => {
+    const from = params.get("from");
+    const to = params.get("to");
+    /* Both halves or neither: half a custom range would silently become a
+       different window from the one that was clicked. */
+    return from && to ? { from, to } : null;
+  });
 
   const range: DateRange = custom
     ? { dateFrom: shopDayStart(custom.from), dateTo: shopDayEnd(custom.to) }

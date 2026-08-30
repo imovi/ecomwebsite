@@ -34,7 +34,12 @@ import { Input, Select, Textarea } from "@/components/ui/Field";
 
 /** Chips rather than a dropdown: these are the four that actually happen, and
  *  the field stays free text for the fifth. */
-const SOURCE_SUGGESTIONS = ["WhatsApp", "Facebook page", "Instagram", "Phone call"];
+const SOURCE_SUGGESTIONS = [
+  "WhatsApp",
+  "Facebook page",
+  "Instagram",
+  "Phone call",
+];
 
 /** Named so an emptied cart can retire this message without hiding real ones. */
 const PRICING_FAILED = "Could not price this cart.";
@@ -48,7 +53,7 @@ interface Line {
   quantity: number;
 }
 
-export function ManualOrderForm() {
+export function ManualOrderFields() {
   const router = useRouter();
 
   const [products, setProducts] = useState<ApiProductListItem[]>([]);
@@ -190,7 +195,9 @@ export function ManualOrderForm() {
 
   function updateLine(index: number, patch: Partial<Line>): void {
     setLines((current) =>
-      current.map((line, position) => (position === index ? { ...line, ...patch } : line)),
+      current.map((line, position) =>
+        position === index ? { ...line, ...patch } : line,
+      ),
     );
   }
 
@@ -211,7 +218,11 @@ export function ManualOrderForm() {
   /* A pricing error is about a cart. Empty the cart and the message no longer
      describes anything, so it is derived away rather than left on screen saying
      "could not price this cart" about a cart that is gone. */
-  const shownError = hasPriceableLines ? error : (error === PRICING_FAILED ? null : error);
+  const shownError = hasPriceableLines
+    ? error
+    : error === PRICING_FAILED
+      ? null
+      : error;
 
   const canSubmit =
     !saving &&
@@ -232,23 +243,22 @@ export function ManualOrderForm() {
     setError(null);
 
     try {
-      const result = await adminApi.post<{ order: { orderNumber: string; id?: string } }>(
-        "admin/orders",
-        {
-          customerName: customerName.trim(),
-          phone: phone.trim(),
-          address: address.trim(),
-          areaText: areaText.trim(),
-          items: lines.map((line) => ({
-            productId: line.productId,
-            ...(line.variantId ? { variantId: line.variantId } : {}),
-            quantity: line.quantity,
-          })),
-          ...(customerNote.trim() ? { customerNote: customerNote.trim() } : {}),
-          source: source.trim(),
-          status,
-        },
-      );
+      const result = await adminApi.post<{
+        order: { orderNumber: string; id?: string };
+      }>("admin/orders", {
+        customerName: customerName.trim(),
+        phone: phone.trim(),
+        address: address.trim(),
+        areaText: areaText.trim(),
+        items: lines.map((line) => ({
+          productId: line.productId,
+          ...(line.variantId ? { variantId: line.variantId } : {}),
+          quantity: line.quantity,
+        })),
+        ...(customerNote.trim() ? { customerNote: customerNote.trim() } : {}),
+        source: source.trim(),
+        status,
+      });
 
       toast(`Order ${result.order.orderNumber} created`);
       /* Straight to the order it just made: the next thing the desk does is
@@ -256,238 +266,279 @@ export function ManualOrderForm() {
       router.push(`/admin/orders/${result.order.orderNumber}`);
     } catch (caught) {
       setError(
-        caught instanceof AdminApiError ? caught.message : "Could not create the order.",
+        caught instanceof AdminApiError
+          ? caught.message
+          : "Could not create the order.",
       );
       setSaving(false);
     }
   }
 
   return (
+    <form
+      onSubmit={(event) => void submit(event)}
+      className="flex flex-col gap-4"
+    >
+      <ErrorBanner message={shownError} />
+
+      <Card>
+        <CardHeader
+          title="Where it came from"
+          hint="Written down so the shop can tell a message order from a website one."
+        />
+        <div className="flex flex-col gap-4 p-4">
+          <div>
+            <Input
+              label="Source"
+              placeholder="WhatsApp"
+              value={source}
+              onChange={(event) => setSource(event.target.value)}
+              required
+            />
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {SOURCE_SUGGESTIONS.map((suggestion) => (
+                <button
+                  key={suggestion}
+                  type="button"
+                  onClick={() => setSource(suggestion)}
+                  className="rounded-full border border-line px-2.5 py-1 text-micro text-ink-soft hover:bg-surface"
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <Select
+            label="Start as"
+            value={status}
+            onChange={(event) =>
+              setStatus(event.target.value as "confirmed" | "pending")
+            }
+            hint="Confirmed, because the conversation already happened. Pending if you have not replied yet."
+          >
+            <option value="confirmed">Confirmed</option>
+            <option value="pending">Pending — still needs a call</option>
+          </Select>
+        </div>
+      </Card>
+
+      <Card>
+        <CardHeader title="Customer" />
+        <div className="grid gap-4 p-4 sm:grid-cols-2">
+          <Input
+            label="Name"
+            value={customerName}
+            onChange={(event) => setCustomerName(event.target.value)}
+            required
+          />
+          <Input
+            label="Phone"
+            placeholder="01XXXXXXXXX"
+            inputMode="numeric"
+            value={phone}
+            onChange={(event) => setPhone(event.target.value)}
+            required
+          />
+          <Textarea
+            label="Address"
+            value={address}
+            onChange={(event) => setAddress(event.target.value)}
+            rows={2}
+            required
+            className="sm:col-span-2"
+          />
+          <Input
+            label="Area"
+            placeholder="Dhanmondi"
+            value={areaText}
+            onChange={(event) => setAreaText(event.target.value)}
+            hint="The delivery zone and charge are worked out from this."
+            required
+          />
+          <Input
+            label="Note (optional)"
+            value={customerNote}
+            onChange={(event) => setCustomerNote(event.target.value)}
+          />
+        </div>
+      </Card>
+
+      <Card>
+        <CardHeader
+          title="Items"
+          hint="Prices come from the catalogue, as they do at checkout."
+        />
+        <div className="flex flex-col gap-3 p-4">
+          {lines.length === 0 ? (
+            <p className="rounded-sm bg-surface px-3 py-6 text-center text-caption text-muted">
+              No items yet.
+            </p>
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {lines.map((line, index) => {
+                const product = products.find((p) => p.id === line.productId);
+                const variants = detail[line.productId]?.variants ?? [];
+
+                return (
+                  <li
+                    key={line.key}
+                    className="flex flex-wrap items-end gap-3 rounded-sm border border-line p-3"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-caption font-medium text-ink">
+                        {product?.name ?? "—"}
+                      </p>
+                      <p className="text-micro text-muted">
+                        {product ? formatTaka(product.price) : ""}
+                        {product && ` · ${product.stockQuantity} in stock`}
+                      </p>
+                    </div>
+
+                    {variants.length > 0 && (
+                      <Select
+                        label="Option"
+                        value={line.variantId ?? ""}
+                        onChange={(event) =>
+                          updateLine(index, {
+                            variantId: event.target.value || null,
+                          })
+                        }
+                      >
+                        {variants.map((variant) => (
+                          <option key={variant.id} value={variant.id}>
+                            {Object.values(variant.options).join(" · ") ||
+                              variant.sku}
+                          </option>
+                        ))}
+                      </Select>
+                    )}
+
+                    <Input
+                      label="Qty"
+                      type="number"
+                      min={1}
+                      value={String(line.quantity)}
+                      onChange={(event) =>
+                        updateLine(index, {
+                          quantity: Math.max(
+                            1,
+                            Number(event.target.value) || 1,
+                          ),
+                        })
+                      }
+                      className="w-20"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() => removeLine(index)}
+                      aria-label="Remove item"
+                      className="flex size-8 items-center justify-center rounded-xs text-muted hover:bg-sale-soft hover:text-sale"
+                    >
+                      <Icon name="trash" size={14} />
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+
+          <Select
+            label="Add a product"
+            value=""
+            onChange={(event) => {
+              if (event.target.value) void addLine(event.target.value);
+            }}
+          >
+            <option value="">Choose…</option>
+            {products.map((product) => (
+              <option key={product.id} value={product.id}>
+                {product.name} — {formatTaka(product.price)}
+                {product.stockQuantity === 0 ? " (out of stock)" : ""}
+              </option>
+            ))}
+          </Select>
+        </div>
+      </Card>
+
+      <Card>
+        <CardHeader
+          title="Total"
+          hint="Worked out by the server, not by this page."
+        />
+        <div className="flex flex-col gap-2 p-4 text-caption">
+          {quoting ? (
+            <p className="text-muted">Pricing…</p>
+          ) : shownQuote ? (
+            <>
+              <Row label="Subtotal" value={formatTaka(shownQuote.subtotal)} />
+              <Row
+                label={
+                  shownQuote.deliveryZone === "inside_dhaka"
+                    ? "Delivery — inside Dhaka"
+                    : shownQuote.deliveryZone === "outside_dhaka"
+                      ? "Delivery — outside Dhaka"
+                      : "Delivery"
+                }
+                value={formatTaka(shownQuote.deliveryCharge)}
+              />
+              <div className="mt-1 flex items-center justify-between border-t border-line pt-2 text-body font-semibold text-ink">
+                <span>Total</span>
+                <span className="tnum">
+                  {formatTaka(shownQuote.grandTotal)}
+                </span>
+              </div>
+              {/* Said out loud, because the zone decides the charge and a
+                      guess from a typo would be charged to a real customer. */}
+              {shownQuote.zoneInferred && (
+                <p className="text-micro text-muted">
+                  Zone worked out from the area you typed
+                  {shownQuote.zoneMatchedOn
+                    ? ` (“${shownQuote.zoneMatchedOn}”)`
+                    : ""}
+                  .
+                </p>
+              )}
+            </>
+          ) : (
+            <p className="text-muted">
+              Add an item and an area to see the total.
+            </p>
+          )}
+        </div>
+      </Card>
+
+      <div className="sticky bottom-20 z-10 flex gap-2 rounded-md border border-line bg-white/95 p-3 shadow-card backdrop-blur-md lg:bottom-4">
+        <Button
+          type="submit"
+          variant="primary"
+          size="lg"
+          fullWidth
+          loading={saving}
+          disabled={!canSubmit}
+        >
+          {saving ? "Creating…" : "Create order"}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+/**
+ * The same form as its own page.
+ *
+ * Split from the fields above so the dashboard can put them in a sheet without
+ * a second copy of a 400-line form drifting out of step with this one — a
+ * duplicate would take the pricing rules with it, and two order forms quoting
+ * two different delivery charges is a number the customer finds out about at
+ * the door.
+ */
+export function ManualOrderForm() {
+  return (
     <AdminShell title="New order">
       <PageBody>
-        <form onSubmit={(event) => void submit(event)} className="flex flex-col gap-4">
-          <ErrorBanner message={shownError} />
-
-          <Card>
-            <CardHeader
-              title="Where it came from"
-              hint="Written down so the shop can tell a message order from a website one."
-            />
-            <div className="flex flex-col gap-4 p-4">
-              <div>
-                <Input
-                  label="Source"
-                  placeholder="WhatsApp"
-                  value={source}
-                  onChange={(event) => setSource(event.target.value)}
-                  required
-                />
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {SOURCE_SUGGESTIONS.map((suggestion) => (
-                    <button
-                      key={suggestion}
-                      type="button"
-                      onClick={() => setSource(suggestion)}
-                      className="rounded-full border border-line px-2.5 py-1 text-micro text-ink-soft hover:bg-surface"
-                    >
-                      {suggestion}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <Select
-                label="Start as"
-                value={status}
-                onChange={(event) => setStatus(event.target.value as "confirmed" | "pending")}
-                hint="Confirmed, because the conversation already happened. Pending if you have not replied yet."
-              >
-                <option value="confirmed">Confirmed</option>
-                <option value="pending">Pending — still needs a call</option>
-              </Select>
-            </div>
-          </Card>
-
-          <Card>
-            <CardHeader title="Customer" />
-            <div className="grid gap-4 p-4 sm:grid-cols-2">
-              <Input
-                label="Name"
-                value={customerName}
-                onChange={(event) => setCustomerName(event.target.value)}
-                required
-              />
-              <Input
-                label="Phone"
-                placeholder="01XXXXXXXXX"
-                inputMode="numeric"
-                value={phone}
-                onChange={(event) => setPhone(event.target.value)}
-                required
-              />
-              <Textarea
-                label="Address"
-                value={address}
-                onChange={(event) => setAddress(event.target.value)}
-                rows={2}
-                required
-                className="sm:col-span-2"
-              />
-              <Input
-                label="Area"
-                placeholder="Dhanmondi"
-                value={areaText}
-                onChange={(event) => setAreaText(event.target.value)}
-                hint="The delivery zone and charge are worked out from this."
-                required
-              />
-              <Input
-                label="Note (optional)"
-                value={customerNote}
-                onChange={(event) => setCustomerNote(event.target.value)}
-              />
-            </div>
-          </Card>
-
-          <Card>
-            <CardHeader title="Items" hint="Prices come from the catalogue, as they do at checkout." />
-            <div className="flex flex-col gap-3 p-4">
-              {lines.length === 0 ? (
-                <p className="rounded-sm bg-surface px-3 py-6 text-center text-caption text-muted">
-                  No items yet.
-                </p>
-              ) : (
-                <ul className="flex flex-col gap-2">
-                  {lines.map((line, index) => {
-                    const product = products.find((p) => p.id === line.productId);
-                    const variants = detail[line.productId]?.variants ?? [];
-
-                    return (
-                      <li
-                        key={line.key}
-                        className="flex flex-wrap items-end gap-3 rounded-sm border border-line p-3"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-caption font-medium text-ink">
-                            {product?.name ?? "—"}
-                          </p>
-                          <p className="text-micro text-muted">
-                            {product ? formatTaka(product.price) : ""}
-                            {product && ` · ${product.stockQuantity} in stock`}
-                          </p>
-                        </div>
-
-                        {variants.length > 0 && (
-                          <Select
-                            label="Option"
-                            value={line.variantId ?? ""}
-                            onChange={(event) =>
-                              updateLine(index, { variantId: event.target.value || null })
-                            }
-                          >
-                            {variants.map((variant) => (
-                              <option key={variant.id} value={variant.id}>
-                                {Object.values(variant.options).join(" · ") || variant.sku}
-                              </option>
-                            ))}
-                          </Select>
-                        )}
-
-                        <Input
-                          label="Qty"
-                          type="number"
-                          min={1}
-                          value={String(line.quantity)}
-                          onChange={(event) =>
-                            updateLine(index, {
-                              quantity: Math.max(1, Number(event.target.value) || 1),
-                            })
-                          }
-                          className="w-20"
-                        />
-
-                        <button
-                          type="button"
-                          onClick={() => removeLine(index)}
-                          aria-label="Remove item"
-                          className="flex size-8 items-center justify-center rounded-xs text-muted hover:bg-sale-soft hover:text-sale"
-                        >
-                          <Icon name="trash" size={14} />
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-
-              <Select
-                label="Add a product"
-                value=""
-                onChange={(event) => {
-                  if (event.target.value) void addLine(event.target.value);
-                }}
-              >
-                <option value="">Choose…</option>
-                {products.map((product) => (
-                  <option key={product.id} value={product.id}>
-                    {product.name} — {formatTaka(product.price)}
-                    {product.stockQuantity === 0 ? " (out of stock)" : ""}
-                  </option>
-                ))}
-              </Select>
-            </div>
-          </Card>
-
-          <Card>
-            <CardHeader title="Total" hint="Worked out by the server, not by this page." />
-            <div className="flex flex-col gap-2 p-4 text-caption">
-              {quoting ? (
-                <p className="text-muted">Pricing…</p>
-              ) : shownQuote ? (
-                <>
-                  <Row label="Subtotal" value={formatTaka(shownQuote.subtotal)} />
-                  <Row
-                    label={
-                      shownQuote.deliveryZone === "inside_dhaka"
-                        ? "Delivery — inside Dhaka"
-                        : shownQuote.deliveryZone === "outside_dhaka"
-                          ? "Delivery — outside Dhaka"
-                          : "Delivery"
-                    }
-                    value={formatTaka(shownQuote.deliveryCharge)}
-                  />
-                  <div className="mt-1 flex items-center justify-between border-t border-line pt-2 text-body font-semibold text-ink">
-                    <span>Total</span>
-                    <span className="tnum">{formatTaka(shownQuote.grandTotal)}</span>
-                  </div>
-                  {/* Said out loud, because the zone decides the charge and a
-                      guess from a typo would be charged to a real customer. */}
-                  {shownQuote.zoneInferred && (
-                    <p className="text-micro text-muted">
-                      Zone worked out from the area you typed
-                      {shownQuote.zoneMatchedOn ? ` (“${shownQuote.zoneMatchedOn}”)` : ""}.
-                    </p>
-                  )}
-                </>
-              ) : (
-                <p className="text-muted">Add an item and an area to see the total.</p>
-              )}
-            </div>
-          </Card>
-
-          <div className="sticky bottom-20 z-10 flex gap-2 rounded-md border border-line bg-white/95 p-3 shadow-card backdrop-blur-md lg:bottom-4">
-            <Button
-              type="submit"
-              variant="primary"
-              size="lg"
-              fullWidth
-              loading={saving}
-              disabled={!canSubmit}
-            >
-              {saving ? "Creating…" : "Create order"}
-            </Button>
-          </div>
-        </form>
+        <ManualOrderFields />
       </PageBody>
     </AdminShell>
   );

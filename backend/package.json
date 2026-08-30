@@ -19,7 +19,7 @@
     "db:migrate:prod": "node dist/db/migrate.js",
     "db:seed": "tsx --env-file-if-exists=.env src/db/seed.ts",
     "db:seed:prod": "node dist/db/seed.js",
-    "test": "tsx --test tests/auth.test.ts tests/catalog.test.ts tests/orders.test.ts tests/admin.test.ts tests/profit.test.ts tests/marketing.test.ts tests/blocking.test.ts tests/fraud.test.ts tests/recovery.test.ts tests/shop-day-range.test.ts tests/stock-alert.test.ts",
+    "test": "tsx --test tests/auth.test.ts tests/catalog.test.ts tests/orders.test.ts tests/admin.test.ts tests/profit.test.ts tests/marketing.test.ts tests/blocking.test.ts tests/fraud.test.ts tests/recovery.test.ts tests/shop-day-range.test.ts tests/stock-alert.test.ts tests/overview.test.ts",
     "verify": "npm run typecheck && npm run lint && npm test",
     "smoke": "node scripts/smoke-orders.mjs",
     "seed:catalog": "node scripts/seed-catalog.mjs"

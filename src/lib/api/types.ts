@@ -192,23 +192,92 @@ export interface ApiCustomer {
  * it below `admin` rather than sending numbers the screen then hides.
  */
 export interface ApiOverview {
+  range: { from: string; to: string; bucket: "hour" | "day" };
+
+  /** Absent for `manager` — withheld by the API, not hidden here. */
   money?: {
-    today: ApiOverviewDay;
-    yesterday: ApiOverviewDay;
+    current: ApiOverviewDay;
+    /** The window before this one, of equal length. */
+    previous: ApiOverviewDay;
+    /** Null when nothing was delivered. An average needs a denominator. */
+    averageOrderValue: number | null;
+    profit: {
+      net: number;
+      marginPercent: number | null;
+      /** False when some delivered lines have no cost recorded. */
+      costsComplete: boolean;
+      revenueWithUnknownCost: number;
+    } | null;
+    /** Empty until a parcel has actually been handed to a courier. */
+    courierCash: {
+      provider: string;
+      /** COD on parcels still out — not collected from anybody yet. */
+      inParcels: number;
+      parcelsOut: number;
+      /** COD on parcels delivered inside the payout window. */
+      recentlyCollected: number;
+      parcelsDelivered: number;
+    }[];
   };
-  sources: {
-    windowDays: number;
-    /** `source: null` is the storefront — the customer checked out unaided. */
-    breakdown: { source: string | null; orders: number }[];
-  };
+
+  /**
+   * Buckets with activity only — gaps are absent rather than zero, because
+   * only the caller knows how wide the axis should be.
+   *
+   * `at` is Dhaka wall-clock with no zone suffix, so it must be read as a
+   * label and never passed to `new Date()`.
+   */
+  series: {
+    at: string;
+    /** Absent for `manager`: the counts are theirs, the taka is not. */
+    placedValue?: number;
+    placedOrders: number;
+    deliveredValue?: number;
+    deliveredOrders: number;
+  }[];
+
+  /** `source: null` is the storefront — the customer checked out unaided. */
+  sources: { source: string | null; orders: number }[];
+
+  /**
+   * Checkouts that reached a name and a working phone, and how many finished.
+   * NOT visitors: nothing here counts them. See the service for why.
+   */
+  funnel: { started: number; completed: number };
+
+  returns: { returned: number; settled: number };
+
+  couriers: {
+    provider: string;
+    delivered: number;
+    returned: number;
+    /** Delivered plus returned — parcels that actually finished. */
+    settled: number;
+    averageDays: number | null;
+  }[];
+
+  callList: { abandonedOpen: number; abandonedValue: number };
+
+  /** Right now, not over the range — a stuck parcel is stuck today. */
   parcels: {
     inTransit: number;
     /** A subset of `inTransit` — never add this to it. */
     needsAttention: number;
     failing: number;
   };
-  callList: { abandonedOpen: number };
-  returns: { returned: number; settled: number; windowDays: number };
+
+  /** Right now. `daysLeft` is null when nothing sold, so there is no rate. */
+  stock: {
+    productId: string;
+    name: string;
+    stockQuantity: number;
+    lowStockThreshold: number;
+    soldRecently: number;
+    daysLeft: number | null;
+  }[];
+
+  /** Phone numbers that have refused delivery more than once, all time. */
+  returnRisk: { phone: string; name: string; returned: number; settled: number }[];
 }
 
 export interface ApiOverviewDay {
@@ -217,6 +286,7 @@ export interface ApiOverviewDay {
   placedOrders: number;
   placedValue: number;
 }
+
 
 /* -------------------------------------------------------------------------- */
 /* Courier delivery record                                                    */

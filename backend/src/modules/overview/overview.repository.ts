@@ -43,6 +43,12 @@ import { REPORT_UTC_OFFSET_MINUTES } from "../reports/profit.service.js";
  * so the comparison is against the column itself.
  */
 
+/** A half-open UTC interval: `from` inclusive, `to` exclusive. */
+export interface Window {
+  from: Date;
+  to: Date;
+}
+
 /** A shop day, as the half-open UTC interval it actually covers. */
 export function shopDayBounds(dayOffset = 0): { from: Date; to: Date } {
   const offsetMs = REPORT_UTC_OFFSET_MINUTES * 60_000;
@@ -75,7 +81,7 @@ export interface DayMoney {
 }
 
 /**
- * Money for today and yesterday, in one pass.
+ * Money for a window and the window before it, in one pass.
  *
  * Delivered and placed are counted separately and never added together, because
  * on cash on delivery they answer different questions: what came in, and what
@@ -87,45 +93,45 @@ export interface DayMoney {
  * contiguous, so together they are one range per column, and asking twice would
  * mean reading the same rows twice on a box with two cores.
  */
-export async function twoDayMoney(
-  yesterday: { from: Date; to: Date },
-  today: { from: Date; to: Date },
+export async function compareMoney(
+  previous: Window,
+  current: Window,
   executor: DatabaseExecutor = getDb(),
-): Promise<{ today: DayMoney; yesterday: DayMoney }> {
-  const from = yesterday.from;
-  const to = today.to;
+): Promise<{ current: DayMoney; previous: DayMoney }> {
+  const from = previous.from;
+  const to = current.to;
 
   const rows = await executor.execute(sql`
     select
       coalesce(sum(${orders.grandTotal}) filter (
         where ${orders.status} = 'delivered'
-          and ${orders.deliveredAt} >= ${today.from} and ${orders.deliveredAt} < ${today.to}
-      ), 0)::bigint as today_delivered,
+          and ${orders.deliveredAt} >= ${current.from} and ${orders.deliveredAt} < ${current.to}
+      ), 0)::bigint as current_delivered,
       count(*) filter (
         where ${orders.status} = 'delivered'
-          and ${orders.deliveredAt} >= ${today.from} and ${orders.deliveredAt} < ${today.to}
-      )::int as today_delivered_orders,
+          and ${orders.deliveredAt} >= ${current.from} and ${orders.deliveredAt} < ${current.to}
+      )::int as current_delivered_orders,
       count(*) filter (
-        where ${orders.createdAt} >= ${today.from} and ${orders.createdAt} < ${today.to}
-      )::int as today_placed_orders,
+        where ${orders.createdAt} >= ${current.from} and ${orders.createdAt} < ${current.to}
+      )::int as current_placed_orders,
       coalesce(sum(${orders.grandTotal}) filter (
-        where ${orders.createdAt} >= ${today.from} and ${orders.createdAt} < ${today.to}
-      ), 0)::bigint as today_placed_value,
+        where ${orders.createdAt} >= ${current.from} and ${orders.createdAt} < ${current.to}
+      ), 0)::bigint as current_placed_value,
 
       coalesce(sum(${orders.grandTotal}) filter (
         where ${orders.status} = 'delivered'
-          and ${orders.deliveredAt} >= ${yesterday.from} and ${orders.deliveredAt} < ${yesterday.to}
-      ), 0)::bigint as yesterday_delivered,
+          and ${orders.deliveredAt} >= ${previous.from} and ${orders.deliveredAt} < ${previous.to}
+      ), 0)::bigint as previous_delivered,
       count(*) filter (
         where ${orders.status} = 'delivered'
-          and ${orders.deliveredAt} >= ${yesterday.from} and ${orders.deliveredAt} < ${yesterday.to}
-      )::int as yesterday_delivered_orders,
+          and ${orders.deliveredAt} >= ${previous.from} and ${orders.deliveredAt} < ${previous.to}
+      )::int as previous_delivered_orders,
       count(*) filter (
-        where ${orders.createdAt} >= ${yesterday.from} and ${orders.createdAt} < ${yesterday.to}
-      )::int as yesterday_placed_orders,
+        where ${orders.createdAt} >= ${previous.from} and ${orders.createdAt} < ${previous.to}
+      )::int as previous_placed_orders,
       coalesce(sum(${orders.grandTotal}) filter (
-        where ${orders.createdAt} >= ${yesterday.from} and ${orders.createdAt} < ${yesterday.to}
-      ), 0)::bigint as yesterday_placed_value
+        where ${orders.createdAt} >= ${previous.from} and ${orders.createdAt} < ${previous.to}
+      ), 0)::bigint as previous_placed_value
     from ${orders}
     where ${orders.deletedAt} is null
       and (
@@ -139,17 +145,17 @@ export async function twoDayMoney(
 
   const row = rows.rows[0] ?? {};
   return {
-    today: {
-      delivered: num(row.today_delivered),
-      deliveredOrders: num(row.today_delivered_orders),
-      placedOrders: num(row.today_placed_orders),
-      placedValue: num(row.today_placed_value),
+    current: {
+      delivered: num(row.current_delivered),
+      deliveredOrders: num(row.current_delivered_orders),
+      placedOrders: num(row.current_placed_orders),
+      placedValue: num(row.current_placed_value),
     },
-    yesterday: {
-      delivered: num(row.yesterday_delivered),
-      deliveredOrders: num(row.yesterday_delivered_orders),
-      placedOrders: num(row.yesterday_placed_orders),
-      placedValue: num(row.yesterday_placed_value),
+    previous: {
+      delivered: num(row.previous_delivered),
+      deliveredOrders: num(row.previous_delivered_orders),
+      placedOrders: num(row.previous_placed_orders),
+      placedValue: num(row.previous_placed_value),
     },
   };
 }
@@ -173,13 +179,14 @@ export interface SourceCount {
  * unreliable data even though both numbers are right.
  */
 export async function sourceBreakdown(
-  since: Date,
+  window: Window,
   executor: DatabaseExecutor = getDb(),
 ): Promise<SourceCount[]> {
   const rows = await executor.execute(sql`
     select ${orders.source} as source, count(*)::int as orders
     from ${orders}
-    where ${orders.deletedAt} is null and ${orders.createdAt} >= ${since}
+    where ${orders.deletedAt} is null
+      and ${orders.createdAt} >= ${window.from} and ${orders.createdAt} < ${window.to}
     group by ${orders.source}
     order by count(*) desc, ${orders.source} asc nulls last
   `);
@@ -246,18 +253,43 @@ export async function parcelHealth(
   };
 }
 
-/** Customers waiting to be rung. */
-export async function callListSize(
+export interface CallList {
+  abandonedOpen: number;
+  /**
+   * Goods left in those baskets.
+   *
+   * Goods only, because nobody chose a delivery area — adding a guessed
+   * delivery charge would inflate a figure the shop is about to act on. It is
+   * what is recoverable by picking up the phone, not a receipt.
+   */
+  abandonedValue: number;
+}
+
+/**
+ * Customers waiting to be rung, and what they left behind.
+ *
+ * Dated by `last_seen_at` rather than by when the row was first written: a
+ * customer who came back to the checkout this afternoon is this afternoon's
+ * call, whatever week they first appeared. That is also the column the list
+ * sorts by, so the banner and the list agree about which leads are in scope.
+ */
+export async function callList(
+  window: Window,
   executor: DatabaseExecutor = getDb(),
-): Promise<{ abandonedOpen: number }> {
+): Promise<CallList> {
   const rows = await executor.execute(sql`
-    select count(*)::int as open
+    select
+      count(*)::int as open,
+      coalesce(sum(${abandonedCheckouts.estimatedValue}), 0)::bigint as value
     from ${abandonedCheckouts}
     where ${abandonedCheckouts.status} = 'open'
       and ${abandonedCheckouts.recoveredOrderId} is null
+      and ${abandonedCheckouts.lastSeenAt} >= ${window.from}
+      and ${abandonedCheckouts.lastSeenAt} < ${window.to}
   `);
 
-  return { abandonedOpen: num(rows.rows[0]?.open) };
+  const row = rows.rows[0] ?? {};
+  return { abandonedOpen: num(row.open), abandonedValue: num(row.value) };
 }
 
 export interface ReturnRate {
@@ -277,7 +309,7 @@ export interface ReturnRate {
  * returned order is never also counted as delivered.
  */
 export async function returnRate(
-  since: Date,
+  window: Window,
   executor: DatabaseExecutor = getDb(),
 ): Promise<ReturnRate> {
   const rows = await executor.execute(sql`
@@ -287,8 +319,14 @@ export async function returnRate(
     from ${orders}
     where ${orders.deletedAt} is null
       and (
-        (${orders.status} = 'returned' and ${orders.returnedAt} >= ${since})
-        or (${orders.status} = 'delivered' and ${orders.deliveredAt} >= ${since})
+        (
+          ${orders.status} = 'returned'
+          and ${orders.returnedAt} >= ${window.from} and ${orders.returnedAt} < ${window.to}
+        )
+        or (
+          ${orders.status} = 'delivered'
+          and ${orders.deliveredAt} >= ${window.from} and ${orders.deliveredAt} < ${window.to}
+        )
       )
   `);
 

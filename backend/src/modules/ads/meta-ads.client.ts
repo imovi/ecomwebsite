@@ -34,6 +34,44 @@ const GRAPH = `https://graph.facebook.com/${GRAPH_VERSION}`;
 /** Longer than the storefront's, shorter than a shop owner's patience. */
 const TIMEOUT_MS = 12_000;
 
+/**
+ * How far back Meta will look at all.
+ *
+ * Insights older than 37 months do not exist on Meta's side, and asking for
+ * them is not answered with the months that DO exist — the whole call is
+ * rejected with `(#3018) The start date of the time range cannot be beyond 37
+ * months from the current date`. So "All time" on the report, which resolves to
+ * the year 2000 for the shop's own database, took the ad figures out entirely
+ * and left the screen reading "Meta could not be read".
+ *
+ * 36 rather than 37: the limit is counted in whole months against Meta's clock,
+ * not ours, and a request sitting exactly on the boundary fails on the wrong
+ * side of a date line for no reason anybody can see.
+ *
+ * Clamping loses nothing. There is no data beyond this window to lose — the
+ * only difference is whether Meta answers with what it has or refuses the
+ * question.
+ */
+const MAX_LOOKBACK_MONTHS = 36;
+
+/**
+ * The earliest date Meta will accept, as `YYYY-MM-DD`.
+ *
+ * Exported for the test: the whole point is a boundary, and a boundary that
+ * cannot be asserted on is one that drifts.
+ */
+export function clampSince(from: string, now: Date = new Date()): string {
+  const floor = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - MAX_LOOKBACK_MONTHS, now.getUTCDate()),
+  )
+    .toISOString()
+    .slice(0, 10);
+
+  /* String comparison is exact on `YYYY-MM-DD`, and avoids parsing a date the
+     caller may have built in a different timezone to this one. */
+  return from < floor ? floor : from;
+}
+
 export type MetaAdsFailure =
   | "not_configured"
   | "unauthorised"
@@ -229,7 +267,10 @@ export async function campaignInsights(input: {
     {
       fields:
         "spend,impressions,reach,clicks,inline_link_clicks,ctr,cpc,cpm,frequency,actions,action_values,account_currency",
-      time_range: JSON.stringify({ since: input.from, until: input.to }),
+      /* Clamped, because "All time" on this report means the shop's own epoch
+         and Meta refuses the whole call rather than answering with the months
+         it has. See `clampSince`. */
+      time_range: JSON.stringify({ since: clampSince(input.from), until: input.to }),
       level: "campaign",
     },
     input.token,

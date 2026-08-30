@@ -32,9 +32,15 @@ interface NavItem {
   primary?: boolean;
 }
 
-/* The four primaries are the daily loop of running the shop: see what came in,
-   work the queue, fix a listing, check the margin. Everything else is set up
-   once and revisited occasionally, which is exactly what a More menu is for. */
+/* FOUR primaries, and the count is load-bearing: the phone's bottom bar is a
+   `grid-cols-5`, so four plus More fills exactly one row. A fifth primary — as
+   Abandoned briefly was — pushes More onto a second line and the bar grows a
+   ragged half-row nobody asked for.
+
+   The four are the daily loop of running the shop: see what came in, work the
+   queue, chase the ones that got away, fix a listing. Profit moved into More
+   with Performance beside it — the two are read together, and "did I make
+   money" is a question for the end of a day rather than during one. */
 const NAV: NavItem[] = [
   { href: "/admin", label: "Overview", icon: "grid", primary: true },
   { href: "/admin/orders", label: "Orders", icon: "package", primary: true },
@@ -46,11 +52,10 @@ const NAV: NavItem[] = [
      ones that are not — and for seeing every code in one list. */
   { href: "/admin/coupons", label: "Coupons", icon: "checkCircle" },
   { href: "/admin/products", label: "Products", icon: "mobile", primary: true },
-  { href: "/admin/profit", label: "Profit", icon: "cash", primary: true },
-  /* Directly under Profit, and deliberately not a primary: the two are read
-     together — "did I make money" and then "is the advertising why" — but the
-     second is a weekly question, and the bottom bar only has room for daily
-     ones. */
+  /* Profit and Performance sit together in More, and neither is a primary. They
+     answer "did I make money" and "is the advertising why" — read together, at
+     the end of a day, not while working the queue during one. */
+  { href: "/admin/profit", label: "Profit", icon: "cash" },
   { href: "/admin/performance", label: "Performance", icon: "rocket" },
   /* Beside Orders in the More menu rather than in the primary bar: it is read
      when somebody is deciding whether to trust a caller, not on every shift. */
@@ -67,7 +72,25 @@ const NAV: NavItem[] = [
   { href: "/admin/settings", label: "Settings", icon: "settings" },
 ];
 
-const PRIMARY = NAV.filter((item) => item.primary);
+/**
+ * What the phone's bottom bar shows, plus More.
+ *
+ * Ordered so the bar reads left to right the way a shift runs — what came in,
+ * what needs working, what got away, what is on sale — with More last, where a
+ * thumb expects to find the drawer rather than a section.
+ */
+const PRIMARY_ORDER = ["/admin", "/admin/orders", "/admin/products", "/admin/abandoned"];
+
+const PRIMARY = NAV.filter((item) => item.primary).sort(
+  (a, b) => PRIMARY_ORDER.indexOf(a.href) - PRIMARY_ORDER.indexOf(b.href),
+);
+
+/* Four, and the bar is a five-column grid: any more and More wraps. */
+if (PRIMARY.length !== PRIMARY_ORDER.length) {
+  throw new Error(
+    `The bottom bar holds ${PRIMARY_ORDER.length} sections plus More; ${PRIMARY.length} are marked primary.`,
+  );
+}
 
 interface AdminShellProps {
   title: string;

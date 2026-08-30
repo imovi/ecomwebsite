@@ -88,7 +88,10 @@ export function CustomerList() {
 
   return (
     <AdminShell title="Customers">
-      <PageBody>
+      {/* One wide table with eight columns, not two stacked cards. The default
+          grid halves the width at 2xl, which pushed SUCCESS and SPEND off the
+          edge while the right half of the screen sat empty. */}
+      <PageBody columns={false}>
         <Card>
           <CardHeader
             title={pagination ? `${pagination.total} customers` : "Customers"}

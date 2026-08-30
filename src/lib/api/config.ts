@@ -51,27 +51,6 @@ export const apiConfig = {
 
 export const siteConfig = {
   url: normalizeUrl(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
-
-  /**
-   * Meta's proof that this shop owns the domain it advertises.
-   *
-   * Without it the Business Manager cannot claim hinarbd.com, and an unclaimed
-   * domain is what stops a catalogue from linking to it, blocks Aggregated
-   * Event Measurement, and leaves the pixel's conversions unattributable.
-   *
-   * NOT AN ENV VAR, ON PURPOSE
-   * --------------------------
-   * It is not a secret — it is served in the HTML of every page to anybody who
-   * views source, which is precisely how Meta checks it. What it IS is
-   * load-bearing: Meta re-checks periodically and un-verifies a domain whose
-   * tag has gone. An unset variable would delete the tag silently on the next
-   * deploy and the shop would learn about it from a rejected ad weeks later,
-   * so the value lives here where removing it is a visible code change.
-   *
-   * Tied to one domain and one business portfolio (DESHI CART). A different
-   * domain needs its own token from Business settings → Brand safety → Domains.
-   */
-  facebookDomainVerification: "j94h5y60ulq5lppnx9xyfqiy5j7l7n",
 } as const;
 
 export const isProduction = process.env.NODE_ENV === "production";

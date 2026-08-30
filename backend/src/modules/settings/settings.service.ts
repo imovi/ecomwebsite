@@ -47,6 +47,15 @@ export interface SettingsDto {
     couponHours: number;
   };
   /**
+   * The wording of every WhatsApp message the desk sends.
+   *
+   * Returned as stored — possibly `{}`. The admin panel fills the gaps from its
+   * own defaults, because the defaults are Bangla text that belongs beside the
+   * code that renders it rather than duplicated in a database the shop has
+   * never written to.
+   */
+  whatsappTemplates: Record<string, string>;
+  /**
    * What an order costs the shop, as opposed to what it charges for.
    *
    * `courier` is deliberately separate from `delivery` above: one is what the
@@ -220,6 +229,7 @@ export function toSettingsDto(row: StoreSettingsRow): SettingsDto {
       couponMinCartValue: row.recoveryCouponMinCartValue,
       couponHours: row.recoveryCouponHours,
     },
+    whatsappTemplates: row.whatsappTemplates,
     costs: {
       courierInsideDhaka: row.courierCostInsideDhaka,
       courierOutsideDhaka: row.courierCostOutsideDhaka,
@@ -338,6 +348,8 @@ export interface UpdateSettingsInput {
     couponMinCartValue?: number;
     couponHours?: number;
   };
+  /** Replaces the whole set. A blank value means "use the built-in wording". */
+  whatsappTemplates?: Record<string, string>;
   courier?: {
     provider?: string;
     /** Omitted keeps the stored key; `null` clears it. */
@@ -434,6 +446,14 @@ export async function updateSettings(input: UpdateSettingsInput): Promise<Settin
   }
   if (input.recovery?.couponHours !== undefined) {
     patch.recoveryCouponHours = input.recovery.couponHours;
+  }
+  if (input.whatsappTemplates !== undefined) {
+    /* Blank entries are dropped rather than stored. An empty string and an
+       absent key both mean "use the built-in", and keeping only one of those
+       shapes means the reader never has to handle two. */
+    patch.whatsappTemplates = Object.fromEntries(
+      Object.entries(input.whatsappTemplates).filter(([, value]) => value.trim() !== ""),
+    );
   }
   if (input.store?.name !== undefined) patch.storeName = input.store.name;
   if (input.store?.phone !== undefined) patch.storePhone = input.store.phone;

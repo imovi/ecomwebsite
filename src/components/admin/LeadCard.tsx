@@ -145,10 +145,15 @@ export function LeadCard({
   lead,
   busy,
   actions,
+  templates,
 }: {
   lead: Lead;
   busy: boolean;
   actions: LeadActions;
+  /** The shop's own wording. Undefined until settings load; the built-in
+   *  Bangla stands in until then, so a slow settings request never produces a
+   *  blank message. */
+  templates?: Record<string, string>;
 }) {
   const [editingNote, setEditingNote] = useState(false);
   const [note, setNote] = useState(lead.note);
@@ -170,12 +175,12 @@ export function LeadCard({
 
   const helpHref = whatsappHref(
     lead.phone,
-    recoveryMessage(lead, { storeName: copy.brand.name }),
+    recoveryMessage(lead, { storeName: copy.brand.name, templates }),
   );
   const offerHref = liveCoupon
     ? whatsappHref(
         lead.phone,
-        couponOfferMessage(lead, liveCoupon, { storeName: copy.brand.name }),
+        couponOfferMessage(lead, liveCoupon, { storeName: copy.brand.name, templates }),
       )
     : null;
 

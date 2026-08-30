@@ -253,6 +253,13 @@
       "when": 1786634572319,
       "tag": "0035_low_stock_alerts",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1786634573319,
+      "tag": "0036_whatsapp_templates",
+      "breakpoints": true
     }
   ]
 }

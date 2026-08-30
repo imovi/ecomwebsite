@@ -32,6 +32,8 @@ export function OrderDetail({ identifier }: { identifier: string }) {
   const router = useRouter();
   const [order, setOrder] = useState<ApiOrderDetail | null>(null);
   const [shipment, setShipment] = useState<Shipment | null>(null);
+  /** The shop's own WhatsApp wording; empty falls back to the built-in. */
+  const [templates, setTemplates] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -53,6 +55,18 @@ export function OrderDetail({ identifier }: { identifier: string }) {
         setShipment(parcel.shipment);
       } catch {
         setShipment(null);
+      }
+
+      /* The shop's own WhatsApp wording, swallowed on failure for the same
+         reason: the message falls back to the built-in Bangla, which is what
+         it was before the shop could edit it. */
+      try {
+        const settings = await adminApi.get<{
+          settings: { whatsappTemplates: Record<string, string> };
+        }>("admin/settings");
+        setTemplates(settings.settings.whatsappTemplates ?? {});
+      } catch {
+        setTemplates({});
       }
 
       setError(null);
@@ -243,7 +257,7 @@ export function OrderDetail({ identifier }: { identifier: string }) {
           }
         />
 
-        <CustomerCard order={order} busy={busy} mutate={mutate} />
+        <CustomerCard order={order} busy={busy} mutate={mutate} templates={templates} />
 
         <OriginCard order={order} busy={busy} mutate={mutate} />
 
@@ -733,10 +747,13 @@ function CustomerCard({
   order,
   busy,
   mutate,
+  templates,
 }: {
   order: ApiOrderDetail;
   busy: boolean;
   mutate: Mutate;
+  /** The shop's own WhatsApp wording. Empty falls back to the built-in. */
+  templates: Record<string, string>;
 }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({
@@ -755,7 +772,7 @@ function CustomerCard({
      changes. */
   const whatsappLink = whatsappHref(
     order.phone,
-    orderMessage(order, { storeName: copy.brand.name }),
+    orderMessage(order, { storeName: copy.brand.name, templates }),
   );
 
   if (!editing) {

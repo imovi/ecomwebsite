@@ -32,6 +32,10 @@ export function LeadList({
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [openCount, setOpenCount] = useState(0);
+  /* The shop's own WhatsApp wording. A second small read rather than threading
+     settings down from the page: every other admin screen fetches its own, and
+     one shared context for one string map is more machinery than it saves. */
+  const [templates, setTemplates] = useState<Record<string, string>>({});
 
   const query = showRecovered ? "?includeRecovered=true" : "";
 
@@ -42,6 +46,19 @@ export function LeadList({
       );
       setLeads(data.checkouts);
       setOpenCount(data.openCount);
+
+      /* Failure here must not take the call list down with it. The messages
+         fall back to the built-in wording, which is what they were before the
+         shop could edit them at all. */
+      try {
+        const settings = await adminApi.get<{
+          settings: { whatsappTemplates: Record<string, string> };
+        }>("admin/settings");
+        setTemplates(settings.settings.whatsappTemplates ?? {});
+      } catch {
+        setTemplates({});
+      }
+
       onOpenCount?.(data.openCount);
       setError(null);
     } catch (caught) {
@@ -147,6 +164,7 @@ export function LeadList({
               key={lead.id}
               lead={lead}
               busy={busy}
+              templates={templates}
               actions={{
                 onStatus: (status) =>
                   run(

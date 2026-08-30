@@ -1,5 +1,14 @@
 import { formatTaka, isValidPhone, normalizePhone } from "@/lib/utils";
-import type { ApiOrderDetail, ApiOrderStatus } from "@/lib/api/types";
+import type { ApiOrderDetail } from "@/lib/api/types";
+import { render, templateFor, type TemplateKey } from "./whatsapp-templates";
+
+/**
+ * The shop's own wording, as stored in settings.
+ *
+ * Absent or blank means "use the built-in Bangla" — never "send nothing". The
+ * rule lives in `whatsapp-templates.ts` beside the defaults themselves.
+ */
+export type Templates = Record<string, string> | null | undefined;
 
 /**
  * Sending a customer their order update over WhatsApp.
@@ -56,19 +65,10 @@ function trackingLine(order: ApiOrderDetail): string {
  * on this shop where the reader is being spoken to rather than shown a page.
  * Every line the shop might want to change is right here in one function.
  */
-function statusLine(status: ApiOrderStatus): string {
-  const lines: Record<ApiOrderStatus, string> = {
-    pending: "আপনার অর্ডারটি আমরা পেয়েছি। কনফার্ম করার জন্য একটু পরেই কল করব।",
-    confirmed: "আপনার অর্ডারটি কনফার্ম হয়েছে। আমরা প্যাক করা শুরু করছি।",
-    processing: "আপনার অর্ডারটি প্রস্তুত করা হচ্ছে।",
-    packed: "আপনার অর্ডারটি প্যাক হয়ে গেছে। খুব শিগগিরই কুরিয়ারে দেওয়া হবে।",
-    shipped: "আপনার অর্ডারটি কুরিয়ারে পাঠিয়ে দেওয়া হয়েছে। ডেলিভারিম্যান কল করলে দয়া করে ধরবেন।",
-    delivered: "আপনার অর্ডারটি ডেলিভারি হয়ে গেছে। আমাদের সাথে থাকার জন্য ধন্যবাদ।",
-    cancelled: "আপনার অর্ডারটি বাতিল করা হয়েছে।",
-    returned: "আপনার অর্ডারটি ফেরত এসেছে।",
-  };
-
-  return lines[status];
+function statusLine(order: ApiOrderDetail, templates: Templates): string {
+  return render(templateFor(templates, `status.${order.status}` as TemplateKey), {
+    orderNumber: order.orderNumber,
+  });
 }
 
 /**
@@ -79,23 +79,24 @@ function statusLine(status: ApiOrderStatus): string {
  * costs — because on cash on delivery the amount at the door is the question
  * that causes refusals when it comes as a surprise.
  */
-export function orderMessage(order: ApiOrderDetail, options: { storeName: string }): string {
+export function orderMessage(
+  order: ApiOrderDetail,
+  options: { storeName: string; templates?: Templates },
+): string {
   const items = order.items
     .map((item) => `• ${item.productName}${item.variantLabel ? ` (${item.variantLabel})` : ""} × ${item.quantity}`)
     .join("\n");
 
-  return [
-    `${options.storeName} — Order ${order.orderNumber}`,
-    "",
-    statusLine(order.status),
-    "",
+  return render(templateFor(options.templates, "order"), {
+    store: options.storeName,
+    orderNumber: order.orderNumber,
+    status: statusLine(order, options.templates),
     items,
-    "",
-    `ডেলিভারি চার্জসহ মোট: ${formatTaka(order.grandTotal)} (ক্যাশ অন ডেলিভারি)`,
-    `ঠিকানা: ${order.address}, ${order.areaText}`,
-    "",
-    trackingLine(order),
-  ].join("\n");
+    total: formatTaka(order.grandTotal),
+    address: `${order.address}, ${order.areaText}`,
+    phone: order.phone,
+    track: trackingLine(order),
+  });
 }
 
 /** The link that opens WhatsApp with the message ready to send. */
@@ -160,10 +161,16 @@ export function offerDeadline(iso: string): string {
   });
 }
 
-/** Greeting that works whether or not they got as far as typing a name. */
-function salutation(name: string | null): string {
-  const trimmed = name?.trim();
-  return trimmed ? `আসসালামু আলাইকুম ${trimmed},` : "আসসালামু আলাইকুম,";
+/**
+ * The customer's name, or nothing.
+ *
+ * Empty rather than a stand-in: the greeting in the template reads "আসসালামু
+ * আলাইকুম {{name}}", which is a complete sentence on its own when the lead
+ * never got as far as typing one. Inventing "ভাই" for a stranger whose name the
+ * shop does not know is a guess the shop did not ask for.
+ */
+function salutationName(name: string | null): string {
+  return name?.trim() ?? "";
 }
 
 function basketLines(lead: RecoveryLead): string {
@@ -175,14 +182,6 @@ function basketLines(lead: RecoveryLead): string {
     .join("\n");
 }
 
-/** Drops the blank rows left by an absent link, so nothing prints as a gap. */
-function joinLines(lines: string[]): string {
-  return lines
-    .filter((line, index, all) => !(line === "" && all[index - 1] === ""))
-    .join("\n")
-    .trim();
-}
-
 /**
  * "We noticed you did not finish — can we help?"
  *
@@ -192,23 +191,18 @@ function joinLines(lines: string[]): string {
  */
 export function recoveryMessage(
   lead: RecoveryLead,
-  options: { storeName: string },
+  options: { storeName: string; templates?: Templates },
 ): string {
-  const link = resumeCheckoutHref(lead.id);
-
-  return joinLines([
-    salutation(lead.customerName),
-    "আপনি আমাদের ওয়েবসাইট থেকে নিচের পণ্যটি অর্ডার করতে চেয়েছিলেন, কিন্তু চেকআউট সম্পূর্ণ হয়নি।",
-    "",
-    basketLines(lead),
-    "",
-    `আনুমানিক মোট: ${formatTaka(lead.estimatedValue)} (ডেলিভারি চার্জ আলাদা)`,
-    "",
-    "কোনো সমস্যা হয়েছিল, বা কিছু জানার থাকলে আমাদের বলুন — আমরা সাহায্য করব।",
-    link ? `অর্ডারটি শেষ করতে: ${link}` : "",
-    "",
-    `— ${options.storeName}`,
-  ]);
+  return render(templateFor(options.templates, "recovery"), {
+    store: options.storeName,
+    /* The greeting has to work whether or not they got as far as typing a
+       name, so `{{name}}` carries the whole salutation rather than a bare
+       name that would leave "আসসালামু আলাইকুম ," on a nameless lead. */
+    name: salutationName(lead.customerName),
+    items: basketLines(lead),
+    total: formatTaka(lead.estimatedValue),
+    link: resumeCheckoutHref(lead.id),
+  });
 }
 
 /**
@@ -221,23 +215,16 @@ export function recoveryMessage(
 export function couponOfferMessage(
   lead: RecoveryLead,
   coupon: { code: string; expiresAt: string },
-  options: { storeName: string },
+  options: { storeName: string; templates?: Templates },
 ): string {
-  const link = resumeCheckoutHref(lead.id, coupon.code);
-
-  return joinLines([
-    salutation(lead.customerName),
-    "আপনার অসম্পূর্ণ অর্ডারটির জন্য আমরা একটি ফ্রি ডেলিভারি অফার রেখেছি।",
-    "",
-    "চেকআউটের সময় এই কুপন কোডটি ব্যবহার করুন:",
-    coupon.code,
-    "",
-    `অফারটি ${offerDeadline(coupon.expiresAt)} পর্যন্ত চলবে এবং একবারই ব্যবহার করা যাবে।`,
-    "",
-    basketLines(lead),
-    "",
-    link ? `অর্ডারটি শেষ করতে: ${link}` : "",
-    "",
-    `— ${options.storeName}`,
-  ]);
+  return render(templateFor(options.templates, "couponOffer"), {
+    store: options.storeName,
+    name: salutationName(lead.customerName),
+    code: coupon.code,
+    expiry: offerDeadline(coupon.expiresAt),
+    items: basketLines(lead),
+    total: formatTaka(lead.estimatedValue),
+    link: resumeCheckoutHref(lead.id, coupon.code),
+  });
 }
+

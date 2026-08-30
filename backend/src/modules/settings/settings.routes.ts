@@ -64,6 +64,29 @@ const updateSettingsSchema = z
       .strict()
       .optional(),
 
+    /**
+     * The wording of every WhatsApp message.
+     *
+     * Free text on purpose — it is what the shop says to its own customers, and
+     * the only rules are ones a mistake would otherwise cost something:
+     *
+     *   * bounded per message, so a paste accident cannot fill the settings row
+     *   * bounded in count, so the object cannot be used as free storage
+     *   * keys restricted to the shape the renderer looks up
+     *
+     * Sent as a whole set, so removing a key is how a shop goes back to the
+     * built-in wording.
+     */
+    whatsappTemplates: z
+      .record(
+        z.string().regex(/^[a-zA-Z.]{1,40}$/, "That is not a message name."),
+        z.string().max(2000, "That message is too long for WhatsApp."),
+      )
+      .refine((value) => Object.keys(value).length <= 40, {
+        message: "Too many messages.",
+      })
+      .optional(),
+
     /* The recovery offer. Hours is bounded at 720 — a month — because past
        that the offer has stopped being an offer and become the shop's delivery
        price, which belongs in the delivery settings above instead. */

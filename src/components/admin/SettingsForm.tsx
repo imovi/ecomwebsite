@@ -5,7 +5,9 @@ import { adminApi, AdminApiError } from "@/lib/admin/client";
 import { useLoad } from "@/lib/admin/use-load";
 import { toast } from "@/lib/stores/toast-store";
 import type { ApiStoreSettings } from "@/lib/api/types";
+import { cn } from "@/lib/utils";
 import { AdminShell } from "./AdminShell";
+import { WhatsAppTemplates } from "./WhatsAppTemplates";
 import { AsyncState, Card, CardHeader, ErrorBanner, PageBody, SuccessBanner } from "./ui";
 import { Button } from "@/components/ui/Button";
 import { Input, Select, Textarea } from "@/components/ui/Field";
@@ -42,6 +44,7 @@ export function SettingsForm() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [tab, setTab] = useState<SettingsTab>("shop");
   const [saving, setSaving] = useState(false);
 
   const [courierStatus, setCourierStatus] = useState<CourierStatus | null>(null);
@@ -215,8 +218,25 @@ export function SettingsForm() {
     }
   }
 
+  if (tab === "messages") {
+    return (
+      <AdminShell title="Settings">
+        <PageBody columns={false}>
+          <SettingsTabs tab={tab} onTab={setTab} />
+          {/* Full width, not the two-column grid the rest of this page uses:
+              each message is an editor beside its preview, and squeezing that
+              into half a screen makes the preview useless. */}
+          <WhatsAppTemplates />
+        </PageBody>
+      </AdminShell>
+    );
+  }
+
   return (
     <AdminShell title="Settings">
+      <PageBody columns={false}>
+        <SettingsTabs tab={tab} onTab={setTab} />
+      </PageBody>
       <PageBody>
         <AsyncState loading={loading} error={error} onRetry={() => void load()}>
           {settings && (
@@ -862,5 +882,43 @@ function Steps({ steps }: { steps: string[] }) {
         </li>
       ))}
     </ol>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+
+type SettingsTab = "shop" | "messages";
+
+/**
+ * Two screens under one heading.
+ *
+ * The message editor is eleven text boxes with a preview each — put on the same
+ * page as the delivery charges it would bury them, and an owner looking for a
+ * courier cost would scroll past ten Bangla paragraphs to find it.
+ */
+function SettingsTabs({ tab, onTab }: { tab: SettingsTab; onTab: (tab: SettingsTab) => void }) {
+  const tabs: { key: SettingsTab; label: string }[] = [
+    { key: "shop", label: "Shop" },
+    { key: "messages", label: "WhatsApp messages" },
+  ];
+
+  return (
+    <div className="flex gap-4 border-b border-line">
+      {tabs.map((entry) => (
+        <button
+          key={entry.key}
+          type="button"
+          onClick={() => onTab(entry.key)}
+          className={cn(
+            "border-b-2 pb-2.5 text-caption font-medium transition-colors",
+            tab === entry.key
+              ? "border-ink text-ink"
+              : "border-transparent text-muted hover:text-ink",
+          )}
+        >
+          {entry.label}
+        </button>
+      ))}
+    </div>
   );
 }

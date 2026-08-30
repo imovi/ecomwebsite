@@ -3,6 +3,7 @@ import {
   boolean,
   check,
   integer,
+  jsonb,
   pgTable,
   smallint,
   text,
@@ -39,6 +40,24 @@ export const storeSettings = pgTable(
     minimumOrderValue: integer("minimum_order_value").notNull().default(0),
     /** Cap on units of any single line, to blunt joke orders on a COD store. */
     maxQuantityPerItem: integer("max_quantity_per_item").notNull().default(10),
+
+    /* --- The words sent to customers ------------------------------------- */
+    /**
+     * WhatsApp message wording, keyed by message.
+     *
+     * One column rather than eleven, because these are read and written as a
+     * set and will grow — a column per string is a migration every time
+     * somebody wants a new message.
+     *
+     * An absent or blank key means "use the built-in wording", never "send an
+     * empty message": the fallback lives in `whatsapp.ts` beside the defaults
+     * themselves, so a half-filled form cannot leave a customer with a blank
+     * chat.
+     */
+    whatsappTemplates: jsonb("whatsapp_templates")
+      .$type<Record<string, string>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
 
     /* --- Recovering incomplete checkouts --------------------------------- */
     /**

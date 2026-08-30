@@ -533,6 +533,8 @@ export interface ApiStoreSettings {
     couponMinCartValue: number;
     couponHours: number;
   };
+  /** WhatsApp wording the shop has written. Missing keys use the built-in. */
+  whatsappTemplates: Record<string, string>;
   /**
    * What an order costs the shop, as opposed to what it charges for.
    *

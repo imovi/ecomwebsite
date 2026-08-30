@@ -60,6 +60,17 @@ export async function generateMetadata(): Promise<Metadata> {
     },
     robots: { index: true, follow: true },
     /**
+     * Meta reads this from the home page's source to confirm the shop owns
+     * the domain. It has to be server-rendered inside `<head>` — a tag written
+     * in later by JavaScript is one Meta's checker never sees, and the
+     * verification simply fails with nothing to say why.
+     */
+    verification: {
+      other: {
+        "facebook-domain-verification": siteConfig.facebookDomainVerification,
+      },
+    },
+    /**
      * Tab icon, uploaded from the branding screen.
      *
      * The default lives in `public/`, NOT at `app/favicon.ico`. Next's

@@ -57,6 +57,7 @@ const NAV: NavItem[] = [
      the end of a day, not while working the queue during one. */
   { href: "/admin/profit", label: "Profit", icon: "cash" },
   { href: "/admin/performance", label: "Performance", icon: "rocket" },
+  { href: "/admin/visitors", label: "Visitors", icon: "eye" },
   /* Beside Orders in the More menu rather than in the primary bar: it is read
      when somebody is deciding whether to trust a caller, not on every shift. */
   { href: "/admin/customers", label: "Customers", icon: "users" },

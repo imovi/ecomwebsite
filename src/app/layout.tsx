@@ -69,7 +69,7 @@ export async function generateMetadata(): Promise<Metadata> {
      * the icon is decided, with the bundled file as the fallback when no icon
      * has been uploaded.
      */
-    icons: { icon: settings.faviconUrl ?? "/favicon.ico" },
+    icons: { icon: settings.faviconUrl ?? "/favicon.ico", apple: "/apple-icon.png" },
   };
 }
 

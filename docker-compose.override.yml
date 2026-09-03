@@ -1,0 +1,13 @@
+# Ports for a shared box.
+#
+# This server already runs another business: a Next.js app on :3000 and an API
+# on :4000, both of which the base compose file would collide with. Nothing
+# here is exposed to the internet directly — Caddy is the only public listener,
+# and it reaches these on the loopback.
+services:
+  api:
+    ports: !override
+      - "127.0.0.1:4100:4000"
+  web:
+    ports: !override
+      - "127.0.0.1:8080:3000"

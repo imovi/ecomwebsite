@@ -25,6 +25,7 @@ import { LightPill, OffFrame, useLightSwitch } from "./LightSwitch";
 import { QtyStepper } from "./QtyStepper";
 import { StickyBuyBar } from "./StickyBuyBar";
 import { VariantPicker } from "./VariantPicker";
+import { ProductLiveBadge } from "./ProductLiveBadge";
 
 type Selection = Partial<Record<VariantOptionName, string>>;
 
@@ -266,6 +267,7 @@ export function ProductPurchase({ product }: { product: Product }) {
             >
               {product.title}
             </h1>
+            <ProductLiveBadge slug={product.slug} />
           </div>
 
           {/* Only the price is reordered, and it moves to -1 rather than the

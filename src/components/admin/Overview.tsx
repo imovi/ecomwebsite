@@ -17,6 +17,7 @@ import { CallListDrawer } from "./CallListDrawer";
 import { ManualOrderFields } from "./ManualOrderForm";
 import { OverviewInsights, CourierCash, SourcesCard } from "./OverviewInsights";
 import { SalesChart } from "./SalesChart";
+import { LiveTrafficOverview } from "./LiveTrafficOverview";
 import {
   AsyncState,
   Card,
@@ -316,6 +317,8 @@ export function Overview() {
               </Button>
             </div>
           )}
+
+          <LiveTrafficOverview />
 
           {summary && <Kpis overview={summary} />}
 

@@ -22,6 +22,7 @@ import {
 import { recordEvent, CUSTOMER_ACTOR } from "./order-event.repository.js";
 import { reserveStock, syncSimpleProductStatus, type StockLine } from "./stock.service.js";
 import { toOrderConfirmationDto, type OrderConfirmationDto } from "./order.types.js";
+import { recordProductSale } from "../products/metrics.service.js";
 import type { PlaceOrderInput, QuoteInput } from "./order.validation.js";
 import type { DeliveryZone } from "../../db/schema/order-enums.js";
 
@@ -674,6 +675,13 @@ export async function placeOrder(
 
     return { order, items, coupon: spent };
   });
+
+  /* Update product demand metrics immediately so Trending reflects new orders */
+  for (const item of created.items) {
+    if (item.productId) {
+      void recordProductSale({ productId: item.productId, units: item.quantity }).catch(() => {});
+    }
+  }
 
   log.info(
     {

@@ -138,6 +138,29 @@ export async function reverseProductSale(
 export async function recomputeTrendingScores(
   executor: DatabaseExecutor = getDb(),
 ): Promise<number> {
+  // 1. Ensure all products have a row in product_metrics
+  await executor.execute(sql`
+    insert into ${productMetrics} (product_id)
+    select id from ${products}
+    on conflict (product_id) do nothing
+  `);
+
+  // 2. Sync units_sold and units_sold_recent from actual non-cancelled orders
+  await executor.execute(sql`
+    update ${productMetrics} m
+    set units_sold = coalesce(s.total_units, 0),
+        units_sold_recent = coalesce(s.total_units, 0),
+        updated_at = now()
+    from (
+      select oi.product_id, sum(oi.quantity) as total_units
+      from order_items oi
+      join orders o on o.id = oi.order_id
+      where o.status != 'cancelled'
+      group by oi.product_id
+    ) s
+    where m.product_id = s.product_id
+  `);
+
   const result = await executor.execute(sql`
     update ${productMetrics} m
     set trending_score =

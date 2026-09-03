@@ -6,6 +6,7 @@ import { getSettings } from "@/lib/data/settings";
 import { MetaPixel } from "@/lib/analytics/pixel";
 import { FbClickCapture } from "@/lib/analytics/FbClickCapture";
 import { GoogleTagManager } from "@/lib/analytics/gtm";
+import { VisitorTracker } from "@/components/shop/VisitorTracker";
 
 /**
  * Storefront shell. The admin panel lives in its own route group with its own
@@ -35,6 +36,8 @@ export default async function ShopLayout({
       {/* Records the ad click on arrival, whether or not the pixel loads. */}
       <FbClickCapture />
       <GoogleTagManager />
+      {/* Real-time live visitor and product popularity tracker */}
+      <VisitorTracker />
     </>
   );
 }

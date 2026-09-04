@@ -37,12 +37,15 @@ const orderIdParam = z.object({ id: uuidSchema });
 const status: RequestHandler = async (_req, res) => {
   const settings = await getSettings();
   const problem = service.configProblem(settings);
+  const available = await service.getAvailableCourierProviders(settings);
 
   sendSuccess(res, {
     status: {
-      ready: problem === null,
+      ready: problem === null || available.providers.some((p) => p.ready),
       problem,
       provider: settings.courierProvider,
+      availableProviders: available.providers,
+      defaultProvider: available.defaultProvider,
       credentialsConfigured:
         settings.courierApiKey.trim() !== "" && settings.courierApiSecret.trim() !== "",
       storeIdConfigured: settings.courierStoreId.trim() !== "",
@@ -101,9 +104,15 @@ const test: RequestHandler = async (_req, res) => {
   sendSuccess(res, { result: await adapter.verifyCredentials() });
 };
 
+const sendBody = z
+  .object({
+    provider: z.enum(["steadfast", "pathao"]).optional(),
+  })
+  .optional();
+
 const send: RequestHandler = async (req, res) => {
-  const { params } = validated<unknown, unknown, { id: string }>(req);
-  sendSuccess(res, { shipment: await service.sendOrder(params.id, actorOf(req)) });
+  const { params, body } = validated<{ provider?: "steadfast" | "pathao" }, unknown, { id: string }>(req);
+  sendSuccess(res, { shipment: await service.sendOrder(params.id, actorOf(req), body?.provider) });
 };
 
 const forOrder: RequestHandler = async (req, res) => {
@@ -127,5 +136,9 @@ courierAdminRouter.post("/webhook-token", requireRole("admin"), rotateWebhookTok
 courierAdminRouter.delete("/webhook-token", requireRole("admin"), clearWebhookToken);
 courierAdminRouter.post("/sync", syncAll);
 courierAdminRouter.get("/order/:id", validate({ params: orderIdParam }), forOrder);
-courierAdminRouter.post("/order/:id/send", validate({ params: orderIdParam }), send);
+courierAdminRouter.post(
+  "/order/:id/send",
+  validate({ params: orderIdParam, body: sendBody }),
+  send,
+);
 courierAdminRouter.post("/shipment/:id/sync", validate({ params: orderIdParam }), sync);

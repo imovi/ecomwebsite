@@ -241,9 +241,13 @@ export function OrderDetail({ identifier }: { identifier: string }) {
           order={order}
           shipment={shipment}
           busy={busy}
-          onSend={() =>
+          onSend={(provider) =>
             mutate(
-              () => adminApi.post(`admin/courier/order/${order.id}/send`, {}),
+              () =>
+                adminApi.post(
+                  `admin/courier/order/${order.id}/send`,
+                  provider ? { provider } : {},
+                ),
               "Sent to the courier",
             )
           }
@@ -499,9 +503,10 @@ function CourierPanel({
   order: ApiOrderDetail;
   shipment: Shipment | null;
   busy: boolean;
-  onSend: () => Promise<boolean>;
+  onSend: (provider?: "steadfast" | "pathao") => Promise<boolean>;
   onSync: () => Promise<boolean>;
 }) {
+  const [selectedCourier, setSelectedCourier] = useState<"steadfast" | "pathao">("steadfast");
   const finished = order.status === "cancelled" || order.status === "returned";
 
   if (!shipment) {
@@ -509,23 +514,64 @@ function CourierPanel({
 
     return (
       <Card>
-        <CardHeader title="Courier" />
-        <div className="flex flex-wrap items-center gap-3 p-4">
+        <CardHeader
+          title="Courier dispatch"
+          hint="Select courier and book parcel in 1 click"
+        />
+        <div className="flex flex-col gap-3.5 p-4">
           {order.status === "pending" ? (
             <p className="text-caption text-muted">
               Confirm this order by phone first. Sending an unconfirmed parcel is how they come
               back.
             </p>
           ) : (
-            <>
-              <Button variant="primary" size="sm" loading={busy} onClick={() => void onSend()}>
-                <Icon name="truck" size={16} />
-                Send to courier
-              </Button>
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-caption font-medium text-ink">Courier:</span>
+                  <div className="inline-flex rounded-sm border border-line bg-surface p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCourier("steadfast")}
+                      className={cn(
+                        "rounded-xs px-2.5 py-1 text-caption font-medium transition-colors",
+                        selectedCourier === "steadfast"
+                          ? "bg-white text-ink shadow-xs"
+                          : "text-muted hover:text-ink",
+                      )}
+                    >
+                      Steadfast
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCourier("pathao")}
+                      className={cn(
+                        "rounded-xs px-2.5 py-1 text-caption font-medium transition-colors",
+                        selectedCourier === "pathao"
+                          ? "bg-white text-ink shadow-xs"
+                          : "text-muted hover:text-ink",
+                      )}
+                    >
+                      Pathao
+                    </button>
+                  </div>
+                </div>
+
+                <Button
+                  variant="primary"
+                  size="sm"
+                  loading={busy}
+                  onClick={() => void onSend(selectedCourier)}
+                >
+                  <Icon name="truck" size={16} />
+                  Send to {selectedCourier === "pathao" ? "Pathao" : "Steadfast"} (1-Click)
+                </Button>
+              </div>
+
               <p className="text-caption text-muted">
-                Creates the parcel and marks this order shipped.
+                1-click entry: books parcel with {selectedCourier === "pathao" ? "Pathao" : "Steadfast"} and marks order shipped.
               </p>
-            </>
+            </div>
           )}
         </div>
       </Card>

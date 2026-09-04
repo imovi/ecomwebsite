@@ -11,6 +11,7 @@ import {
 import { orders } from "../../db/schema/orders.js";
 import { storeSettings } from "../../db/schema/store-settings.js";
 import { orderItems } from "../../db/schema/order-items.js";
+import { courierFraudAccounts } from "../../db/schema/courier-fraud.js";
 import type { StoreSettingsRow } from "../../db/schema/store-settings.js";
 import { BadRequestError, ConflictError, NotFoundError } from "../../core/errors.js";
 import { createLogger } from "../../core/logger.js";
@@ -99,6 +100,146 @@ export function adapterFor(settings: CourierConfig): CourierProviderAdapter {
   }
 }
 
+/**
+ * Resolves the adapter for a requested courier, looking first in store settings
+ * and falling back to courier_fraud_accounts so both Steadfast and Pathao can
+ * be configured and dispatched with 1 click.
+ */
+export async function resolveAdapter(
+  settings: CourierConfig,
+  preferredProvider?: CourierProvider,
+): Promise<{ adapter: CourierProviderAdapter; provider: CourierProvider }> {
+  const targetProvider: CourierProvider =
+    preferredProvider || (settings.courierProvider as CourierProvider) || "steadfast";
+
+  // 1. Try storeSettings if matching provider
+  if (settings.courierProvider === targetProvider) {
+    if (
+      targetProvider === "steadfast" &&
+      settings.courierApiKey.trim() !== "" &&
+      settings.courierApiSecret.trim() !== ""
+    ) {
+      return {
+        adapter: createSteadfastAdapter({
+          apiKey: settings.courierApiKey.trim(),
+          apiSecret: settings.courierApiSecret.trim(),
+          baseUrl: settings.courierBaseUrl || undefined,
+        }),
+        provider: targetProvider,
+      };
+    }
+    if (
+      targetProvider === "pathao" &&
+      settings.courierApiKey.trim() !== "" &&
+      settings.courierApiSecret.trim() !== ""
+    ) {
+      if (!settings.courierStoreId || settings.courierStoreId.trim() === "") {
+        throw new BadRequestError("Pathao needs your Store ID. Please configure it in Settings → Courier.");
+      }
+      return {
+        adapter: createPathaoAdapter({
+          clientId: settings.courierApiKey.trim(),
+          clientSecret: settings.courierApiSecret.trim(),
+          storeId: settings.courierStoreId.trim(),
+          baseUrl: settings.courierBaseUrl || undefined,
+        }),
+        provider: targetProvider,
+      };
+    }
+  }
+
+  // 2. Check courier_fraud_accounts table
+  const fraudRows = await getDb()
+    .select()
+    .from(courierFraudAccounts)
+    .where(eq(courierFraudAccounts.provider, targetProvider))
+    .limit(1);
+  const fraudAccount = fraudRows[0];
+
+  if (fraudAccount && fraudAccount.identifier.trim() !== "" && fraudAccount.secret.trim() !== "") {
+    if (targetProvider === "steadfast") {
+      return {
+        adapter: createSteadfastAdapter({
+          apiKey: fraudAccount.identifier.trim(),
+          apiSecret: fraudAccount.secret.trim(),
+          baseUrl: settings.courierBaseUrl || undefined,
+        }),
+        provider: targetProvider,
+      };
+    }
+    if (targetProvider === "pathao") {
+      if (!settings.courierStoreId || settings.courierStoreId.trim() === "") {
+        throw new BadRequestError("Pathao needs your Store ID. Please configure it in Settings → Courier.");
+      }
+      return {
+        adapter: createPathaoAdapter({
+          clientId: fraudAccount.identifier.trim(),
+          clientSecret: fraudAccount.secret.trim(),
+          storeId: settings.courierStoreId.trim(),
+          baseUrl: settings.courierBaseUrl || undefined,
+        }),
+        provider: targetProvider,
+      };
+    }
+  }
+
+  // 3. Fallback to adapterFor if no specific preference was asked
+  if (!preferredProvider && settings.courierProvider) {
+    return {
+      adapter: adapterFor(settings),
+      provider: settings.courierProvider as CourierProvider,
+    };
+  }
+
+  throw new BadRequestError(
+    `Credentials for ${targetProvider === "pathao" ? "Pathao" : "Steadfast"} are not configured. Add them in Settings → Courier or Fraud check.`,
+  );
+}
+
+export async function getAvailableCourierProviders(settings: CourierConfig): Promise<{
+  defaultProvider: string;
+  providers: { provider: CourierProvider; label: string; ready: boolean }[];
+}> {
+  const db = getDb();
+  const fraudRows = await db.select().from(courierFraudAccounts);
+  const fraudMap = new Map(fraudRows.map((r) => [r.provider, r]));
+
+  const result: { provider: CourierProvider; label: string; ready: boolean }[] = [];
+
+  const steadfastSettingsReady =
+    settings.courierProvider === "steadfast" &&
+    Boolean(settings.courierApiKey.trim() && settings.courierApiSecret.trim());
+  const steadfastFraud = fraudMap.get("steadfast");
+  const steadfastFraudReady = Boolean(
+    steadfastFraud && steadfastFraud.identifier.trim() && steadfastFraud.secret.trim(),
+  );
+
+  result.push({
+    provider: "steadfast",
+    label: "Steadfast",
+    ready: Boolean(steadfastSettingsReady || steadfastFraudReady),
+  });
+
+  const pathaoSettingsReady =
+    settings.courierProvider === "pathao" &&
+    Boolean(settings.courierApiKey.trim() && settings.courierApiSecret.trim());
+  const pathaoFraud = fraudMap.get("pathao");
+  const pathaoFraudReady = Boolean(
+    pathaoFraud && pathaoFraud.identifier.trim() && pathaoFraud.secret.trim(),
+  );
+
+  result.push({
+    provider: "pathao",
+    label: "Pathao",
+    ready: Boolean(pathaoSettingsReady || pathaoFraudReady),
+  });
+
+  return {
+    defaultProvider: settings.courierProvider || (result.find((p) => p.ready)?.provider ?? "steadfast"),
+    providers: result,
+  };
+}
+
 /* -------------------------------------------------------------------------- */
 /* Sending a parcel                                                           */
 /* -------------------------------------------------------------------------- */
@@ -149,22 +290,13 @@ export async function findByOrder(orderId: string): Promise<ShipmentDto | null> 
  * order that is cancelled or returned (a parcel for something nobody is owed),
  * and an unconfirmed order (the refusal this whole workflow exists to avoid).
  */
-export async function sendOrder(orderId: string, actor: Actor): Promise<ShipmentDto> {
+export async function sendOrder(
+  orderId: string,
+  actor: Actor,
+  preferredProvider?: CourierProvider,
+): Promise<ShipmentDto> {
   const db = getDb();
   const settings = await getSettings();
-
-  const problem = configProblem(settings);
-  if (problem !== null) {
-    throw new BadRequestError(
-      problem === "disabled"
-        ? "Courier hand-off is switched off in Settings."
-        : problem === "no_provider"
-          ? "No courier is configured. Choose one in Settings."
-          : problem === "missing_store_id"
-            ? "Pathao needs your store id. Add it in Settings."
-            : "The courier API key and secret are not configured.",
-    );
-  }
 
   const existing = await findByOrder(orderId);
   if (existing) {
@@ -194,7 +326,7 @@ export async function sendOrder(orderId: string, actor: Actor): Promise<Shipment
     .map((item) => `${item.productName}${item.variantLabel ? ` (${item.variantLabel})` : ""} x${item.quantity}`)
     .join(", ");
 
-  const adapter = adapterFor(settings);
+  const { adapter, provider: chosenProvider } = await resolveAdapter(settings, preferredProvider);
 
   let created;
   try {
@@ -220,7 +352,7 @@ export async function sendOrder(orderId: string, actor: Actor): Promise<Shipment
     .insert(courierShipments)
     .values({
       orderId,
-      provider: settings.courierProvider as CourierProvider,
+      provider: chosenProvider,
       consignmentId: created.consignmentId,
       trackingCode: created.trackingCode,
       codAmount: created.codAmount,
@@ -238,7 +370,7 @@ export async function sendOrder(orderId: string, actor: Actor): Promise<Shipment
      and losing the reference would mean it can never be tracked again. */
   try {
     await advanceToShipped(order.status, orderId, actor, {
-      provider: settings.courierProvider,
+      provider: chosenProvider,
       trackingCode: created.trackingCode || created.consignmentId,
     });
   } catch (error) {

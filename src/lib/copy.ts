@@ -17,7 +17,7 @@ export const copy = {
      * the configured name rather than being the source of it.
      */
     name: "HINAR",
-    tagline: "Gadgets, delivered.",
+    tagline: "Smart Gadgets & Lifestyle Essentials",
   },
 
   nav: {

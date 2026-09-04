@@ -30,19 +30,15 @@ export async function generateMetadata(): Promise<Metadata> {
   const settings = await getSettings();
   const name = settings.storeName || copy.brand.name;
 
-  /**
-   * The shop's own words win, with the old wording as the fallback.
-   *
-   * Only `default` is overridden, not `template`: the template is what puts the
-   * shop name after a product's own title, and replacing that with a fixed
-   * marketing line would give every product page the same title — the fastest
-   * way to lose the search results this is meant to help.
-   */
+  const fallbackTitle = `${name} — Online Gadget Shop & Smart Lifestyle Store in Bangladesh`;
+  const fallbackDescription =
+    "Shop smart gadgets, rechargeable desk lamps, unique lifestyle accessories & everyday electronics at best price in Bangladesh. Fast nationwide cash on delivery.";
+
   const title =
     settings.seoTitle || `${name} — ${settings.tagline || copy.brand.tagline}`;
-  const description =
-    settings.seoDescription ||
-    "Buy original smartphones, earbuds, smartwatches, laptops and accessories in Bangladesh. Cash on delivery nationwide, 24–48 hour delivery in Dhaka.";
+  const description = settings.seoDescription || fallbackDescription;
+
+  const ogImage = settings.logoUrl || `${siteConfig.url}/apple-icon.png`;
 
   return {
     metadataBase: new URL(siteConfig.url),
@@ -51,24 +47,61 @@ export async function generateMetadata(): Promise<Metadata> {
       template: `%s · ${name}`,
     },
     description,
+    keywords: [
+      "gadget shop bd",
+      "online gadget shop in bangladesh",
+      "smart gadgets bd",
+      "hinar",
+      "hinar bd",
+      "hinarbd",
+      "rechargeable desk lamp bd",
+      "magnetic desk lamp bangladesh",
+      "lifestyle gadgets bd",
+      "cash on delivery gadgets bangladesh",
+    ],
     applicationName: name,
     formatDetection: { telephone: true },
+    alternates: {
+      canonical: "/",
+    },
     openGraph: {
       type: "website",
       locale: "en_BD",
+      alternateLocale: ["bn_BD"],
       siteName: name,
+      title,
+      description,
+      url: siteConfig.url,
+      images: [
+        {
+          url: ogImage,
+          width: 1200,
+          height: 630,
+          alt: `${name} — Smart Gadgets & Lifestyle Essentials in Bangladesh`,
+        },
+      ],
     },
-    robots: { index: true, follow: true },
-    /**
-     * Tab icon, uploaded from the branding screen.
-     *
-     * The default lives in `public/`, NOT at `app/favicon.ico`. Next's
-     * file-convention metadata wins over anything set here, so while the file
-     * sat in the route segment an uploaded icon was accepted, stored and then
-     * silently ignored by every browser. Moving it makes this the single place
-     * the icon is decided, with the bundled file as the fallback when no icon
-     * has been uploaded.
-     */
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: [ogImage],
+    },
+    other: {
+      "geo.region": "BD",
+      "geo.placename": "Dhaka, Bangladesh",
+    },
+    robots: {
+      index: true,
+      follow: true,
+      googleBot: {
+        index: true,
+        follow: true,
+        "max-video-preview": -1,
+        "max-image-preview": "large",
+        "max-snippet": -1,
+      },
+    },
     icons: { icon: settings.faviconUrl ?? "/favicon.ico", apple: "/apple-icon.png" },
   };
 }
@@ -77,16 +110,65 @@ export const viewport: Viewport = {
   themeColor: "#ffffff",
   width: "device-width",
   initialScale: 1,
-  // Never block pinch-zoom — it is an accessibility requirement, and the
-  // layout is fluid enough that it doesn't need locking.
   maximumScale: 5,
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  const settings = await getSettings();
+  const name = settings.storeName || copy.brand.name;
+
+  const websiteJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    name: name,
+    alternateName: ["HINAR BD", "HINAR", "hinarbd.com"],
+    url: siteConfig.url,
+    potentialAction: {
+      "@type": "SearchAction",
+      target: {
+        "@type": "EntryPoint",
+        urlTemplate: `${siteConfig.url}/category/all?q={search_term_string}`,
+      },
+      "query-input": "required name=search_term_string",
+    },
+  };
+
+  const organizationJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "OnlineStore",
+    name: name,
+    url: siteConfig.url,
+    logo: settings.logoUrl || `${siteConfig.url}/apple-icon.png`,
+    description:
+      settings.seoDescription ||
+      "Trusted online gadget and lifestyle store in Bangladesh offering rechargeable lamps, smart gadgets, and everyday electronics with nationwide cash on delivery.",
+    areaServed: {
+      "@type": "Country",
+      name: "Bangladesh",
+    },
+    contactPoint: {
+      "@type": "ContactPoint",
+      telephone: settings.hotline || "+8801855642285",
+      contactType: "customer service",
+      areaServed: "BD",
+      availableLanguage: ["English", "Bengali"],
+    },
+  };
+
   return (
     <html lang="en" className={`${geist.variable} h-full`}>
+      <head>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }}
+        />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
+        />
+      </head>
       <body className="flex min-h-full flex-col">
         {children}
         <Toaster />

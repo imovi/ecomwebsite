@@ -35,16 +35,30 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { slug } = await params;
   if (slug === ALL) {
-    return { title: "All products", alternates: { canonical: "/category/all" } };
+    return {
+      title: "All Products — Smart Gadgets & Lifestyle Store in BD",
+      description:
+        "Explore all smart gadgets, rechargeable LED lights, lifestyle accessories and everyday tech essentials in Bangladesh. Best prices with cash on delivery at HINAR.",
+      alternates: { canonical: "/category/all" },
+      openGraph: {
+        title: "All Products — Smart Gadgets & Lifestyle Store in BD | HINAR",
+        description:
+          "Explore all smart gadgets, rechargeable LED lights, lifestyle accessories and everyday tech essentials in Bangladesh. Best prices with cash on delivery at HINAR.",
+      },
+    };
   }
 
   const category = await getCategoryBySlug(slug);
   if (!category) return { title: copy.common.notFoundTitle };
 
   return {
-    title: category.name,
-    description: `Buy ${category.name.toLowerCase()} in Bangladesh with cash on delivery. Original products, fast delivery in Dhaka.`,
+    title: `${category.name} Price in BD`,
+    description: `Shop original ${category.name.toLowerCase()} at best prices in Bangladesh. Enjoy fast nationwide cash on delivery, easy returns & genuine quality from HINAR.`,
     alternates: { canonical: `/category/${category.slug}` },
+    openGraph: {
+      title: `${category.name} in Bangladesh | HINAR`,
+      description: `Shop original ${category.name.toLowerCase()} at best prices in Bangladesh with cash on delivery.`,
+    },
   };
 }
 

@@ -275,6 +275,10 @@ export function ProductImages({
                           alt={image.alt ?? "Video Cover"}
                           className="size-full object-cover"
                           loading="lazy"
+                          referrerPolicy="no-referrer"
+                          onError={(e) => {
+                            e.currentTarget.style.display = "none";
+                          }}
                         />
                         <button
                           type="button"

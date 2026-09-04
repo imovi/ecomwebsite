@@ -78,6 +78,7 @@ export function parseVideoUrl(url: string | null | undefined): ParsedVideoInfo |
       originalUrl: trimmed,
       videoId: code,
       platformName: "Instagram Reel",
+      posterUrl: `/api/video/poster?id=${encodeURIComponent(code)}`,
     };
   }
 
@@ -148,24 +149,45 @@ export async function resolveDirectVideoUrl(
 
       if (res.ok) {
         const html = await res.text();
-        const vMatch = html.match(/\\"video_url\\":\\"([^"\\]*(?:\\.[^"\\]*)*)\\"/);
-        const dMatch = html.match(/\\"display_url\\":\\"([^"\\]*(?:\\.[^"\\]*)*)\\"/);
+        const vMatch = html.match(/\\"video_url\\":\\"(https:[^"\s]+?)\\"/);
+        const dMatch = html.match(/\\"display_url\\":\\"(https:[^"\s]+?)\\"/);
         
-        const directUrl = vMatch ? JSON.parse(`"${vMatch[1]}"`).replace(/\\\//g, "/") : null;
-        const posterUrl = dMatch ? JSON.parse(`"${dMatch[1]}"`).replace(/\\\//g, "/") : null;
+        let directUrl: string | null = null;
+        if (vMatch) {
+          try {
+            directUrl = JSON.parse(`"${vMatch[1]}"`);
+          } catch {
+            directUrl = vMatch[1].replace(/\\+(\/)/g, "/");
+          }
+          directUrl = directUrl.replace(/\\+(\/)/g, "/");
+        }
+
+        let rawPosterUrl: string | null = null;
+        if (dMatch) {
+          try {
+            rawPosterUrl = JSON.parse(`"${dMatch[1]}"`);
+          } catch {
+            rawPosterUrl = dMatch[1].replace(/\\+(\/)/g, "/");
+          }
+          rawPosterUrl = rawPosterUrl.replace(/\\+(\/)/g, "/");
+        }
+
+        const proxiedPosterUrl = rawPosterUrl
+          ? `/api/video/poster?url=${encodeURIComponent(rawPosterUrl)}&id=${encodeURIComponent(parsed.videoId)}`
+          : `/api/video/poster?id=${encodeURIComponent(parsed.videoId)}`;
 
         if (directUrl && directUrl.startsWith("http")) {
           return {
             ...parsed,
             type: "direct",
             embedUrl: directUrl,
-            posterUrl: posterUrl ?? undefined,
+            posterUrl: proxiedPosterUrl,
             isVertical: true,
           };
-        } else if (posterUrl && posterUrl.startsWith("http")) {
+        } else {
           return {
             ...parsed,
-            posterUrl: posterUrl,
+            posterUrl: proxiedPosterUrl,
           };
         }
       }

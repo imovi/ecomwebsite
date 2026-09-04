@@ -159,24 +159,8 @@ export function Gallery({
 
                   return (
                     <div className="relative size-full bg-neutral-900 flex items-center justify-center overflow-hidden">
-                      {hasPoster ? (
-                        <>
-                          <img
-                            src={embed!.posterUrl}
-                            alt="Video Cover"
-                            className="size-full object-cover"
-                            loading="lazy"
-                          />
-                          <div className="absolute inset-0 flex items-center justify-center bg-black/25">
-                            <span className="flex size-6 items-center justify-center rounded-full bg-white/90 text-ink shadow-xs">
-                              <svg className="size-3 fill-current ml-0.5" viewBox="0 0 24 24">
-                                <path d="M8 5v14l11-7z" />
-                              </svg>
-                            </span>
-                          </div>
-                        </>
-                      ) : embed && embed.type !== "direct" && embed.type !== "unknown" ? (
-                        <div className="flex flex-col items-center justify-center p-1 text-center">
+                      {embed && embed.type !== "direct" && embed.type !== "unknown" && (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center p-1 text-center">
                           <span className="text-micro font-bold text-white uppercase tracking-tight">
                             {embed.platformName.replace(" Video", "").replace(" Reel", "")}
                           </span>
@@ -186,7 +170,28 @@ export function Gallery({
                             </svg>
                           </span>
                         </div>
-                      ) : (
+                      )}
+                      {hasPoster ? (
+                        <>
+                          <img
+                            src={embed!.posterUrl}
+                            alt="Video Cover"
+                            className="relative z-1 size-full object-cover"
+                            loading="lazy"
+                            referrerPolicy="no-referrer"
+                            onError={(e) => {
+                              e.currentTarget.style.display = "none";
+                            }}
+                          />
+                          <div className="absolute inset-0 z-2 flex items-center justify-center bg-black/25">
+                            <span className="flex size-6 items-center justify-center rounded-full bg-white/90 text-ink shadow-xs">
+                              <svg className="size-3 fill-current ml-0.5" viewBox="0 0 24 24">
+                                <path d="M8 5v14l11-7z" />
+                              </svg>
+                            </span>
+                          </div>
+                        </>
+                      ) : !embed || embed.type === "direct" || embed.type === "unknown" ? (
                         <>
                           <video
                             src={`${clean.split("?")[0]}#t=0.5`}
@@ -208,7 +213,7 @@ export function Gallery({
                             </span>
                           </div>
                         </>
-                      )}
+                      ) : null}
                     </div>
                   );
                 })()
@@ -436,24 +441,8 @@ export function Gallery({
 
                   return (
                     <div className="relative size-full bg-neutral-900 flex items-center justify-center overflow-hidden">
-                      {hasPoster ? (
-                        <>
-                          <img
-                            src={embed!.posterUrl}
-                            alt="Video Cover"
-                            className="size-full object-cover"
-                            loading="lazy"
-                          />
-                          <div className="absolute inset-0 flex items-center justify-center bg-black/25">
-                            <span className="flex size-4 items-center justify-center rounded-full bg-white/90 text-ink">
-                              <svg className="size-2 fill-current ml-0.5" viewBox="0 0 24 24">
-                                <path d="M8 5v14l11-7z" />
-                              </svg>
-                            </span>
-                          </div>
-                        </>
-                      ) : embed && embed.type !== "direct" && embed.type !== "unknown" ? (
-                        <div className="flex flex-col items-center justify-center p-0.5 text-center">
+                      {embed && embed.type !== "direct" && embed.type !== "unknown" && (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center p-0.5 text-center">
                           <span className="text-[9px] font-bold text-white uppercase tracking-tight leading-none">
                             {embed.platformName.replace(" Video", "").replace(" Reel", "").slice(0, 5)}
                           </span>
@@ -463,7 +452,28 @@ export function Gallery({
                             </svg>
                           </span>
                         </div>
-                      ) : (
+                      )}
+                      {hasPoster ? (
+                        <>
+                          <img
+                            src={embed!.posterUrl}
+                            alt="Video Cover"
+                            className="relative z-1 size-full object-cover"
+                            loading="lazy"
+                            referrerPolicy="no-referrer"
+                            onError={(e) => {
+                              e.currentTarget.style.display = "none";
+                            }}
+                          />
+                          <div className="absolute inset-0 z-2 flex items-center justify-center bg-black/25">
+                            <span className="flex size-4 items-center justify-center rounded-full bg-white/90 text-ink">
+                              <svg className="size-2 fill-current ml-0.5" viewBox="0 0 24 24">
+                                <path d="M8 5v14l11-7z" />
+                              </svg>
+                            </span>
+                          </div>
+                        </>
+                      ) : !embed || embed.type === "direct" || embed.type === "unknown" ? (
                         <>
                           <video
                             src={`${clean.split("?")[0]}#t=0.5`}
@@ -485,7 +495,7 @@ export function Gallery({
                             </span>
                           </div>
                         </>
-                      )}
+                      ) : null}
                     </div>
                   );
                 })()

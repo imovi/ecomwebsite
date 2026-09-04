@@ -1,5 +1,5 @@
 import { getStorage } from "../../lib/storage/index.js";
-import type { ProductRow, ProductSpec, ProductOptionDefinition } from "../../db/schema/products.js";
+import type { ProductRow, ProductSpec, ProductOptionDefinition, ProductFaq } from "../../db/schema/products.js";
 import type { ProductImageRow } from "../../db/schema/product-images.js";
 import type { ProductImageStateRow } from "../../db/schema/product-image-states.js";
 import type { ProductVariantRow } from "../../db/schema/product-variants.js";
@@ -120,6 +120,7 @@ export interface ProductDto extends Omit<ProductListItemDto, "featuredImage"> {
   videoUrl: string | null;
   specifications: ProductSpec[];
   whatsIncluded: string[];
+  faqs: ProductFaq[];
   warranty: string | null;
   variantOptions: ProductOptionDefinition[];
   featuredImage: ProductImageDto | null;
@@ -311,6 +312,7 @@ export function toProductDto(
     videoUrl: product.videoUrl ?? null,
     specifications: product.specifications,
     whatsIncluded: product.whatsIncluded,
+    faqs: product.faqs ?? [],
     warranty: product.warranty,
     variantOptions: product.variantOptions,
     featuredImage: featured ? toImageDto(featured, statesFor(featured.id)) : null,

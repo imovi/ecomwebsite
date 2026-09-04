@@ -34,7 +34,7 @@ const LAMP_FAQS: ProductFaq[] = [
   {
     question: "লোডশেডিংয়ে এক চার্জে কতক্ষণ ব্যাটারি ব্যাকআপ পাওয়া যায়?",
     answer:
-      "এই রিচার্জেবল লাইটে রয়েছে হাই-ক্যাপাসিটি লিথিয়াম ব্যাটারি। সাধারণ রিডিং ব্রাইটনেসে একটানা ৮ থেকে ১২ ঘণ্টা এবং সফট নাইট-লাইট মোডে সর্বোচ্চ ২৪ ঘণ্টা পর্যন্ত ব্যাকআপ পাওয়া যায়। কারেন্ট চলে গেলেও পড়াশোনা বা জরুরি কাজ একটানা চালিয়ে নেওয়া সম্ভব।",
+      "এই রিচার্জেবল লাইটে হাই ব্রাইটনেসে একটানা ৩.৫ ঘণ্টা এবং লো/সফট ব্রাইটনেস মোডে সর্বোচ্চ ৭ ঘণ্টা পর্যন্ত চমৎকার ব্যাটারি ব্যাকআপ পাওয়া যায়। লোডশেডিংয়ের সময় পড়াশোনা বা জরুরি কাজ একটানা চালিয়ে নেওয়ার জন্য এটি উপযুক্ত সমাধান।",
   },
   {
     question: "কারেন্ট না থাকলে পাওয়ার ব্যাংক দিয়ে কি চার্জ দেওয়া যাবে?",
@@ -97,7 +97,7 @@ export async function generateMetadata({
   if (slug === "led-magnetic-desk-lamp") {
     title =
       "Rechargeable LED Study Lamp & Charger Light for Load Shedding — Price in BD";
-    description = `লোডশেডিং ও পড়াশোনার সেরা রিচার্জেবল চার্জার লাইট ও স্টাডি ল্যাম্প। ৩টি কালার মোড, রিমোট ও ২৪ ঘণ্টা ব্যাটারি ব্যাকআপ। Buy Rechargeable Charger Light in BD at ৳${minPrice(product)} with Cash on Delivery.`;
+    description = `লোডশেডিং ও পড়াশোনার সেরা রিচার্জেবল চার্জার লাইট ও স্টাডি ল্যাম্প। ৩টি কালার মোড, রিমোট ও সর্বোচ্চ ৭ ঘণ্টা ব্যাটারি ব্যাকআপ। Buy Rechargeable Charger Light in BD at ৳${minPrice(product)} with Cash on Delivery.`;
     keywords = [
       "charger light",
       "charger light price in bd",
@@ -170,7 +170,12 @@ export default async function ProductPage({
 
   const brandName = product.brand || "HINAR";
   const productPrice = minPrice(product);
-  const faqs = slug === "led-magnetic-desk-lamp" ? LAMP_FAQS : GENERAL_FAQS;
+  const faqs =
+    product.faqs && product.faqs.length > 0
+      ? product.faqs
+      : slug === "led-magnetic-desk-lamp"
+      ? LAMP_FAQS
+      : GENERAL_FAQS;
 
   const jsonLdProduct = {
     "@context": "https://schema.org",

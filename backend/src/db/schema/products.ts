@@ -30,6 +30,12 @@ export interface ProductSpec {
   value: string;
 }
 
+/** One FAQ row, e.g. `{ question: "...", answer: "..." }`. */
+export interface ProductFaq {
+  question: string;
+  answer: string;
+}
+
 /** How an axis is offered to the shopper. */
 export type OptionDisplay = "text" | "image";
 
@@ -102,6 +108,10 @@ export const products = pgTable(
       .default(sql`'[]'::jsonb`),
     whatsIncluded: jsonb("whats_included")
       .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    faqs: jsonb("faqs")
+      .$type<ProductFaq[]>()
       .notNull()
       .default(sql`'[]'::jsonb`),
 

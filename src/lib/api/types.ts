@@ -143,6 +143,7 @@ export interface ApiProduct extends Omit<ApiProductListItem, "featuredImage"> {
   videoUrl?: string | null;
   specifications: { label: string; value: string }[];
   whatsIncluded: string[];
+  faqs?: { question: string; answer: string }[];
   warranty: string | null;
   /** `display` absent means text — see `VariantOption` in `@/types`. */
   variantOptions: { name: string; values: string[]; display?: "text" | "image" }[];

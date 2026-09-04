@@ -48,6 +48,15 @@ interface SpecRow {
 let specRowSeq = 0;
 const nextSpecRowId = () => `spec-${(specRowSeq += 1)}`;
 
+interface FaqRow {
+  id: string;
+  question: string;
+  answer: string;
+}
+
+let faqRowSeq = 0;
+const nextFaqRowId = () => `faq-${(faqRowSeq += 1)}`;
+
 /* The origin never changes for the life of the page, so there is nothing to
    subscribe to. Both live at module scope because `useSyncExternalStore`
    re-subscribes whenever the callback identity changes. */
@@ -179,6 +188,7 @@ interface FormState {
   isVisible: boolean;
   videoUrl: string;
   specifications: SpecRow[];
+  faqs: FaqRow[];
 }
 
 const EMPTY: FormState = {
@@ -204,6 +214,7 @@ const EMPTY: FormState = {
   isVisible: true,
   videoUrl: "",
   specifications: [],
+  faqs: [],
 };
 
 /**
@@ -245,6 +256,10 @@ function fromProduct(product: ApiProduct): FormState {
     specifications: product.specifications.map((spec) => ({
       ...spec,
       id: nextSpecRowId(),
+    })),
+    faqs: (product.faqs ?? []).map((faq) => ({
+      ...faq,
+      id: nextFaqRowId(),
     })),
   };
 }
@@ -373,6 +388,9 @@ export function ProductForm({ productId }: { productId?: string }) {
         .filter((spec) => spec.label && spec.value)
         .map(({ label, value }) => ({ label, value })),
       whatsIncluded: toList(form.whatsIncluded, /\n/),
+      faqs: form.faqs
+        .filter((faq) => faq.question.trim() && faq.answer.trim())
+        .map(({ question, answer }) => ({ question: question.trim(), answer: answer.trim() })),
       tags: toList(form.tags, /,/).map((tag) => slugify(tag)),
       price: Number(form.price),
       oldPrice: form.oldPrice.trim() === "" ? null : Number(form.oldPrice),
@@ -829,6 +847,19 @@ export function ProductForm({ productId }: { productId?: string }) {
 
           <Card>
             <CardHeader
+              title="Frequently Asked Questions (FAQ)"
+              hint="Add questions & answers for this product. They are shown in an interactive accordion on the product page and boost SEO ranking with Google FAQ rich snippet schema."
+            />
+            <div className="p-4">
+              <FaqEditor
+                faqs={form.faqs}
+                onChange={(faqs) => set("faqs", faqs)}
+              />
+            </div>
+          </Card>
+
+          <Card>
+            <CardHeader
               title="Product Video & Reel"
               hint="Attach a YouTube video, YouTube Shorts, Facebook Reel/Video, TikTok, Instagram Reel, or direct MP4 link to show a video showcase on the product page."
             />
@@ -1015,3 +1046,76 @@ function SpecEditor({
     </div>
   );
 }
+
+/* -------------------------------------------------------------------------- */
+/* FAQs (Frequently Asked Questions)                                          */
+/* -------------------------------------------------------------------------- */
+
+function FaqEditor({
+  faqs,
+  onChange,
+}: {
+  faqs: FaqRow[];
+  onChange: (faqs: FaqRow[]) => void;
+}) {
+  const update = (id: string, patch: Partial<FaqRow>) =>
+    onChange(faqs.map((faq) => (faq.id === id ? { ...faq, ...patch } : faq)));
+
+  return (
+    <div className="flex flex-col gap-3">
+      {faqs.length === 0 ? (
+        <p className="rounded-md border border-dashed border-line p-4 text-center text-caption text-muted">
+          No FAQs added yet. Click &quot;Add FAQ&quot; below to add product questions &amp; answers.
+        </p>
+      ) : (
+        faqs.map((faq, index) => (
+          <div
+            key={faq.id}
+            className="flex flex-col gap-2 rounded-md border border-line bg-surface/40 p-3.5"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-micro font-semibold text-ink-soft">
+                FAQ #{index + 1}
+              </span>
+              <button
+                type="button"
+                onClick={() => onChange(faqs.filter((row) => row.id !== faq.id))}
+                aria-label={`Remove FAQ ${index + 1}`}
+                className="flex size-7 shrink-0 items-center justify-center rounded-sm text-muted transition-colors hover:bg-sale-soft hover:text-sale"
+              >
+                <Icon name="trash" size={15} />
+              </button>
+            </div>
+            <input
+              value={faq.question}
+              onChange={(event) => update(faq.id, { question: event.target.value })}
+              placeholder="Question: e.g. লোডশেডিংয়ে এক চার্জে কতক্ষণ ব্যাটারি ব্যাকআপ পাওয়া যায়?"
+              aria-label={`FAQ ${index + 1} question`}
+              className="h-10 w-full rounded-sm border border-line bg-white px-3 text-caption font-medium text-ink outline-none focus:border-ink"
+            />
+            <textarea
+              value={faq.answer}
+              onChange={(event) => update(faq.id, { answer: event.target.value })}
+              placeholder="Answer: e.g. এই রিচার্জেবল লাইটে হাই ব্রাইটনেসে ৩.৫ ঘণ্টা এবং লো ব্রাইটনেসে সর্বোচ্চ ৭ ঘণ্টা পর্যন্ত ব্যাটারি ব্যাকআপ পাওয়া যায়..."
+              aria-label={`FAQ ${index + 1} answer`}
+              rows={2}
+              className="w-full rounded-sm border border-line bg-white p-2.5 text-caption text-ink outline-none focus:border-ink"
+            />
+          </div>
+        ))
+      )}
+
+      <Button
+        type="button"
+        variant="soft"
+        size="sm"
+        onClick={() => onChange([...faqs, { id: nextFaqRowId(), question: "", answer: "" }])}
+        className="self-start"
+      >
+        <Icon name="plus" size={15} />
+        Add FAQ
+      </Button>
+    </div>
+  );
+}
+

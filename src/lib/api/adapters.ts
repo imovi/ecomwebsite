@@ -155,6 +155,7 @@ export function toProduct(product: ApiProduct): Product {
     description: product.description ?? product.shortDescription ?? "",
     specs: product.specifications,
     included: product.whatsIncluded,
+    faqs: product.faqs ?? [],
     warranty: product.warranty ?? "",
     options: product.variantOptions,
     variants: toVariants(product, ordered),

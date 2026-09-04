@@ -106,6 +106,7 @@ export interface Product {
   /** Ordered spec rows, rendered as a definition list. */
   specs: { label: string; value: string }[];
   included: string[];
+  faqs?: { question: string; answer: string }[];
   warranty: string;
   options: VariantOption[];
   variants: Variant[];

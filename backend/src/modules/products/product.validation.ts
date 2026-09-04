@@ -117,6 +117,13 @@ const specSchema = z
   })
   .strict();
 
+const faqSchema = z
+  .object({
+    question: safeString({ min: 1, max: 300 }),
+    answer: safeString({ min: 1, max: 2000 }),
+  })
+  .strict();
+
 const optionDefinitionSchema = z
   .object({
     name: safeString({ min: 1, max: 40 }),
@@ -193,6 +200,7 @@ export const createProductSchema = z
     videoUrl: safeString({ max: 2000 }).nullish(),
     specifications: z.array(specSchema).max(60).default([]),
     whatsIncluded: z.array(safeString({ min: 1, max: 200 })).max(40).default([]),
+    faqs: z.array(faqSchema).max(40).default([]),
     warranty: safeString({ max: 120 }).nullish(),
 
     tags: z
@@ -258,6 +266,7 @@ export const updateProductSchema = z
     videoUrl: safeString({ max: 2000 }).nullish(),
     specifications: z.array(specSchema).max(60).optional(),
     whatsIncluded: z.array(safeString({ min: 1, max: 200 })).max(40).optional(),
+    faqs: z.array(faqSchema).max(40).optional(),
     warranty: safeString({ max: 120 }).nullish(),
 
     /* `.transform()` before `.optional()` — the reverse makes `tags` a

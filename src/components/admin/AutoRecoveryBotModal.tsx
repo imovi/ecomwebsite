@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useMemo } from "react";
 import { adminApi, AdminApiError } from "@/lib/admin/client";
@@ -133,7 +133,7 @@ export function AutoRecoveryBotModal({
     if (currentIndex < queue.length - 1) {
       setCurrentIndex((i) => i + 1);
     } else {
-      toast("Reached end of queue", { tone: "neutral" });
+      toast("Reached end of queue", { tone: "default" });
     }
   }
 

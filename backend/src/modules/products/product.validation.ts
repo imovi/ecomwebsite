@@ -482,6 +482,14 @@ export const productImageParamSchema = z.object({
   imageId: uuidSchema,
 });
 
+export const updateProductImageSchema = z
+  .object({
+    alt: z.string().trim().max(255).nullish(),
+  })
+  .strict();
+
+export type UpdateProductImageInput = z.infer<typeof updateProductImageSchema>;
+
 /**
  * A state key is a name, not free text.
  *

@@ -41,31 +41,45 @@ export function ProductCard({
   const percent = discountPercent(price, oldPrice);
   const available = isInStock(product);
 
+  const primaryMedia = product.images[0] || "";
+  const isContain = primaryMedia.includes("fit=contain");
+  const isTop = primaryMedia.includes("pos=top");
+  const isBottom = primaryMedia.includes("pos=bottom");
+  const fitClass = isContain
+    ? "object-contain bg-neutral-900"
+    : isTop
+      ? "object-cover object-top"
+      : isBottom
+        ? "object-cover object-bottom"
+        : "object-cover object-center";
+
   return (
     <div className="group relative flex flex-col">
       <div className="relative aspect-square overflow-hidden rounded-md bg-surface">
-        {/\.(mp4|webm|mov|ogg)($|\?)/i.test(product.images[0]) ? (
+        {/\.(mp4|webm|mov|ogg)($|\?)/i.test(primaryMedia) ? (
           <video
-            src={product.images[0]}
+            src={primaryMedia}
             muted
             loop
             autoPlay
             playsInline
             className={cn(
-              "h-full w-full object-cover transition-transform duration-300 ease-out",
+              "h-full w-full transition-transform duration-300 ease-out",
+              fitClass,
               "group-hover:scale-[1.03] motion-reduce:transition-none motion-reduce:group-hover:scale-100",
               !available && "opacity-55",
             )}
           />
         ) : (
           <Image
-            src={product.images[0]}
+            src={primaryMedia}
             alt={product.title}
             fill
             sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 260px"
             loading={priority ? "eager" : "lazy"}
             className={cn(
-              "object-cover transition-transform duration-300 ease-out",
+              "transition-transform duration-300 ease-out",
+              fitClass,
               "group-hover:scale-[1.03] motion-reduce:transition-none motion-reduce:group-hover:scale-100",
               !available && "opacity-55",
             )}

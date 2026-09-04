@@ -40,7 +40,13 @@ function orderImages(images: ApiProductImage[]): ApiProductImage[] {
 }
 
 function imageUrls(images: ApiProductImage[]): string[] {
-  const urls = orderImages(images).map((image) => image.url);
+  const urls = orderImages(images).map((image) => {
+    let tag = "";
+    if (image.alt?.includes("fit:contain")) tag = "#fit=contain";
+    else if (image.alt?.includes("pos:top")) tag = "#pos=top";
+    else if (image.alt?.includes("pos:bottom")) tag = "#pos=bottom";
+    return `${image.url}${tag}`;
+  });
   return urls.length > 0 ? urls : [PLACEHOLDER_IMAGE];
 }
 

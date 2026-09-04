@@ -16,6 +16,7 @@ import type {
   ReorderProductsInput,
   UpdateProductInput,
   UpdateVariantInput,
+  UpdateProductImageInput,
   UploadImageStateInput,
 } from "./product.validation.js";
 
@@ -287,6 +288,12 @@ export const reorderImages: RequestHandler = async (req, res) => {
 export const setFeaturedImage: RequestHandler = async (req, res) => {
   const { params } = validated<unknown, unknown, { id: string; imageId: string }>(req);
   const images = await imageService.setFeatured(params.id, params.imageId);
+  sendSuccess(res, { images });
+};
+
+export const updateImage: RequestHandler = async (req, res) => {
+  const { params, body } = validated<UpdateProductImageInput, unknown, { id: string; imageId: string }>(req);
+  const images = await imageService.updateImage(params.id, params.imageId, body);
   sendSuccess(res, { images });
 };
 

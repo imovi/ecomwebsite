@@ -57,6 +57,7 @@ export function Gallery({
 }: GalleryProps) {
   const railRef = useRef<HTMLDivElement>(null);
   const [index, setIndex] = useState(0);
+  const [overrideFit, setOverrideFit] = useState<Record<number, "cover" | "contain">>({});
   // Prevents the scroll handler from fighting a programmatic scroll.
   const jumpingRef = useRef(false);
 
@@ -167,32 +168,70 @@ export function Gallery({
           {/* Each frame fills the rail rather than setting its own square, so
               the cap above actually binds — an aspect-square item would grow
               past a capped rail and spill out of it. */}
-          {images.map((src, i) => (
-            <div key={src} className="snap-item relative h-full w-full overflow-hidden bg-neutral-900">
-              {isVideoMedia(src) ? (
-                <video
-                  src={src}
-                  muted
-                  loop
-                  playsInline
-                  autoPlay={i === index}
-                  controls
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                <Image
-                  src={src}
-                  alt={`${title} — ${copy.product.imageOf(i + 1, images.length)}`}
-                  fill
-                  sizes="(max-width: 767px) 100vw, (min-width: 1632px) 684px, calc(50vw - 116px)"
-                  fetchPriority={i === 0 ? "high" : undefined}
-                  loading={i === 0 ? "eager" : "lazy"}
-                  className="object-cover"
-                />
-              )}
-              {renderFrameOverlay?.(i)}
-            </div>
-          ))}
+          {images.map((src, i) => {
+            const isVideo = isVideoMedia(src);
+            const defaultContain = src.includes("fit=contain");
+            const activeFit = overrideFit[i] ?? (defaultContain ? "contain" : "cover");
+            const isTop = src.includes("pos=top");
+            const isBottom = src.includes("pos=bottom");
+            const fitClass =
+              activeFit === "contain"
+                ? "object-contain bg-black"
+                : isTop
+                  ? "object-cover object-top"
+                  : isBottom
+                    ? "object-cover object-bottom"
+                    : "object-cover object-center";
+
+            return (
+              <div key={src} className="snap-item relative h-full w-full overflow-hidden bg-neutral-950">
+                {isVideo ? (
+                  <>
+                    <video
+                      src={src}
+                      muted
+                      loop
+                      playsInline
+                      autoPlay={i === index}
+                      controls
+                      className={cn("h-full w-full", fitClass)}
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setOverrideFit((prev) => ({
+                          ...prev,
+                          [i]: activeFit === "contain" ? "cover" : "contain",
+                        }))
+                      }
+                      title={activeFit === "contain" ? "Crop to 1:1 frame" : "Show full video"}
+                      className="absolute bottom-3 left-3 z-10 flex items-center gap-1.5 rounded-full bg-black/75 px-2.5 py-1 text-micro font-medium text-white backdrop-blur-xs hover:bg-black/90 transition-colors shadow-xs"
+                    >
+                      <svg className="size-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        {activeFit === "contain" ? (
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4h16v16H4z" />
+                        ) : (
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                        )}
+                      </svg>
+                      <span>{activeFit === "contain" ? "Fill Frame" : "Full Video"}</span>
+                    </button>
+                  </>
+                ) : (
+                  <Image
+                    src={src}
+                    alt={`${title} — ${copy.product.imageOf(i + 1, images.length)}`}
+                    fill
+                    sizes="(max-width: 767px) 100vw, (min-width: 1632px) 684px, calc(50vw - 116px)"
+                    fetchPriority={i === 0 ? "high" : undefined}
+                    loading={i === 0 ? "eager" : "lazy"}
+                    className={cn(fitClass)}
+                  />
+                )}
+                {renderFrameOverlay?.(i)}
+              </div>
+            );
+          })}
         </div>
 
         {renderOverlay?.(index)}

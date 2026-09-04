@@ -288,3 +288,17 @@ export async function deleteState(
     .returning();
   return rows[0];
 }
+
+export async function updateImageMeta(
+  productId: string,
+  imageId: string,
+  data: { alt?: string | null },
+  executor: DatabaseExecutor = getDb(),
+): Promise<ProductImageRow | undefined> {
+  const rows = await executor
+    .update(productImages)
+    .set(data)
+    .where(and(eq(productImages.id, imageId), eq(productImages.productId, productId)))
+    .returning();
+  return rows[0];
+}

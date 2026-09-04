@@ -18,6 +18,7 @@ import {
   productIdParamSchema,
   productIdentifierParamSchema,
   productImageParamSchema,
+  updateProductImageSchema,
   productImageStateParamSchema,
   uploadImageStateSchema,
   productStatusSchema,
@@ -222,6 +223,12 @@ productAdminRouter.patch(
   "/:id/images/:imageId/featured",
   validate({ params: productImageParamSchema }),
   controller.setFeaturedImage,
+);
+
+productAdminRouter.patch(
+  "/:id/images/:imageId",
+  validate({ params: productImageParamSchema, body: updateProductImageSchema }),
+  controller.updateImage,
 );
 
 /* Declared BEFORE the catch-all delete below, which would otherwise match

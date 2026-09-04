@@ -19,6 +19,7 @@ import {
   maxSortOrder,
   promoteFirstImageToFeatured,
   setFeaturedImage,
+  updateImageMeta,
 } from "./image.repository.js";
 import type { ProductImageStateRow } from "../../db/schema/product-image-states.js";
 import { toImageDto, type ProductImageDto } from "./product.types.js";
@@ -313,5 +314,19 @@ export async function setFeatured(
   });
 
   log.info({ productId, imageId }, "Featured image changed");
+  return list(productId);
+}
+
+export async function updateImage(
+  productId: string,
+  imageId: string,
+  data: { alt?: string | null },
+): Promise<ProductImageDto[]> {
+  const image = await findImageById(imageId);
+  if (!image || image.productId !== productId) {
+    throw new NotFoundError("Image not found on this product.");
+  }
+
+  await updateImageMeta(productId, imageId, data);
   return list(productId);
 }

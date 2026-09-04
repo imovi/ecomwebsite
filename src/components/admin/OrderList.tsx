@@ -191,7 +191,7 @@ export function OrderList() {
         });
       }
       if (res.failed.length > 0) {
-        toast(`${res.failed.length} order(s) could not be transitioned.`, { tone: "warn" });
+        toast(`${res.failed.length} order(s) could not be transitioned.`, { tone: "error" });
       }
 
       await load();

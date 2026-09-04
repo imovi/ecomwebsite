@@ -309,6 +309,8 @@ export interface AccountDto {
   provider: ProviderKey;
   label: string;
   identifierLabel: string;
+  secretLabel?: string;
+  hint?: string;
   identifier: string;
   /** Never the password itself. Only whether one is stored. */
   hasSecret: boolean;
@@ -322,16 +324,39 @@ export async function listAccounts(): Promise<AccountDto[]> {
   const stored = new Map(
     (await repo.listAccounts()).map((account) => [account.provider, account]),
   );
+  const settings = await getSettings().catch(() => null);
 
   return PROVIDER_KEYS.map((key) => {
     const account = stored.get(key);
+    let identifier = account?.identifier ?? "";
+    let hasSecret = Boolean(account?.secret);
+    let enabled = account?.enabled ?? false;
+
+    // If Steadfast is not yet set in courier_fraud_accounts but exists in storeSettings
+    if (
+      key === "steadfast" &&
+      !identifier &&
+      settings?.courierApiKey &&
+      settings?.courierApiSecret
+    ) {
+      identifier = settings.courierApiKey.trim();
+      hasSecret = true;
+      enabled = true;
+    }
+
     return {
       provider: key,
       label: PROVIDERS[key].name,
-      identifierLabel: PROVIDERS[key].identifierLabel,
-      identifier: account?.identifier ?? "",
-      hasSecret: Boolean(account?.secret),
-      enabled: account?.enabled ?? false,
+      identifierLabel:
+        key === "steadfast" ? "API Key" : PROVIDERS[key].identifierLabel,
+      secretLabel: key === "steadfast" ? "Secret Key" : "Password",
+      hint:
+        key === "steadfast"
+          ? "Official API Key & Secret Key (No login password needed)."
+          : undefined,
+      identifier,
+      hasSecret,
+      enabled,
       lastOkAt: account?.lastOkAt?.toISOString() ?? null,
       lastError: account?.lastError ?? "",
     };
@@ -370,7 +395,25 @@ export interface TestResult {
  * has no history.
  */
 export async function testAccount(provider: ProviderKey, phone: string): Promise<TestResult> {
-  const account = await repo.findAccount(provider);
+  let account = await repo.findAccount(provider);
+
+  if (
+    (!account || !account.identifier || !account.secret) &&
+    provider === "steadfast"
+  ) {
+    const settings = await getSettings().catch(() => null);
+    if (settings?.courierApiKey && settings?.courierApiSecret) {
+      account = {
+        provider: "steadfast",
+        identifier: settings.courierApiKey.trim(),
+        secret: settings.courierApiSecret.trim(),
+        enabled: true,
+        updatedAt: new Date(),
+        lastOkAt: null,
+        lastError: "",
+      };
+    }
+  }
 
   if (!account || !account.identifier || !account.secret) {
     throw new NotFoundError(`${PROVIDERS[provider].name} has no sign-in details saved yet.`);

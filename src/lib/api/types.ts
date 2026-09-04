@@ -338,6 +338,8 @@ export interface ApiFraudAccount {
   label: string;
   /** What this courier calls the thing you sign in with. */
   identifierLabel: string;
+  secretLabel?: string;
+  hint?: string;
   identifier: string;
   /** Never the password — only whether one is stored. */
   hasSecret: boolean;

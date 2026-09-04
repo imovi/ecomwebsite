@@ -212,7 +212,7 @@ export const adminApi = {
         if (xhr.status === 401) handleExpired();
 
         const scope = scopeFor(normalizedPath);
-        if (xhr.status >= 200 && xhr.status < 300 && method !== "GET" && scope) {
+        if (xhr.status >= 200 && xhr.status < 300 && scope) {
           await revalidateStorefront(scope).catch(() => {});
         }
 

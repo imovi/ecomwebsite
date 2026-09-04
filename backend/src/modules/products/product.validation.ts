@@ -195,7 +195,7 @@ export const createProductSchema = z
     brand: createBrandField,
     categoryId: uuidSchema,
 
-    shortDescription: safeString({ max: 300 }).nullish(),
+    shortDescription: safeString({ max: 600 }).nullish(),
     description: safeString({ max: 20_000 }).nullish(),
     videoUrl: safeString({ max: 2000 }).nullish(),
     specifications: z.array(specSchema).max(60).default([]),
@@ -261,7 +261,7 @@ export const updateProductSchema = z
     brand: updateBrandField,
     categoryId: uuidSchema.optional(),
 
-    shortDescription: safeString({ max: 300 }).nullish(),
+    shortDescription: safeString({ max: 600 }).nullish(),
     description: safeString({ max: 20_000 }).nullish(),
     videoUrl: safeString({ max: 2000 }).nullish(),
     specifications: z.array(specSchema).max(60).optional(),

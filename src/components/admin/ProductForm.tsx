@@ -675,7 +675,7 @@ export function ProductForm({ productId }: { productId?: string }) {
                 value={form.shortDescription}
                 onChange={(event) => set("shortDescription", event.target.value)}
                 hint="One line shown under the product name."
-                maxLength={300}
+                maxLength={600}
                 error={fieldErrors.shortDescription}
               />
             </div>

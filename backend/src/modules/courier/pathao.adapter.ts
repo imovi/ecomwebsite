@@ -398,10 +398,11 @@ export function createPathaoAdapter(config: PathaoConfig): CourierProviderAdapte
            a valid token with the wrong store fails only at parcel creation
            otherwise, which is the worst moment to find out. */
         const body = await request("/aladdin/api/v1/stores", { method: "GET", token });
-        const stores = extractList(body);
-        const match = stores.find((entry) => String(entry.id) === config.storeId.trim());
+        const stores = extractStores(body);
+        const configuredStoreId = config.storeId?.trim();
+        const match = stores.find((entry) => String(entry.id) === configuredStoreId);
 
-        if (stores.length > 0 && !match) {
+        if (stores.length > 0 && configuredStoreId && !match) {
           return {
             ok: false,
             detail:
@@ -410,7 +411,11 @@ export function createPathaoAdapter(config: PathaoConfig): CourierProviderAdapte
           };
         }
 
-        return { ok: true, detail: match ? `Connected to "${match.name}".` : "Connected." };
+        const matchedStore = match || (stores.length === 1 ? stores[0] : null);
+        return {
+          ok: true,
+          detail: matchedStore ? `Connected to "${matchedStore.name}".` : "Connected.",
+        };
       } catch (error) {
         return {
           ok: false,
@@ -422,11 +427,41 @@ export function createPathaoAdapter(config: PathaoConfig): CourierProviderAdapte
 }
 
 /**
+ * Extracts stores from Pathao /aladdin/api/v1/stores endpoint,
+ * strictly matching store_id / store_name.
+ */
+function extractStores(body: Record<string, unknown>): { id: number; name: string }[] {
+  const candidates: unknown[] = [
+    body.data,
+    (body.data as Record<string, unknown> | undefined)?.data,
+    body,
+  ];
+
+  for (const candidate of candidates) {
+    if (!Array.isArray(candidate)) continue;
+
+    const mapped = candidate
+      .map((entry) => {
+        const row = entry as Record<string, unknown>;
+        const id = row.store_id ?? row.storeId ?? row.id;
+        const name = row.store_name ?? row.storeName ?? row.name;
+        return typeof name === "string" && (typeof id === "number" || typeof id === "string")
+          ? { id: Number(id), name }
+          : null;
+      })
+      .filter((entry): entry is { id: number; name: string } => entry !== null);
+
+    if (mapped.length > 0) return mapped;
+  }
+
+  return [];
+}
+
+/**
  * Pulls the list out of whichever envelope Pathao used.
  *
- * Their endpoints variously return `data`, `data.data`, or a bare array, and
- * the shape differs between the city, zone and store endpoints. One tolerant
- * reader beats three brittle ones.
+ * Checks most specific id first so foreign keys (like city_id in zone/area lists)
+ * are not mistakenly extracted as the primary id.
  */
 function extractList(body: Record<string, unknown>): { id: number; name: string }[] {
   const candidates: unknown[] = [
@@ -441,8 +476,8 @@ function extractList(body: Record<string, unknown>): { id: number; name: string 
     const mapped = candidate
       .map((entry) => {
         const row = entry as Record<string, unknown>;
-        const id = row.city_id ?? row.zone_id ?? row.area_id ?? row.store_id ?? row.id;
-        const name = row.city_name ?? row.zone_name ?? row.area_name ?? row.store_name ?? row.name;
+        const id = row.store_id ?? row.area_id ?? row.zone_id ?? row.city_id ?? row.id;
+        const name = row.store_name ?? row.area_name ?? row.zone_name ?? row.city_name ?? row.name;
         return typeof name === "string" && (typeof id === "number" || typeof id === "string")
           ? { id: Number(id), name }
           : null;

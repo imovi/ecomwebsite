@@ -14,17 +14,17 @@ export async function GET(request: NextRequest) {
   }
 
   if (tag) {
-    revalidateTag(tag);
+    revalidateTag(tag, "max");
   }
   if (path) {
     revalidatePath(path);
   }
   if (!tag && !path) {
     revalidatePath("/", "layout");
-    revalidateTag("products");
-    revalidateTag("categories");
-    revalidateTag("settings");
-    revalidateTag("banners");
+    revalidateTag("products", "max");
+    revalidateTag("categories", "max");
+    revalidateTag("settings", "max");
+    revalidateTag("banners", "max");
   }
 
   return NextResponse.json({

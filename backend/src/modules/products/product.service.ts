@@ -6,6 +6,7 @@ import { getStorage } from "../../lib/storage/index.js";
 import { generateUniqueSlug, normalizeSlug } from "../../lib/validation/slug.js";
 import { assertCategoryExists } from "../categories/category.service.js";
 import {
+  applyProductOrder,
   deleteProductRow,
   findProductById,
   findProductDetail,
@@ -25,7 +26,11 @@ import {
 import { listStorageKeys } from "./image.repository.js";
 import { createMetricsRow, recordView } from "./metrics.service.js";
 import { toListItemDto, toProductDto, type ProductDto, type ProductListItemDto } from "./product.types.js";
-import type { CreateProductInput, UpdateProductInput } from "./product.validation.js";
+import type {
+  CreateProductInput,
+  ReorderProductsInput,
+  UpdateProductInput,
+} from "./product.validation.js";
 import type { ProductOptionDefinition } from "../../db/schema/products.js";
 import type { ProductSort, StockStatus } from "../../db/schema/catalog-enums.js";
 
@@ -446,4 +451,11 @@ export async function destroy(id: string): Promise<void> {
 /** Re-derives the denormalised product stock after a variant change. */
 export async function refreshStock(productId: string): Promise<void> {
   await syncProductStockFromVariants(productId);
+}
+
+/** Reorders products manually for New Arrivals and general catalogue. */
+export async function reorder(input: ReorderProductsInput): Promise<{ count: number }> {
+  const count = await applyProductOrder(input.order);
+  log.info({ count }, "Products reordered");
+  return { count };
 }

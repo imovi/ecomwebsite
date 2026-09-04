@@ -13,6 +13,7 @@ import type {
   CreateVariantInput,
   ListProductsQuery,
   ReorderImagesInput,
+  ReorderProductsInput,
   UpdateProductInput,
   UpdateVariantInput,
   UploadImageStateInput,
@@ -165,6 +166,13 @@ export const create: RequestHandler = async (req, res) => {
   const { body } = validated<CreateProductInput>(req);
   const product = await productService.create(body);
   sendCreated(res, { product }, `/api/v1/products/${product.slug}`);
+};
+
+/** PATCH /api/v1/admin/products/reorder */
+export const reorder: RequestHandler = async (req, res) => {
+  const { body } = validated<ReorderProductsInput>(req);
+  const result = await productService.reorder(body);
+  sendSuccess(res, result);
 };
 
 /** PATCH /api/v1/admin/products/:id */

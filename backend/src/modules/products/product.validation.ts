@@ -214,6 +214,7 @@ export const createProductSchema = z
     /** Only the manual states are settable; in/out of stock is derived. */
     stockStatus: z.enum(["pre_order", "discontinued"]).optional(),
 
+    sortOrder: z.number().int().min(0).max(999_999).default(0),
     status: z.enum(productStatusEnum.enumValues).default("draft"),
     isVisible: z.boolean().default(true),
 
@@ -278,6 +279,7 @@ export const updateProductSchema = z
     lowStockThreshold: z.number().int().min(0).max(10_000).optional(),
     stockStatus: z.enum(stockStatusEnum.enumValues).optional(),
 
+    sortOrder: z.number().int().min(0).max(999_999).optional(),
     status: z.enum(productStatusEnum.enumValues).optional(),
     isVisible: z.boolean().optional(),
 
@@ -294,6 +296,29 @@ export const updateProductSchema = z
   });
 
 export type UpdateProductInput = z.infer<typeof updateProductSchema>;
+
+export const reorderProductsSchema = z
+  .object({
+    order: z
+      .array(
+        z.object({
+          id: uuidSchema,
+          sortOrder: z.number().int().min(0).max(999_999),
+        }),
+      )
+      .min(1, "Send at least one product to reorder.")
+      .max(500, "Cannot reorder more than 500 products at once.")
+      .refine(
+        (items) => {
+          const ids = items.map((i) => i.id);
+          return new Set(ids).size === ids.length;
+        },
+        { message: "Duplicate product ids are not allowed in reorder." },
+      ),
+  })
+  .strict();
+
+export type ReorderProductsInput = z.infer<typeof reorderProductsSchema>;
 
 export const productStatusSchema = z
   .object({

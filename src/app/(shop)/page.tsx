@@ -8,6 +8,7 @@ import { copy } from "@/lib/copy";
 import { Container, SectionHeader } from "@/components/ui/Layout";
 import { BannerSlider } from "@/components/home/BannerSlider";
 import { CategoryRail } from "@/components/home/CategoryRail";
+import { TrendingSection } from "@/components/home/TrendingSection";
 import { ProductGrid } from "@/components/product/ProductCard";
 
 export const revalidate = 300;
@@ -24,7 +25,7 @@ export default async function HomePage() {
     getBanners(),
     getCategories(),
     getNewArrivals(8),
-    getTrending(8),
+    getTrending(12),
   ]);
 
   return (
@@ -49,11 +50,7 @@ export default async function HomePage() {
           action={copy.home.viewAll}
           className="mb-4"
         />
-        {/* The first row is above the fold on most phones, so those two images
-            are preloaded rather than lazy. This belongs to whichever grid comes
-            first — moving the section without moving this quietly costs the
-            largest-contentful-paint the fix was for. */}
-        <ProductGrid products={trending} priorityCount={2} />
+        <TrendingSection products={trending} initialCount={4} />
       </Container>
 
       <Container>

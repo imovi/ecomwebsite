@@ -240,6 +240,13 @@ export const products = pgTable(
       `,
     ),
 
+    /* --- Display Order ------------------------------------------------- */
+    /**
+     * Manual display ordering for storefront New Arrivals and general listings.
+     * Lower values appear first. Ties are broken by createdAt desc.
+     */
+    sortOrder: integer("sort_order").notNull().default(0),
+
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().default(sql`now()`),
   },
@@ -247,6 +254,7 @@ export const products = pgTable(
     /* Uniqueness, case-insensitive, enforced by the database. */
     uniqueIndex("products_slug_unique_idx").on(sql`lower(${table.slug})`),
     uniqueIndex("products_sku_unique_idx").on(sql`lower(${table.sku})`),
+    index("products_sort_order_created_at_idx").on(table.sortOrder, table.createdAt.desc()),
 
     /* The public catalogue predicate is always
        `status = 'active' and is_visible`, so it leads every composite index

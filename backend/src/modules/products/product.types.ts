@@ -109,6 +109,7 @@ export interface ProductListItemDto {
   courierCostInsideDhaka?: number | null;
   courierCostOutsideDhaka?: number | null;
   packagingCost?: number | null;
+  sortOrder?: number;
   createdAt: string;
 }
 
@@ -232,6 +233,7 @@ function baseFields(
     isLowStock:
       product.stockQuantity > 0 && product.stockQuantity <= product.lowStockThreshold,
     tags: product.tags,
+    sortOrder: product.sortOrder,
     createdAt: product.createdAt.toISOString(),
   };
 }

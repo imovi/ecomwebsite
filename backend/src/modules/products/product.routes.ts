@@ -23,6 +23,7 @@ import {
   productStatusSchema,
   productVariantParamSchema,
   reorderImagesSchema,
+  reorderProductsSchema,
   searchQuerySchema,
   updateProductSchema,
   updateVariantSchema,
@@ -136,6 +137,12 @@ productAdminRouter.post(
   "/",
   validate({ body: createProductSchema }),
   controller.create,
+);
+
+productAdminRouter.patch(
+  "/reorder",
+  validate({ body: reorderProductsSchema }),
+  controller.reorder,
 );
 
 productAdminRouter.get(

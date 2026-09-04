@@ -205,7 +205,7 @@ function buildOrderBy(sort: ProductSort, search?: string): SQL[] {
       ];
     case "newest":
     default:
-      return [sql`${products.createdAt} desc`, tiebreak];
+      return [sql`${products.sortOrder} asc`, sql`${products.createdAt} desc`, tiebreak];
   }
 }
 
@@ -496,4 +496,28 @@ export async function syncProductStockFromVariants(
     ) v
     where p.id = ${productId}
   `);
+}
+
+/**
+ * Applies a new manual display order to products in one atomic statement.
+ */
+export async function applyProductOrder(
+  order: { id: string; sortOrder: number }[],
+  executor: DatabaseExecutor = getDb(),
+): Promise<number> {
+  if (order.length === 0) return 0;
+
+  const values = sql.join(
+    order.map((entry) => sql`(${entry.id}::uuid, ${entry.sortOrder}::int)`),
+    sql`, `,
+  );
+
+  const result = await executor.execute(sql`
+    update ${products} as p
+    set sort_order = v.sort_order, updated_at = now()
+    from (values ${values}) as v(id, sort_order)
+    where p.id = v.id
+  `);
+
+  return result.rowCount ?? order.length;
 }

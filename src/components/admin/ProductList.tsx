@@ -12,6 +12,7 @@ import { AsyncState, TableWrap } from "./ui";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Icon } from "@/components/ui/Icon";
+import { ProductReorderModal } from "./ProductReorderModal";
 
 const STATUS_TABS = [
   { value: "", label: "All" },
@@ -37,6 +38,7 @@ export function ProductList() {
      filter or the search changes, and an index would then point at a different
      product without anything looking wrong. */
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [reordering, setReordering] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -128,12 +130,28 @@ export function ProductList() {
     <AdminShell
       title="Products"
       action={
-        <Button href="/admin/products/new" variant="primary" size="sm">
-          <Icon name="plus" size={16} />
-          Add product
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setReordering(true)}
+            title="Arrange product sequence for New Arrivals"
+          >
+            <Icon name="list" size={15} />
+            Reorder / সাজান
+          </Button>
+          <Button href="/admin/products/new" variant="primary" size="sm">
+            <Icon name="plus" size={16} />
+            Add product
+          </Button>
+        </div>
       }
     >
+      <ProductReorderModal
+        isOpen={reordering}
+        onClose={() => setReordering(false)}
+        onSaved={() => void load()}
+      />
       <div className="mb-4 flex flex-col gap-2">
         <div className="flex gap-1 self-start rounded-sm bg-white p-1 ring-1 ring-line">
           {STATUS_TABS.map((tab) => (

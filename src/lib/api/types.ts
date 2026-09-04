@@ -132,6 +132,7 @@ export interface ApiProductListItem {
   courierCostInsideDhaka?: number | null;
   courierCostOutsideDhaka?: number | null;
   packagingCost?: number | null;
+  sortOrder?: number;
   createdAt: string;
 }
 

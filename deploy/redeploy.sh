@@ -76,12 +76,13 @@ for i in $(seq 1 30); do
 done
 
 step "Warming up storefront cache (catalogue & branding)"
-# Initial request triggers Next.js background ISR revalidation
-curl -s -H "Cache-Control: no-cache" "http://${target_host}/" >/dev/null 2>&1 || true
-sleep 2
+# Trigger on-demand revalidation to flush any stale build-time static cache
+curl -s "http://${target_host}/api/revalidate?secret=revalidate-now" >/dev/null 2>&1 || true
+sleep 1
 # Follow-up requests ensure the cache is fully populated with live products
 curl -s "http://${target_host}/" >/dev/null 2>&1 || true
 curl -s "http://${target_host}/category/all" >/dev/null 2>&1 || true
+curl -s "http://${target_host}/category/gadget" >/dev/null 2>&1 || true
 
 if curl -s "http://${target_host}/" | grep -q "hinarbd.com/uploads"; then
   printf '%s  Cache warmed up successfully with live branding and products.%s\n' "$GREEN" "$OFF"

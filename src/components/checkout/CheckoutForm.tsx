@@ -80,6 +80,7 @@ interface Draft {
   phone: string;
   address: string;
   areaText: string;
+  notes?: string;
 }
 
 /**
@@ -98,6 +99,7 @@ export function CheckoutForm({ settings }: { settings: StoreSettings }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const buyNowMode = searchParams.get("mode") === "buynow";
+  const cfg = settings.checkoutConfig;
 
   /**
    * A recovery coupon, usually arriving in the WhatsApp link as `?c=`.
@@ -122,6 +124,7 @@ export function CheckoutForm({ settings }: { settings: StoreSettings }) {
     phone: "",
     address: "",
     areaText: "",
+    notes: "",
   });
   /** Set only when the customer picks a zone themselves. Once set, it wins
    *  over any suggestion — their choice is what gets stored on the order. */
@@ -385,7 +388,10 @@ export function CheckoutForm({ settings }: { settings: StoreSettings }) {
    * one the customer is told about — listing four at once on a phone is how a
    * checkout gets abandoned.
    */
-  const FIELD_ORDER = ["customerName", "phone", "address", "areaText", "zone"] as const;
+  const areaRequired = cfg?.areaEnabled !== false;
+  const FIELD_ORDER = (areaRequired
+    ? ["customerName", "phone", "address", "areaText", "zone"]
+    : ["customerName", "phone", "address", "zone"]) as readonly string[];
 
   function validate(): Record<string, string> {
     const next: Record<string, string> = {};
@@ -393,7 +399,7 @@ export function CheckoutForm({ settings }: { settings: StoreSettings }) {
     if (!/^01[3-9]\d{8}$/.test(normalizePhone(form.phone)))
       next.phone = copy.checkout.invalidPhone;
     if (form.address.trim().length < 8) next.address = copy.checkout.shortAddress;
-    if (form.areaText.trim().length < 2) next.areaText = copy.checkout.required;
+    if (areaRequired && form.areaText.trim().length < 2) next.areaText = copy.checkout.required;
     if (!zone) next.zone = copy.checkout.zoneManual;
 
     setErrors(next);
@@ -435,11 +441,18 @@ export function CheckoutForm({ settings }: { settings: StoreSettings }) {
 
     setSubmitting(true);
 
+    const finalAddress = form.notes?.trim()
+      ? `${form.address.trim()}\n[Note: ${form.notes.trim()}]`
+      : form.address;
+    const finalArea = areaRequired
+      ? form.areaText
+      : (zone === "inside_dhaka" ? "Inside Dhaka" : "Outside Dhaka");
+
     const result = await placeOrderAction({
       customerName: form.customerName,
       phone: form.phone,
-      address: form.address,
-      areaText: form.areaText,
+      address: finalAddress,
+      areaText: finalArea,
       deliveryZone: zone!,
       lines: lines.map((l) => ({
         productId: l.productId,
@@ -518,11 +531,11 @@ export function CheckoutForm({ settings }: { settings: StoreSettings }) {
     <form onSubmit={submit} noValidate className="lg:grid lg:grid-cols-[1fr_380px] lg:gap-10">
       <div className="flex flex-col gap-5">
         <section className="flex flex-col gap-4">
-          <h2 className="text-title text-ink">{copy.checkout.contactHeading}</h2>
+          <h2 className="text-title text-ink">{cfg?.contactHeading || copy.checkout.contactHeading}</h2>
 
           <Input
-            label={copy.checkout.fullName}
-            placeholder={copy.checkout.fullNamePlaceholder}
+            label={cfg?.nameLabel || copy.checkout.fullName}
+            placeholder={cfg?.namePlaceholder || copy.checkout.fullNamePlaceholder}
             value={form.customerName}
             onChange={(e) => update("customerName", e.target.value)}
             error={errors.customerName}
@@ -532,9 +545,9 @@ export function CheckoutForm({ settings }: { settings: StoreSettings }) {
           />
 
           <Input
-            label={copy.checkout.phone}
-            placeholder={copy.checkout.phonePlaceholder}
-            hint={copy.checkout.phoneHint}
+            label={cfg?.phoneLabel || copy.checkout.phone}
+            placeholder={cfg?.phonePlaceholder || copy.checkout.phonePlaceholder}
+            hint={cfg?.phoneHint !== undefined ? (cfg?.phoneHint || undefined) : copy.checkout.phoneHint}
             value={form.phone}
             onChange={(e) => update("phone", e.target.value)}
             error={errors.phone}
@@ -547,8 +560,8 @@ export function CheckoutForm({ settings }: { settings: StoreSettings }) {
           />
 
           <Textarea
-            label={copy.checkout.address}
-            placeholder={copy.checkout.addressPlaceholder}
+            label={cfg?.addressLabel || copy.checkout.address}
+            placeholder={cfg?.addressPlaceholder || copy.checkout.addressPlaceholder}
             value={form.address}
             onChange={(e) => update("address", e.target.value)}
             data-field="address"
@@ -558,11 +571,26 @@ export function CheckoutForm({ settings }: { settings: StoreSettings }) {
             required
           />
 
-          <AreaField
-            value={form.areaText}
-            onChange={(value) => update("areaText", value)}
-            error={errors.areaText}
-          />
+          {cfg?.areaEnabled !== false && (
+            <AreaField
+              value={form.areaText}
+              onChange={(value) => update("areaText", value)}
+              error={errors.areaText}
+              label={cfg?.areaLabel}
+              placeholder={cfg?.areaPlaceholder}
+            />
+          )}
+
+          {cfg?.notesEnabled && (
+            <Textarea
+              label={cfg?.notesLabel || "Order notes (optional)"}
+              placeholder={cfg?.notesPlaceholder || "Special instructions for delivery"}
+              value={form.notes || ""}
+              onChange={(e) => update("notes", e.target.value)}
+              data-field="notes"
+              rows={2}
+            />
+          )}
 
           <ZoneSelector
             value={zone}
@@ -582,29 +610,37 @@ export function CheckoutForm({ settings }: { settings: StoreSettings }) {
                disagree with the charge actually applied. */
             freeDelivery={zone !== null && deliveryCharge === 0}
             error={errors.zone}
+            insideLabel={cfg?.zoneInsideLabel}
+            outsideLabel={cfg?.zoneOutsideLabel}
+            heading={cfg?.zoneHeading}
           />
 
-          <CouponField
-            applied={couponCode}
-            /* Only the verdict for the code currently in play. A stale one from
-               the previous code would flash the wrong answer for the length of
-               a re-quote, which is exactly when the shopper is reading it. */
-            result={quote?.coupon?.code === couponCode ? quote.coupon : null}
-            onApply={setCouponCode}
-            onRemove={() => setCouponCode("")}
-            busy={pricing}
-          />
+          {cfg?.couponEnabled !== false && (
+            <CouponField
+              applied={couponCode}
+              /* Only the verdict for the code currently in play. A stale one from
+                 the previous code would flash the wrong answer for the length of
+                 a re-quote, which is exactly when the shopper is reading it. */
+              result={quote?.coupon?.code === couponCode ? quote.coupon : null}
+              onApply={setCouponCode}
+              onRemove={() => setCouponCode("")}
+              busy={pricing}
+              prompt={cfg?.couponPrompt}
+              placeholder={cfg?.couponPlaceholder}
+              applyButton={cfg?.couponApplyButton}
+            />
+          )}
         </section>
 
         <section>
-          <h2 className="mb-2 text-title text-ink">{copy.checkout.paymentHeading}</h2>
+          <h2 className="mb-2 text-title text-ink">{cfg?.paymentHeading || copy.checkout.paymentHeading}</h2>
           {/* One method today. Rendered as a selected option rather than plain
               text so adding bKash or card later is purely additive. */}
           <div className="flex items-center gap-3 rounded-sm border border-ink bg-surface px-3.5 py-3.5">
             <Icon name="cash" size={20} className="text-ink" />
             <div className="flex-1">
-              <p className="text-caption font-semibold text-ink">{copy.checkout.cod}</p>
-              <p className="text-caption text-muted">{copy.checkout.codHint}</p>
+              <p className="text-caption font-semibold text-ink">{cfg?.codTitle || copy.checkout.cod}</p>
+              <p className="text-caption text-muted">{cfg?.codSubtitle || copy.checkout.codHint}</p>
             </div>
             <Icon name="checkCircle" size={19} className="text-positive" />
           </div>
@@ -621,6 +657,7 @@ export function CheckoutForm({ settings }: { settings: StoreSettings }) {
           zoneChosen={zone !== null}
           freeDeliveryRemaining={freeDeliveryRemaining}
           isPricing={pricing}
+          summaryHeading={cfg?.summaryHeading}
         />
 
         {/* Sticky on mobile, inline on desktop. */}
@@ -635,8 +672,8 @@ export function CheckoutForm({ settings }: { settings: StoreSettings }) {
               disabled={submitting}
             >
               {submitting
-                ? copy.checkout.placingOrder
-                : `${copy.checkout.placeOrder} · ${formatTaka(total)}`}
+                ? (cfg?.submittingButtonText || copy.checkout.placingOrder)
+                : `${cfg?.submitButtonText || copy.checkout.placeOrder} · ${formatTaka(total)}`}
             </Button>
           </div>
         </div>

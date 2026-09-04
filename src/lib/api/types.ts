@@ -736,5 +736,6 @@ export interface ApiStoreSettings {
     enabled: boolean;
     link: string;
   };
+  checkoutFormConfig?: import("@/types").CheckoutFormConfig;
   updatedAt: string;
 }

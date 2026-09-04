@@ -87,6 +87,11 @@ const updateSettingsSchema = z
       })
       .optional(),
 
+    /**
+     * Storefront checkout form customization settings.
+     */
+    checkoutFormConfig: z.record(z.string(), z.any()).optional(),
+
     /* The recovery offer. Hours is bounded at 720 — a month — because past
        that the offer has stopped being an offer and become the shop's delivery
        price, which belongs in the delivery settings above instead. */

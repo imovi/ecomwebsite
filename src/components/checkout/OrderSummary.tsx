@@ -53,14 +53,29 @@ export function OrderSummary({
   /** True while a fresh quote is in flight, so figures can read as pending. */
   isPricing?: boolean;
   coupon?: CouponFieldProps;
+  summaryHeading?: string;
+}: {
+  lines: ResolvedLine[];
+  subtotal: number;
+  discount?: number;
+  deliveryCharge: number;
+  total: number;
+  zoneChosen: boolean;
+  freeDeliveryRemaining: number;
+  /** True while a fresh quote is in flight, so figures can read as pending. */
+  isPricing?: boolean;
+  coupon?: CouponFieldProps;
+  summaryHeading?: string;
 }) {
+  const headingText = summaryHeading || copy.checkout.summaryHeading;
+
   return (
     <section
       className="rounded-md border border-line p-4"
-      aria-label={copy.checkout.summaryHeading}
+      aria-label={headingText}
       aria-busy={isPricing}
     >
-      <h2 className="text-title text-ink">{copy.checkout.summaryHeading}</h2>
+      <h2 className="text-title text-ink">{headingText}</h2>
 
       <ul className="mt-4 flex flex-col gap-3">
         {lines.map((line) => (
@@ -176,6 +191,9 @@ export interface CouponFieldProps {
   onApply: (code: string) => void;
   onRemove: () => void;
   busy?: boolean;
+  prompt?: string;
+  placeholder?: string;
+  applyButton?: string;
 }
 
 /**
@@ -192,7 +210,16 @@ export interface CouponFieldProps {
  * The exception is a code that arrived in the link: that shopper was sent one,
  * so the field opens with it already in place.
  */
-export function CouponField({ applied, result, onApply, onRemove, busy }: CouponFieldProps) {
+export function CouponField({
+  applied,
+  result,
+  onApply,
+  onRemove,
+  busy,
+  prompt,
+  placeholder,
+  applyButton,
+}: CouponFieldProps) {
   const [open, setOpen] = useState(applied !== "");
   const [draft, setDraft] = useState(applied);
 
@@ -209,22 +236,13 @@ export function CouponField({ applied, result, onApply, onRemove, busy }: Coupon
 
   if (!open) {
     return (
-      /* Green, and the same green the applied state below uses — so tapping
-         this and getting a green confirmation is one continuous thing rather
-         than two unrelated boxes. Not red: red is the price colour on this
-         shop and would read as an error.
-
-         It used to be a line of 13px grey text, which is exactly the treatment
-         of the "pay the courier" hint sitting under it — so the one tappable
-         thing in this panel looked like the label that is not tappable, and
-         customers holding a code could not find it. */
       <button
         type="button"
         onClick={() => setOpen(true)}
         className="mt-3 flex w-full items-center justify-center gap-2 rounded-sm border border-positive-soft bg-positive-soft px-3 py-2.5 text-body font-medium text-positive transition-opacity hover:opacity-85"
       >
         <Icon name="bolt" size={16} />
-        {copy.checkout.couponPrompt}
+        {prompt || copy.checkout.couponPrompt}
       </button>
     );
   }
@@ -273,8 +291,8 @@ export function CouponField({ applied, result, onApply, onRemove, busy }: Coupon
               event.preventDefault();
               apply();
             }}
-            placeholder={copy.checkout.couponPlaceholder}
-            aria-label={copy.checkout.couponPlaceholder}
+            placeholder={placeholder || copy.checkout.couponPlaceholder}
+            aria-label={placeholder || copy.checkout.couponPlaceholder}
             aria-invalid={refused || undefined}
             /* No `pattern` and no length rule. A mistyped code should come back
                as "we do not recognise that" from the shop, which is what
@@ -290,7 +308,7 @@ export function CouponField({ applied, result, onApply, onRemove, busy }: Coupon
             disabled={busy || draft.trim() === ""}
             className="shrink-0 rounded-sm border border-line px-3 py-2.5 text-body font-medium text-ink hover:bg-surface disabled:opacity-40"
           >
-            {copy.checkout.couponApply}
+            {applyButton || copy.checkout.couponApply}
           </button>
         </div>
       )}

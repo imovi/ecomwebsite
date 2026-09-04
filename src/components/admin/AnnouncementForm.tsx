@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useState } from "react";
 import Link from "next/link";
@@ -10,7 +10,7 @@ import type { ApiStoreSettings } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
 import { AdminShell } from "./AdminShell";
 import { AsyncState, Card, CardHeader, ErrorBanner, PageBody, SuccessBanner } from "./ui";
-import { MarketingTabs } from "./MarketingTabs";
+import { CustomizationTabs } from "./CustomizationTabs";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Field";
 import { Icon } from "@/components/ui/Icon";
@@ -137,10 +137,10 @@ export function AnnouncementForm() {
   }
 
   return (
-    <AdminShell title="Marketing">
+    <AdminShell title="Customization">
       <PageBody>
         <div className="2xl:col-span-2">
-          <MarketingTabs />
+          <CustomizationTabs />
         </div>
 
         <AsyncState

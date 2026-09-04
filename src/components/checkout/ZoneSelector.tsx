@@ -25,6 +25,9 @@ export function ZoneSelector({
   suggestion,
   freeDelivery,
   error,
+  insideLabel,
+  outsideLabel,
+  heading,
 }: {
   value: DeliveryZone | null;
   onChange: (zone: DeliveryZone) => void;
@@ -34,10 +37,13 @@ export function ZoneSelector({
   /** True when the order already qualifies for free delivery. */
   freeDelivery: boolean;
   error?: string;
+  insideLabel?: string;
+  outsideLabel?: string;
+  heading?: string;
 }) {
   const options: { zone: DeliveryZone; label: string; charge: number }[] = [
-    { zone: "inside_dhaka", label: copy.checkout.zoneInside, charge: insideCharge },
-    { zone: "outside_dhaka", label: copy.checkout.zoneOutside, charge: outsideCharge },
+    { zone: "inside_dhaka", label: insideLabel || copy.checkout.zoneInside, charge: insideCharge },
+    { zone: "outside_dhaka", label: outsideLabel || copy.checkout.zoneOutside, charge: outsideCharge },
   ];
 
   return (
@@ -45,7 +51,7 @@ export function ZoneSelector({
        not an input, so there is no `aria-invalid` to find. */
     <fieldset data-field="zone">
       <legend className="mb-2 text-caption font-medium text-ink-soft">
-        {copy.checkout.zoneHeading}
+        {heading || copy.checkout.zoneHeading}
         <span className="text-sale"> *</span>
       </legend>
 

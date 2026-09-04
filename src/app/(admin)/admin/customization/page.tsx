@@ -1,5 +1,5 @@
 ﻿import { redirect } from "next/navigation";
 
-export default function LegacyMarketingAnnouncementPage() {
+export default function CustomizationIndexPage() {
   redirect("/admin/customization/announcement");
 }

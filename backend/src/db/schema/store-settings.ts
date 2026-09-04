@@ -402,6 +402,12 @@ export const storeSettings = pgTable(
      */
     courierWebhookToken: text("courier_webhook_token").notNull().default(""),
 
+    /* --- Checkout Form Customization ----------------------------------- */
+    checkoutFormConfig: jsonb("checkout_form_config")
+      .$type<Record<string, any>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().default(sql`now()`),
   },
   (table) => [

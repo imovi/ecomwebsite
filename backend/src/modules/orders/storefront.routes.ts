@@ -182,6 +182,7 @@ const publicSettings: RequestHandler = async (_req, res) => {
         enabled: settings.announcementEnabled,
         link: settings.announcementLink,
       },
+      checkoutFormConfig: (settings.checkoutFormConfig as Record<string, any>) ?? {},
       /**
        * Browser-side tracking configuration.
        *

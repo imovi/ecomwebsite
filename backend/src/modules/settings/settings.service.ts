@@ -56,6 +56,10 @@ export interface SettingsDto {
    */
   whatsappTemplates: Record<string, string>;
   /**
+   * Customization settings for the storefront checkout form (labels, placeholders, toggles).
+   */
+  checkoutFormConfig: Record<string, any>;
+  /**
    * What an order costs the shop, as opposed to what it charges for.
    *
    * `courier` is deliberately separate from `delivery` above: one is what the
@@ -246,6 +250,7 @@ export function toSettingsDto(row: StoreSettingsRow): SettingsDto {
       couponHours: row.recoveryCouponHours,
     },
     whatsappTemplates: row.whatsappTemplates,
+    checkoutFormConfig: (row.checkoutFormConfig as Record<string, any>) ?? {},
     costs: {
       courierInsideDhaka: row.courierCostInsideDhaka,
       courierOutsideDhaka: row.courierCostOutsideDhaka,
@@ -372,6 +377,7 @@ export interface UpdateSettingsInput {
   };
   /** Replaces the whole set. A blank value means "use the built-in wording". */
   whatsappTemplates?: Record<string, string>;
+  checkoutFormConfig?: Record<string, any>;
   courier?: {
     provider?: string;
     /** Omitted keeps the stored key; `null` clears it. */
@@ -484,6 +490,9 @@ export async function updateSettings(input: UpdateSettingsInput): Promise<Settin
     patch.whatsappTemplates = Object.fromEntries(
       Object.entries(input.whatsappTemplates).filter(([, value]) => value.trim() !== ""),
     );
+  }
+  if (input.checkoutFormConfig !== undefined) {
+    patch.checkoutFormConfig = input.checkoutFormConfig;
   }
   if (input.store?.name !== undefined) patch.storeName = input.store.name;
   if (input.store?.phone !== undefined) patch.storePhone = input.store.phone;

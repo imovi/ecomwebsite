@@ -281,6 +281,13 @@
       "when": 1788560000000,
       "tag": "0039_store_announcement",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1788570000000,
+      "tag": "0040_checkout_form_config",
+      "breakpoints": true
     }
   ]
 }

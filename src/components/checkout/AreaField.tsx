@@ -18,10 +18,14 @@ export function AreaField({
   value,
   onChange,
   error,
+  label,
+  placeholder,
 }: {
   value: string;
   onChange: (value: string) => void;
   error?: string;
+  label?: string;
+  placeholder?: string;
 }) {
   const id = useId();
   const [focused, setFocused] = useState(false);
@@ -34,7 +38,7 @@ export function AreaField({
   return (
     <div className="relative flex flex-col gap-1.5">
       <label htmlFor={id} className="text-caption font-medium text-ink-soft">
-        {copy.checkout.area}
+        {label || copy.checkout.area}
         <span className="text-sale"> *</span>
       </label>
 
@@ -59,7 +63,7 @@ export function AreaField({
           aria-autocomplete="list"
           aria-expanded={open}
           aria-controls={`${id}-listbox`}
-          placeholder={copy.checkout.areaPlaceholder}
+          placeholder={placeholder || copy.checkout.areaPlaceholder}
           onChange={(e) => {
             onChange(e.target.value);
             setDismissed(false);

@@ -48,6 +48,7 @@ interface ApiPublicSettings {
       enabled: boolean;
       link: string;
     };
+    checkoutFormConfig?: import("@/types").CheckoutFormConfig;
   };
 }
 
@@ -123,6 +124,9 @@ export async function getSettings(): Promise<StoreSettings> {
     ...(data.settings.store.seoTitle ? { seoTitle: data.settings.store.seoTitle } : {}),
     ...(data.settings.store.seoDescription
       ? { seoDescription: data.settings.store.seoDescription }
+      : {}),
+    ...(data.settings.checkoutFormConfig
+      ? { checkoutConfig: data.settings.checkoutFormConfig }
       : {}),
   };
 }

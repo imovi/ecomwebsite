@@ -276,4 +276,42 @@ export interface StoreSettings {
   announcementEnabled?: boolean | undefined;
   /** Optional link destination for the top announcement bar. */
   announcementLink?: string | undefined;
+  /** Checkout form customization settings. */
+  checkoutConfig?: CheckoutFormConfig | undefined;
+}
+
+export interface CheckoutFormConfig {
+  areaEnabled?: boolean;
+  couponEnabled?: boolean;
+  notesEnabled?: boolean;
+
+  contactHeading?: string;
+  zoneHeading?: string;
+  paymentHeading?: string;
+  summaryHeading?: string;
+
+  nameLabel?: string;
+  namePlaceholder?: string;
+  phoneLabel?: string;
+  phonePlaceholder?: string;
+  phoneHint?: string;
+  addressLabel?: string;
+  addressPlaceholder?: string;
+  areaLabel?: string;
+  areaPlaceholder?: string;
+
+  zoneInsideLabel?: string;
+  zoneOutsideLabel?: string;
+
+  codTitle?: string;
+  codSubtitle?: string;
+  submitButtonText?: string;
+  submittingButtonText?: string;
+
+  couponPrompt?: string;
+  couponPlaceholder?: string;
+  couponApplyButton?: string;
+
+  notesLabel?: string;
+  notesPlaceholder?: string;
 }

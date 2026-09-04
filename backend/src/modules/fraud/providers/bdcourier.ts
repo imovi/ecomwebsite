@@ -49,8 +49,8 @@ export const bdcourier: FraudProvider = {
       throw upstreamFailed(NAME, `BD Courier returned HTTP ${res.status}`);
     }
 
-    const json = asJson(NAME, res.body);
-    if (json.status && json.status !== "success") {
+    const json = asJson(NAME, res.body) as Record<string, unknown>;
+    if (json && typeof json === "object" && json.status && json.status !== "success") {
       const msg = typeof json.message === "string" ? json.message : "BD Courier check failed.";
       throw upstreamFailed(NAME, msg);
     }

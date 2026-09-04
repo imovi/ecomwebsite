@@ -160,32 +160,39 @@ export function ProductImages({
   function parseFit(alt: string | null | undefined): {
     fit: "cover" | "contain";
     position: "center" | "top" | "bottom";
+    volume: number;
   } {
     const isContain = Boolean(alt?.includes("fit:contain"));
     let position: "center" | "top" | "bottom" = "center";
     if (alt?.includes("pos:top")) position = "top";
     else if (alt?.includes("pos:bottom")) position = "bottom";
-    return { fit: isContain ? "contain" : "cover", position };
+
+    const volMatch = alt?.match(/vol:(\d+)/);
+    const volume = volMatch ? Math.min(100, Math.max(0, parseInt(volMatch[1], 10))) : 100;
+
+    return { fit: isContain ? "contain" : "cover", position, volume };
   }
 
   function serializeFit(
     fit: "cover" | "contain",
     position: "center" | "top" | "bottom",
+    volume: number = 100,
     baseAlt?: string | null,
   ): string {
     const clean = (baseAlt || "")
       .replace(/fit:(cover|contain)/g, "")
       .replace(/pos:(center|top|bottom)/g, "")
+      .replace(/vol:\d+/g, "")
       .replace(/\[\s*\]/g, "")
       .trim();
-    const tags = `fit:${fit};pos:${position}`;
+    const tags = `fit:${fit};pos:${position};vol:${volume}`;
     return clean ? `${clean} [${tags}]` : tags;
   }
 
   async function toggleFit(image: ApiProductImage) {
     const parsed = parseFit(image.alt);
     const nextFit = parsed.fit === "cover" ? "contain" : "cover";
-    const nextAlt = serializeFit(nextFit, parsed.position, image.alt);
+    const nextAlt = serializeFit(nextFit, parsed.position, parsed.volume, image.alt);
     await run(
       image.id,
       () => adminApi.patch(`admin/products/${productId}/images/${image.id}`, { alt: nextAlt }),
@@ -197,12 +204,31 @@ export function ProductImages({
     const parsed = parseFit(image.alt);
     const nextPos =
       parsed.position === "center" ? "top" : parsed.position === "top" ? "bottom" : "center";
-    const nextAlt = serializeFit(parsed.fit, nextPos, image.alt);
+    const nextAlt = serializeFit(parsed.fit, nextPos, parsed.volume, image.alt);
     await run(
       image.id,
       () => adminApi.patch(`admin/products/${productId}/images/${image.id}`, { alt: nextAlt }),
       `Crop focus set to ${nextPos}`,
     );
+  }
+
+  async function updateVolume(image: ApiProductImage, newVolume: number) {
+    const parsed = parseFit(image.alt);
+    const clamped = Math.min(100, Math.max(0, newVolume));
+    const nextAlt = serializeFit(parsed.fit, parsed.position, clamped, image.alt);
+    await run(
+      image.id,
+      () => adminApi.patch(`admin/products/${productId}/images/${image.id}`, { alt: nextAlt }),
+      `Video volume set to ${clamped === 0 ? "Muted (0%)" : `${clamped}%`}`,
+    );
+  }
+
+  async function cycleVolume(image: ApiProductImage) {
+    const parsed = parseFit(image.alt);
+    const levels = [100, 80, 50, 30, 0];
+    const currentIndex = levels.indexOf(parsed.volume);
+    const nextVolume = currentIndex !== -1 && currentIndex < levels.length - 1 ? levels[currentIndex + 1] : 100;
+    await updateVolume(image, nextVolume);
   }
 
   return (
@@ -416,6 +442,38 @@ export function ProductImages({
                       </button>
                     )}
                   </div>
+
+                  {/* For videos: Default Volume Controller */}
+                  {(isDirectVideo || isSocialVideo) && (
+                    <div className="flex flex-col gap-1 rounded-xs border border-line bg-surface p-1.5 shadow-2xs">
+                      <div className="flex items-center justify-between text-micro">
+                        <button
+                          type="button"
+                          onClick={() => void cycleVolume(image)}
+                          title="Click to cycle presets (100% -> 80% -> 50% -> 30% -> Mute)"
+                          className="font-semibold text-ink-soft hover:text-ink flex items-center gap-1 transition-colors"
+                        >
+                          <span>{parsed.volume === 0 ? "🔇" : "🔊"}</span>
+                          <span>Vol:</span>
+                        </button>
+                        <span className={cn("font-bold", parsed.volume === 0 ? "text-red-600" : "text-emerald-600")}>
+                          {parsed.volume === 0 ? "Muted" : `${parsed.volume}%`}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        step={5}
+                        key={`${image.id}-${parsed.volume}`}
+                        defaultValue={parsed.volume}
+                        onMouseUp={(e) => void updateVolume(image, parseInt(e.currentTarget.value, 10))}
+                        onTouchEnd={(e) => void updateVolume(image, parseInt(e.currentTarget.value, 10))}
+                        className="h-1.5 w-full accent-ink cursor-pointer"
+                        title={`Default Volume: ${parsed.volume}%`}
+                      />
+                    </div>
+                  )}
 
                   <div className="flex items-center gap-0.5">
                     <button

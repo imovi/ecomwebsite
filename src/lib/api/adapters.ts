@@ -41,11 +41,16 @@ function orderImages(images: ApiProductImage[]): ApiProductImage[] {
 
 function imageUrls(images: ApiProductImage[]): string[] {
   const urls = orderImages(images).map((image) => {
-    let tag = "";
-    if (image.alt?.includes("fit:contain")) tag = "#fit=contain";
-    else if (image.alt?.includes("pos:top")) tag = "#pos=top";
-    else if (image.alt?.includes("pos:bottom")) tag = "#pos=bottom";
-    return `${image.url}${tag}`;
+    const tags: string[] = [];
+    if (image.alt?.includes("fit:contain")) tags.push("fit=contain");
+    if (image.alt?.includes("pos:top")) tags.push("pos=top");
+    else if (image.alt?.includes("pos:bottom")) tags.push("pos=bottom");
+
+    const volMatch = image.alt?.match(/vol:(\d+)/);
+    if (volMatch) tags.push(`vol=${volMatch[1]}`);
+
+    const hash = tags.length > 0 ? `#${tags.join("&")}` : "";
+    return `${image.url}${hash}`;
   });
   return urls.length > 0 ? urls : [PLACEHOLDER_IMAGE];
 }

@@ -95,6 +95,21 @@ export function Gallery({
     });
   }, [volume]);
 
+  // Set volume when navigating to a slide that has configured volume
+  useEffect(() => {
+    const currentSrc = images[index];
+    if (currentSrc) {
+      const volMatch = currentSrc.match(/vol=(\d+)/);
+      if (volMatch) {
+        const configuredVol = parseInt(volMatch[1], 10) / 100;
+        setVolume(configuredVol);
+        if (configuredVol === 0) {
+          setIsMuted(true);
+        }
+      }
+    }
+  }, [images, index]);
+
   // Sync volume and active video play state
   useEffect(() => {
     videoRefs.current.forEach((vid, vidIndex) => {

@@ -15,8 +15,12 @@ export function ProductVideoInline({ videoUrl, initialVideo }: ProductVideoInlin
   );
   const sectionRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [isMuted, setIsMuted] = useState(false);
-  const [volume, setVolume] = useState(1);
+  const volMatch = videoUrl ? videoUrl.match(/vol=(\d+)/) : null;
+  const initialConfiguredVol = volMatch ? parseInt(volMatch[1], 10) / 100 : 1;
+  const isInitiallyMuted = volMatch ? parseInt(volMatch[1], 10) === 0 : false;
+
+  const [isMuted, setIsMuted] = useState(isInitiallyMuted);
+  const [volume, setVolume] = useState(initialConfiguredVol);
 
   const handleVolumeChange = (newVolume: number) => {
     setVolume(newVolume);

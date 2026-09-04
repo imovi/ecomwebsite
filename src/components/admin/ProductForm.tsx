@@ -842,6 +842,56 @@ export function ProductForm({ productId }: { productId?: string }) {
                 error={fieldErrors.videoUrl}
               />
 
+              {form.videoUrl.trim() && (() => {
+                const currentVolMatch = form.videoUrl.match(/vol=(\d+)/);
+                const currentVol = currentVolMatch ? parseInt(currentVolMatch[1], 10) : 100;
+
+                const setVolume = (newVol: number) => {
+                  const baseUrl = form.videoUrl.replace(/[#&]vol=\d+/g, "").trim();
+                  const sep = baseUrl.includes("#") ? "&" : "#";
+                  set("videoUrl", newVol === 100 ? baseUrl : `${baseUrl}${sep}vol=${newVol}`);
+                };
+
+                return (
+                  <div className="flex flex-col gap-2 rounded-md border border-line bg-surface p-3">
+                    <div className="flex items-center justify-between text-caption">
+                      <span className="font-medium text-ink flex items-center gap-1.5">
+                        {currentVol === 0 ? "🔇" : "🔊"} Default Video Volume
+                      </span>
+                      <span className={cn("text-micro font-bold", currentVol === 0 ? "text-red-600" : "text-emerald-600")}>
+                        {currentVol === 0 ? "Muted (0%)" : `${currentVol}%`}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={5}
+                      value={currentVol}
+                      onChange={(e) => setVolume(parseInt(e.target.value, 10))}
+                      className="h-2 w-full accent-ink cursor-pointer"
+                    />
+                    <div className="flex items-center gap-1.5 pt-1">
+                      {[0, 30, 50, 80, 100].map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => setVolume(preset)}
+                          className={cn(
+                            "flex-1 rounded-xs border py-1 text-micro font-medium transition-colors text-center",
+                            currentVol === preset
+                              ? "border-ink bg-ink text-white"
+                              : "border-line bg-surface text-muted hover:text-ink hover:bg-line/40",
+                          )}
+                        >
+                          {preset === 0 ? "Mute" : `${preset}%`}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+
               {form.videoUrl.trim() && (
                 <ProductVideoAdminPreview
                   url={form.videoUrl.trim()}

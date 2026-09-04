@@ -7,7 +7,6 @@ import { toast } from "@/lib/stores/toast-store";
 import type { ApiStoreSettings } from "@/lib/api/types";
 import { AdminShell } from "./AdminShell";
 import { AsyncState, Card, CardHeader, ErrorBanner, PageBody, SuccessBanner } from "./ui";
-import { MarketingTabs } from "./MarketingTabs";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Field";
 import { Icon } from "@/components/ui/Icon";
@@ -150,9 +149,6 @@ export function MarketingForm() {
   return (
     <AdminShell title="Marketing">
       <PageBody>
-        <div className="2xl:col-span-2">
-          <MarketingTabs />
-        </div>
         <AsyncState
           loading={loading}
           error={error}

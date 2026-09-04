@@ -1,10 +1,16 @@
+import { eq, or } from "drizzle-orm";
 import { createLogger } from "../../core/logger.js";
 import { NotFoundError } from "../../core/errors.js";
+import { getDb } from "../../db/client.js";
+import { orders } from "../../db/schema/orders.js";
+import { getSettings } from "../settings/settings.service.js";
+import { cleanPhone } from "../courier/steadfast.adapter.js";
 import * as repo from "./fraud.repository.js";
 import {
   FraudCheckError,
   PROVIDERS,
   PROVIDER_KEYS,
+  ratio,
   type CourierStat,
   type ProviderKey,
 } from "./providers/index.js";
@@ -66,7 +72,18 @@ export interface FraudReport {
 /** Whether any courier is configured at all — the screen asks before showing anything. */
 export async function isConfigured(): Promise<boolean> {
   const accounts = await repo.listAccounts();
-  return accounts.some((account) => account.enabled && account.identifier && account.secret);
+  if (accounts.some((account) => account.enabled && account.identifier && account.secret)) {
+    return true;
+  }
+  const settings = await getSettings().catch(() => null);
+  if (
+    settings &&
+    settings.courierApiKey.trim() !== "" &&
+    settings.courierApiSecret.trim() !== ""
+  ) {
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -80,6 +97,8 @@ export async function report(
   phone: string,
   options: { force?: boolean } = {},
 ): Promise<FraudReport | null> {
+  const cleaned = cleanPhone(phone);
+
   if (!options.force) {
     const cached = await repo.findCheck(phone);
     if (cached && Date.now() - cached.checkedAt.getTime() < FRESH_FOR_MS) {
@@ -87,11 +106,68 @@ export async function report(
     }
   }
 
-  const accounts = (await repo.listAccounts()).filter(
+  const storedAccounts = await repo.listAccounts();
+  const accounts = storedAccounts.filter(
     (account) => account.enabled && account.identifier && account.secret,
   );
 
-  if (accounts.length === 0) return null;
+  // Auto-include Steadfast from store settings if credentials exist and not in accounts
+  const settings = await getSettings().catch(() => null);
+  if (
+    settings &&
+    settings.courierApiKey.trim() !== "" &&
+    settings.courierApiSecret.trim() !== "" &&
+    !accounts.some((a) => a.provider === "steadfast")
+  ) {
+    accounts.push({
+      provider: "steadfast",
+      identifier: settings.courierApiKey.trim(),
+      secret: settings.courierApiSecret.trim(),
+      enabled: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      lastOkAt: null,
+      lastError: "",
+    });
+  }
+
+  // Also query local store order history for this customer phone
+  let localDelivered = 0;
+  let localCancelled = 0;
+  let hasLocalOrders = false;
+  try {
+    const localOrders = await getDb()
+      .select({ status: orders.status })
+      .from(orders)
+      .where(or(eq(orders.phone, cleaned), eq(orders.phone, phone)));
+
+    if (localOrders.length > 0) {
+      hasLocalOrders = true;
+      localDelivered = localOrders.filter((r) => r.status === "delivered").length;
+      localCancelled = localOrders.filter(
+        (r) => r.status === "cancelled" || r.status === "returned",
+      ).length;
+    }
+  } catch (err) {
+    log.warn({ err }, "Could not check local order history for customer");
+  }
+
+  if (accounts.length === 0 && !hasLocalOrders) {
+    return {
+      phone,
+      couriers: [],
+      failures: [],
+      aggregate: {
+        success: 0,
+        cancel: 0,
+        total: 0,
+        successRatio: 0,
+        answered: 0,
+        asked: 0,
+      },
+      checkedAt: new Date().toISOString(),
+    };
+  }
 
   /* Every courier is a separate sign-in to a separate company; none of them
      waits on another. One slow panel should not hold up the four that
@@ -109,14 +185,24 @@ export async function report(
   const settled = await Promise.all(
     accounts.map(async (account): Promise<Settled> => {
       const key = account.provider as ProviderKey;
-      const provider = PROVIDERS[key];
+      const provider = PROVIDERS[key as keyof typeof PROVIDERS];
+
+      if (!provider) {
+        return {
+          ok: false,
+          key,
+          label: key,
+          kind: "upstream",
+          message: "Unknown provider",
+        };
+      }
 
       try {
-        const stat = await provider.check(phone, {
+        const stat = await provider.check(cleaned, {
           identifier: account.identifier,
           secret: account.secret,
         });
-        await repo.recordAttempt(key, { ok: true });
+        await repo.recordAttempt(key as keyof typeof PROVIDERS, { ok: true }).catch(() => null);
         return { ok: true, key, label: provider.name, stat };
       } catch (caught) {
         const failure =
@@ -124,7 +210,7 @@ export async function report(
             ? { kind: caught.kind, message: caught.message }
             : { kind: "upstream" as const, message: `${provider.name} check failed unexpectedly.` };
 
-        await repo.recordAttempt(key, { ok: false, error: failure.message });
+        await repo.recordAttempt(key as keyof typeof PROVIDERS, { ok: false, error: failure.message }).catch(() => null);
         /* Logged with the courier but WITHOUT the phone number: this is a
            customer's number and a log is the easiest place for it to leak. */
         log.warn({ courier: key, kind: failure.kind }, "Courier fraud check failed");
@@ -149,6 +235,18 @@ export async function report(
     }
   }
 
+  if (hasLocalOrders) {
+    const localTotal = localDelivered + localCancelled;
+    couriers.push({
+      courier: "store" as ProviderKey,
+      label: "This Store",
+      success: localDelivered,
+      cancel: localCancelled,
+      total: localTotal,
+      successRatio: localTotal > 0 ? ratio(localDelivered, localTotal) : 0,
+    });
+  }
+
   const success = couriers.reduce((sum, row) => sum + row.success, 0);
   const cancel = couriers.reduce((sum, row) => sum + row.cancel, 0);
   const total = couriers.reduce((sum, row) => sum + row.total, 0);
@@ -161,9 +259,9 @@ export async function report(
       success,
       cancel,
       total,
-      successRatio: total > 0 ? Math.round((success / total) * 10_000) / 100 : 0,
+      successRatio: total > 0 ? ratio(success, total) : 0,
       answered: couriers.length,
-      asked: accounts.length,
+      asked: accounts.length + (hasLocalOrders ? 1 : 0),
     },
     checkedAt: new Date().toISOString(),
   };

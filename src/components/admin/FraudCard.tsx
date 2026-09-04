@@ -29,6 +29,9 @@ const TONE_TEXT = {
   muted: "text-ink",
 } as const;
 
+import Link from "next/link";
+import { cn } from "@/lib/utils";
+
 export function FraudCard({ phone }: { phone: string }) {
   const [report, setReport] = useState<ApiFraudReport | null>(null);
   const [loading, setLoading] = useState(true);
@@ -56,18 +59,42 @@ export function FraudCard({ phone }: { phone: string }) {
 
   useLoad(load);
 
-  /* Nothing is configured, so there is nothing to say. Showing an empty card
-     with "0%" would be worse than showing no card. */
-  if (loading || (!report && !error)) return null;
+  if (loading) {
+    return (
+      <Card>
+        <CardHeader title="Courier record" hint="Loading delivery track record..." />
+        <div className="p-4 text-caption text-muted">Checking courier records...</div>
+      </Card>
+    );
+  }
+
+  if (!report && !error) {
+    return (
+      <Card>
+        <CardHeader title="Courier record" hint="Customer delivery rate" />
+        <div className="flex flex-col gap-2 p-4 text-caption text-muted">
+          <p>No courier delivery record checked yet for this phone number.</p>
+          <div className="flex gap-2 pt-1">
+            <Link
+              href="/admin/settings"
+              className="inline-flex items-center gap-1.5 rounded-sm bg-surface px-3 py-1.5 text-caption font-medium text-ink hover:bg-surface-hover"
+            >
+              Configure in Settings → Courier
+            </Link>
+          </div>
+        </div>
+      </Card>
+    );
+  }
 
   return (
     <Card>
       <CardHeader
         title="Courier record"
-        hint={report ? `Checked ${formatDateTime(report.checkedAt)}` : undefined}
+        hint={report?.checkedAt ? `Checked ${formatDateTime(report.checkedAt)}` : undefined}
       />
 
-      <div className="flex flex-col gap-3 p-4">
+      <div className="flex flex-col gap-3.5 p-4">
         {error && <p className="text-caption text-sale">{error}</p>}
 
         {report && <Summary report={report} />}
@@ -102,7 +129,9 @@ function Summary({ report }: { report: ApiFraudReport }) {
         <p className="text-body font-semibold text-ink">No parcels on record</p>
         <p className="mt-0.5 text-caption text-muted">
           {answered === 0
-            ? "No courier answered."
+            ? asked === 0
+              ? "No courier APIs configured yet. Configure Steadfast in Settings → Courier."
+              : "No courier answered."
             : `None of the ${answered} courier${answered === 1 ? "" : "s"} that answered has carried anything for this number. Treat as a new customer.`}
         </p>
       </div>
@@ -111,16 +140,29 @@ function Summary({ report }: { report: ApiFraudReport }) {
 
   return (
     <div>
-      <p className={`tnum text-[28px] font-semibold leading-tight ${TONE_TEXT[fraudTone(report)]}`}>
-        {successRatio}%
-      </p>
-      <p className="text-caption text-ink-soft">
-        {success} delivered · {cancel} came back · {total} parcels
-      </p>
-      {/* Stated whenever the picture is incomplete, so the figure above is
-          never read as the whole truth. */}
+      <div className="flex items-baseline gap-3">
+        <p className={`tnum text-[32px] font-bold leading-tight ${TONE_TEXT[fraudTone(report)]}`}>
+          {successRatio}%
+        </p>
+        <span className="text-caption font-medium text-muted">
+          Delivery success rate
+        </span>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-2 text-caption">
+        <span className="inline-flex items-center gap-1 font-semibold text-positive">
+          ✓ {success} Received
+        </span>
+        <span className="text-muted">·</span>
+        <span className="inline-flex items-center gap-1 font-semibold text-sale">
+          ✕ {cancel} Not received
+        </span>
+        <span className="text-muted">·</span>
+        <span className="text-ink-soft">
+          {total} total parcel{total === 1 ? "" : "s"}
+        </span>
+      </div>
       {answered < asked && (
-        <p className="mt-1 text-micro text-warn">
+        <p className="mt-1.5 text-micro text-warn">
           From {answered} of {asked} couriers — the rest did not answer.
         </p>
       )}
@@ -130,28 +172,49 @@ function Summary({ report }: { report: ApiFraudReport }) {
 
 function PerCourier({ report }: { report: ApiFraudReport }) {
   return (
-    <ul className="flex flex-col gap-2 border-t border-line pt-3">
-      {report.couriers.map((courier) => (
-        <li key={courier.courier}>
-          <div className="flex items-baseline justify-between gap-2">
-            <span className="text-caption text-ink">{courier.label}</span>
-            <span className="tnum shrink-0 text-micro text-muted">
-              {courier.total === 0
-                ? "nothing"
-                : `${courier.success}/${courier.total} · ${courier.successRatio}%`}
-            </span>
-          </div>
-          {courier.total > 0 && (
-            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-surface">
-              <div
-                className="h-full bg-positive"
-                style={{ width: `${courier.successRatio}%` }}
-              />
+    <div className="flex flex-col gap-2 border-t border-line pt-3">
+      <p className="text-micro font-medium uppercase tracking-wider text-muted">
+        Breakdown by courier
+      </p>
+      <ul className="flex flex-col gap-2">
+        {report.couriers.map((courier) => (
+          <li key={courier.courier} className="rounded-sm border border-line bg-surface/50 p-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-caption font-semibold text-ink">{courier.label}</span>
+              <span className="tnum text-caption font-bold text-ink">
+                {courier.total === 0 ? "0%" : `${courier.successRatio}%`}
+              </span>
             </div>
-          )}
-        </li>
-      ))}
-    </ul>
+            <div className="mt-1.5 flex items-center justify-between text-micro text-muted">
+              <span className="font-medium text-positive">
+                Received: {courier.success}
+              </span>
+              <span className="font-medium text-sale">
+                Not received: {courier.cancel}
+              </span>
+              <span>
+                Total: {courier.total}
+              </span>
+            </div>
+            {courier.total > 0 && (
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-line">
+                <div
+                  className={cn(
+                    "h-full rounded-full transition-all",
+                    courier.successRatio >= 80
+                      ? "bg-positive"
+                      : courier.successRatio >= 50
+                        ? "bg-warn"
+                        : "bg-sale",
+                  )}
+                  style={{ width: `${courier.successRatio}%` }}
+                />
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

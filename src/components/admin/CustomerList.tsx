@@ -256,9 +256,15 @@ function CustomerRow({ customer }: { customer: ApiCustomer }) {
           </Badge>
         )}
       </td>
-      <td className={`py-2.5 pr-3 text-right tnum ${returnTone}`}>{customer.returnedCount}</td>
       <td className="py-2.5 pr-3 text-right tnum text-ink-soft">
-        {customer.successRate === null ? "—" : `${customer.successRate}%`}
+        <p className="font-medium text-ink">
+          {customer.successRate === null ? "—" : `${customer.successRate}%`}
+        </p>
+        {customer.orderCount > 0 && (
+          <p className="text-micro text-muted">
+            {customer.orderCount - customer.returnedCount} rec / {customer.returnedCount} ret
+          </p>
+        )}
       </td>
       <td className="py-2.5 pr-3 text-right tnum font-medium text-ink">
         {formatTaka(customer.spent)}

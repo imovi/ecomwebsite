@@ -4,25 +4,70 @@ import { count, ratio, type CourierStat, type FraudCredentials, type FraudProvid
 
 const NAME = "Steadfast";
 const BASE = "https://steadfast.com.bd";
+const API_BASE = "https://portal.packzy.com/api/v1";
 
-/**
- * Steadfast, through the merchant panel's own login.
- *
- * The only one of the five that is a plain web form rather than a JSON login,
- * so the sequence is what a browser does: fetch the page, read the CSRF token
- * out of it, post the form, and carry the session cookie to the check.
- *
- * The token is scraped from HTML with a regular expression, which is exactly
- * as fragile as it sounds — if Steadfast restyles that page this stops working.
- * That is why a missing token is reported as an upstream change rather than a
- * bad password: the distinction tells whoever reads it whether to edit
- * Settings or to call for a code fix.
- */
 export const steadfast: FraudProvider = {
   name: NAME,
-  identifierLabel: "Merchant email",
+  identifierLabel: "API Key or Merchant email",
 
   async check(phone: string, credentials: FraudCredentials): Promise<CourierStat> {
+    const rawPhone = (phone || "").replace(/\D/g, "");
+    const cleanDigits =
+      rawPhone.length === 13 && rawPhone.startsWith("8801")
+        ? rawPhone.slice(2)
+        : rawPhone.length === 14 && rawPhone.startsWith("8801")
+          ? rawPhone.slice(3)
+          : rawPhone;
+
+    // Official API Key & Secret Key check (Packzy API)
+    if (!credentials.identifier.includes("@")) {
+      try {
+        const res = await fetch(`${API_BASE}/fraud_check/${encodeURIComponent(cleanDigits)}`, {
+          method: "GET",
+          headers: {
+            "Api-Key": credentials.identifier.trim(),
+            "Secret-Key": credentials.secret.trim(),
+            Accept: "application/json",
+          },
+          signal: AbortSignal.timeout(10_000),
+        });
+
+        if (res.status === 401 || res.status === 403) {
+          throw credentialsRejected(NAME);
+        }
+
+        if (res.ok) {
+          const body = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+          if (body) {
+            const data = (body.data ?? body) as Record<string, unknown>;
+            const success = count(
+              data.total_delivered ??
+                data.delivered ??
+                data.total_parcels_delivered ??
+                data.success,
+            );
+            const cancel = count(
+              data.total_cancelled ??
+                data.cancelled ??
+                data.total_parcels_cancelled ??
+                data.cancel,
+            );
+            const total = count(data.total_parcels ?? data.total) || success + cancel;
+
+            return {
+              success,
+              cancel,
+              total: Math.max(total, success + cancel),
+              successRatio:
+                success + cancel > 0 ? ratio(success, Math.max(total, success + cancel)) : 0,
+            };
+          }
+        }
+      } catch (err) {
+        if (err instanceof Error && err.name === "FraudCheckError") throw err;
+      }
+    }
+
     const page = await request(NAME, `${BASE}/login`);
     const token = /name="_token"\s+value="([^"]+)"/.exec(page.body)?.[1];
 

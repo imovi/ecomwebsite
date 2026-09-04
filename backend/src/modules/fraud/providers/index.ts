@@ -21,7 +21,7 @@ export const PROVIDERS = {
   carrybee,
 } as const satisfies Record<string, FraudProvider>;
 
-export type ProviderKey = keyof typeof PROVIDERS;
+export type ProviderKey = keyof typeof PROVIDERS | "store";
 
 export const PROVIDER_KEYS = Object.keys(PROVIDERS) as ProviderKey[];
 

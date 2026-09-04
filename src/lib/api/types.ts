@@ -293,7 +293,7 @@ export interface ApiOverviewDay {
 /* Courier delivery record                                                    */
 /* -------------------------------------------------------------------------- */
 
-export type ApiFraudCourier = "steadfast" | "pathao" | "redx" | "paperfly" | "carrybee";
+export type ApiFraudCourier = "steadfast" | "pathao" | "redx" | "paperfly" | "carrybee" | "store";
 
 export interface ApiFraudCourierResult {
   courier: ApiFraudCourier;

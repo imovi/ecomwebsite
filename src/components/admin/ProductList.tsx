@@ -138,7 +138,7 @@ export function ProductList() {
             title="Arrange product sequence for New Arrivals"
           >
             <Icon name="list" size={15} />
-            Reorder / সাজান
+            Reorder
           </Button>
           <Button href="/admin/products/new" variant="primary" size="sm">
             <Icon name="plus" size={16} />

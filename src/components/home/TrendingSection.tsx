@@ -47,8 +47,8 @@ export function TrendingSection({ products, initialCount = 4 }: TrendingSectionP
           >
             <span>
               {expanded
-                ? "Show less (কম দেখুন)"
-                : "See more trending products (আরও দেখুন)"}
+                ? "Show less"
+                : "See more trending products"}
             </span>
             <span
               className={cn(

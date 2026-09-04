@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import Image from "next/image";
 import { adminApi, AdminApiError } from "@/lib/admin/client";
 import { toast } from "@/lib/stores/toast-store";
-import { formatTaka } from "@/lib/utils";
+import { formatTaka, cn } from "@/lib/utils";
 import type { ApiProductListItem } from "@/lib/api/types";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -25,6 +25,13 @@ export function ProductReorderModal({ isOpen, onClose, onSaved }: ProductReorder
   const [search, setSearch] = useState("");
   const [, startTransition] = useTransition();
 
+  /* Drag and drop state (mouse + touch) */
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
+  const touchOriginIndex = useRef<number | null>(null);
+  const touchCurrentOverIndex = useRef<number | null>(null);
+  const listContainerRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (!isOpen) return;
 
@@ -33,7 +40,6 @@ export function ProductReorderModal({ isOpen, onClose, onSaved }: ProductReorder
       setLoading(true);
       setError(null);
       try {
-        /* Fetch all active and draft products up to 200 */
         const { items: fetched } = await adminApi.list<ApiProductListItem>(
           "admin/products?perPage=200",
         );
@@ -60,31 +66,101 @@ export function ProductReorderModal({ isOpen, onClose, onSaved }: ProductReorder
     items.length === initialOrder.length &&
     items.some((item, idx) => item.id !== initialOrder[idx]);
 
-  function move(index: number, direction: -1 | 1) {
-    const target = index + direction;
-    if (target < 0 || target >= items.length) return;
+  function reorder(fromIndex: number, toIndex: number) {
+    if (fromIndex === toIndex) return;
+    if (fromIndex < 0 || fromIndex >= items.length || toIndex < 0 || toIndex >= items.length) return;
 
-    const reordered = [...items];
-    const [moved] = reordered.splice(index, 1);
+    const updated = [...items];
+    const [moved] = updated.splice(fromIndex, 1);
     if (!moved) return;
-    reordered.splice(target, 0, moved);
+    updated.splice(toIndex, 0, moved);
 
     startTransition(() => {
-      setItems(reordered);
+      setItems(updated);
     });
+  }
+
+  function move(index: number, direction: -1 | 1) {
+    reorder(index, index + direction);
   }
 
   function moveToTop(index: number) {
-    if (index === 0) return;
-    const reordered = [...items];
-    const [moved] = reordered.splice(index, 1);
-    if (!moved) return;
-    reordered.unshift(moved);
-
-    startTransition(() => {
-      setItems(reordered);
-    });
+    reorder(index, 0);
   }
+
+  /* --- Mouse HTML5 Drag and Drop ------------------------------------------ */
+
+  function handleDragStart(e: React.DragEvent, index: number) {
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", String(index));
+    setDragIndex(index);
+  }
+
+  function handleDragOver(e: React.DragEvent, index: number) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (overIndex !== index) {
+      setOverIndex(index);
+    }
+  }
+
+  function handleDrop(e: React.DragEvent, targetIndex: number) {
+    e.preventDefault();
+    const sourceStr = e.dataTransfer.getData("text/plain");
+    const sourceIndex = sourceStr ? parseInt(sourceStr, 10) : dragIndex;
+    if (sourceIndex !== null && !isNaN(sourceIndex)) {
+      reorder(sourceIndex, targetIndex);
+    }
+    setDragIndex(null);
+    setOverIndex(null);
+  }
+
+  function handleDragEnd() {
+    setDragIndex(null);
+    setOverIndex(null);
+  }
+
+  /* --- Touch Drag and Drop (Finger / Mobile) ------------------------------- */
+
+  function handleTouchStart(e: React.TouchEvent, index: number) {
+    touchOriginIndex.current = index;
+    touchCurrentOverIndex.current = index;
+    setDragIndex(index);
+    setOverIndex(index);
+  }
+
+  function handleTouchMove(e: React.TouchEvent) {
+    if (touchOriginIndex.current === null) return;
+    const touch = e.touches[0];
+    if (!touch) return;
+
+    const elem = document.elementFromPoint(touch.clientX, touch.clientY);
+    const row = elem?.closest("[data-reorder-index]");
+    if (row) {
+      const idxAttr = row.getAttribute("data-reorder-index");
+      if (idxAttr !== null) {
+        const targetIdx = parseInt(idxAttr, 10);
+        if (!isNaN(targetIdx) && targetIdx !== touchCurrentOverIndex.current) {
+          touchCurrentOverIndex.current = targetIdx;
+          setOverIndex(targetIdx);
+        }
+      }
+    }
+  }
+
+  function handleTouchEnd() {
+    const from = touchOriginIndex.current;
+    const to = touchCurrentOverIndex.current;
+    if (from !== null && to !== null && from !== to) {
+      reorder(from, to);
+    }
+    touchOriginIndex.current = null;
+    touchCurrentOverIndex.current = null;
+    setDragIndex(null);
+    setOverIndex(null);
+  }
+
+  /* --- Save to backend --------------------------------------------------- */
 
   async function handleSave() {
     if (items.length === 0) return;
@@ -98,11 +174,11 @@ export function ProductReorderModal({ isOpen, onClose, onSaved }: ProductReorder
         })),
       });
 
-      toast("New Arrivals sequence saved! / পণ্যের ক্রম সফলভাবে সাজানো হয়েছে");
+      toast("Product display order saved successfully.");
       onSaved();
       onClose();
     } catch (caught) {
-      setError(caught instanceof AdminApiError ? caught.message : "Failed to save sequence.");
+      setError(caught instanceof AdminApiError ? caught.message : "Failed to save product sequence.");
     } finally {
       setSaving(false);
     }
@@ -129,11 +205,10 @@ export function ProductReorderModal({ isOpen, onClose, onSaved }: ProductReorder
           <div>
             <h2 className="text-body font-semibold text-ink flex items-center gap-2">
               <Icon name="list" size={18} />
-              Arrange Product Order / পণ্যের ক্রম সাজান
+              Arrange Product Display Order
             </h2>
             <p className="mt-0.5 text-micro text-muted">
-              Top products appear first in New Arrivals on the storefront.
-              (উপরে থাকা পণ্যগুলো সবার আগে নতুন কালেকশনে শো করবে)
+              Drag and drop items or use arrow controls. Top products appear first in New Arrivals on the storefront.
             </p>
           </div>
           <button
@@ -141,13 +216,13 @@ export function ProductReorderModal({ isOpen, onClose, onSaved }: ProductReorder
             onClick={onClose}
             disabled={saving}
             className="rounded-xs p-1.5 text-muted hover:bg-line/60 hover:text-ink disabled:opacity-50"
-            aria-label="Close modal"
+            aria-label="Close dialog"
           >
             <Icon name="close" size={18} />
           </button>
         </div>
 
-        {/* Search bar */}
+        {/* Search filter */}
         <div className="border-b border-line px-5 py-2.5 bg-white flex items-center gap-3">
           <Icon name="search" size={16} className="text-muted shrink-0" />
           <input
@@ -169,7 +244,10 @@ export function ProductReorderModal({ isOpen, onClose, onSaved }: ProductReorder
         </div>
 
         {/* Body list */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-2 divide-y divide-line/40">
+        <div
+          ref={listContainerRef}
+          className="flex-1 overflow-y-auto p-4 space-y-2 select-none"
+        >
           {error && (
             <div className="rounded-xs bg-sale/10 p-3 text-caption text-sale">
               {error}
@@ -183,19 +261,45 @@ export function ProductReorderModal({ isOpen, onClose, onSaved }: ProductReorder
             </div>
           ) : filteredItems.length === 0 ? (
             <p className="py-12 text-center text-caption text-muted">
-              No products found.
+              No products match your search.
             </p>
           ) : (
             filteredItems.map((product) => {
               const actualIndex = items.findIndex((p) => p.id === product.id);
               const isFirst = actualIndex === 0;
               const isLast = actualIndex === items.length - 1;
+              const isDragging = dragIndex === actualIndex;
+              const isOver = overIndex === actualIndex && dragIndex !== actualIndex;
 
               return (
                 <div
                   key={product.id}
-                  className="flex items-center gap-3 pt-2 first:pt-0 group hover:bg-surface/50 rounded-xs p-1.5 transition-colors"
+                  data-reorder-index={actualIndex}
+                  draggable={!saving && !search}
+                  onDragStart={(e) => handleDragStart(e, actualIndex)}
+                  onDragOver={(e) => handleDragOver(e, actualIndex)}
+                  onDrop={(e) => handleDrop(e, actualIndex)}
+                  onDragEnd={handleDragEnd}
+                  className={cn(
+                    "flex items-center gap-3 rounded-md border p-2 transition-[border-color,background-color,transform,box-shadow] duration-150",
+                    isDragging
+                      ? "border-dashed border-ink/50 bg-surface/70 opacity-40 scale-[0.98]"
+                      : isOver
+                        ? "border-ink bg-surface shadow-md ring-2 ring-ink/20"
+                        : "border-line bg-white hover:border-line hover:bg-surface/40",
+                  )}
                 >
+                  {/* Drag Grip Handle (supports both mouse drag and touch drag) */}
+                  <div
+                    title="Drag to reorder"
+                    onTouchStart={(e) => handleTouchStart(e, actualIndex)}
+                    onTouchMove={handleTouchMove}
+                    onTouchEnd={handleTouchEnd}
+                    className="flex size-8 shrink-0 cursor-grab active:cursor-grabbing touch-none items-center justify-center rounded-xs text-muted hover:bg-line/60 hover:text-ink transition-colors"
+                  >
+                    <Icon name="grip" size={18} />
+                  </div>
+
                   {/* Position number */}
                   <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-surface text-caption font-bold text-ink ring-1 ring-line">
                     {actualIndex + 1}
@@ -245,14 +349,14 @@ export function ProductReorderModal({ isOpen, onClose, onSaved }: ProductReorder
                     </div>
                   </div>
 
-                  {/* Action buttons */}
+                  {/* Quick Arrow controls */}
                   <div className="flex items-center gap-1 shrink-0">
                     <button
                       type="button"
                       onClick={() => moveToTop(actualIndex)}
                       disabled={isFirst || saving}
-                      title="Move to Top (সবার উপরে নিন)"
-                      className="rounded-xs border border-line bg-white px-2 py-1 text-micro font-medium text-ink hover:bg-surface disabled:opacity-30 disabled:pointer-events-none"
+                      title="Move to top position"
+                      className="rounded-xs border border-line bg-white px-2 py-1 text-micro font-medium text-ink hover:bg-surface disabled:opacity-30 disabled:pointer-events-none transition-colors"
                     >
                       Top
                     </button>
@@ -260,8 +364,8 @@ export function ProductReorderModal({ isOpen, onClose, onSaved }: ProductReorder
                       type="button"
                       onClick={() => move(actualIndex, -1)}
                       disabled={isFirst || saving}
-                      title="Move Up (উপরে নিন)"
-                      className="flex size-8 items-center justify-center rounded-xs border border-line bg-white text-ink hover:bg-surface disabled:opacity-30 disabled:pointer-events-none"
+                      title="Move up"
+                      className="flex size-8 items-center justify-center rounded-xs border border-line bg-white text-ink hover:bg-surface disabled:opacity-30 disabled:pointer-events-none transition-colors"
                     >
                       <Icon name="arrowUp" size={16} />
                     </button>
@@ -269,8 +373,8 @@ export function ProductReorderModal({ isOpen, onClose, onSaved }: ProductReorder
                       type="button"
                       onClick={() => move(actualIndex, 1)}
                       disabled={isLast || saving}
-                      title="Move Down (নিচে নিন)"
-                      className="flex size-8 items-center justify-center rounded-xs border border-line bg-white text-ink hover:bg-surface disabled:opacity-30 disabled:pointer-events-none"
+                      title="Move down"
+                      className="flex size-8 items-center justify-center rounded-xs border border-line bg-white text-ink hover:bg-surface disabled:opacity-30 disabled:pointer-events-none transition-colors"
                     >
                       <Icon name="arrowDown" size={16} />
                     </button>
@@ -285,9 +389,9 @@ export function ProductReorderModal({ isOpen, onClose, onSaved }: ProductReorder
         <div className="flex items-center justify-between border-t border-line px-5 py-3 bg-surface">
           <span className="text-caption text-muted">
             {isDirty ? (
-              <span className="text-sale font-medium">Unsaved changes / পরিবর্তন করা হয়েছে</span>
+              <span className="text-sale font-medium">Unsaved changes</span>
             ) : (
-              <span>{items.length} products in sequence</span>
+              <span>{items.length} products in display order</span>
             )}
           </span>
 

@@ -104,6 +104,16 @@ const paths: Record<string, React.ReactNode> = {
       <circle cx="19" cy="12" r="1.5" fill="currentColor" stroke="none" />
     </>
   ),
+  grip: (
+    <>
+      <circle cx="9" cy="6" r="1.5" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="6" r="1.5" fill="currentColor" stroke="none" />
+      <circle cx="9" cy="12" r="1.5" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="12" r="1.5" fill="currentColor" stroke="none" />
+      <circle cx="9" cy="18" r="1.5" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="18" r="1.5" fill="currentColor" stroke="none" />
+    </>
+  ),
   signOut: (
     <>
       <path d="M15 4V3.6A1.6 1.6 0 0 0 13.4 2h-7A1.6 1.6 0 0 0 4.8 3.6v16.8A1.6 1.6 0 0 0 6.4 22h7a1.6 1.6 0 0 0 1.6-1.6V20" />

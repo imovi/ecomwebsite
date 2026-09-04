@@ -186,7 +186,7 @@ export function CheckoutCustomizationForm() {
               <div className="flex flex-wrap items-center gap-2">
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="secondary"
                   size="sm"
                   onClick={() => applyPreset("english")}
                 >
@@ -194,7 +194,7 @@ export function CheckoutCustomizationForm() {
                 </Button>
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="secondary"
                   size="sm"
                   onClick={() => applyPreset("bangla")}
                 >

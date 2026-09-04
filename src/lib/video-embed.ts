@@ -152,25 +152,18 @@ export async function resolveDirectVideoUrl(
         const vMatch = html.match(/\\"video_url\\":\\"(https:[^"\s]+?)\\"/);
         const dMatch = html.match(/\\"display_url\\":\\"(https:[^"\s]+?)\\"/);
         
-        let directUrl: string | null = null;
-        if (vMatch) {
+        const cleanEscaped = (val: string | undefined): string | null => {
+          if (!val) return null;
           try {
-            directUrl = JSON.parse(`"${vMatch[1]}"`);
+            const unescaped: string = JSON.parse(`"${val}"`);
+            return unescaped.replace(/\\+(\/)/g, "/");
           } catch {
-            directUrl = vMatch[1].replace(/\\+(\/)/g, "/");
+            return val.replace(/\\+(\/)/g, "/").replace(/\\u0026/g, "&");
           }
-          directUrl = directUrl.replace(/\\+(\/)/g, "/");
-        }
+        };
 
-        let rawPosterUrl: string | null = null;
-        if (dMatch) {
-          try {
-            rawPosterUrl = JSON.parse(`"${dMatch[1]}"`);
-          } catch {
-            rawPosterUrl = dMatch[1].replace(/\\+(\/)/g, "/");
-          }
-          rawPosterUrl = rawPosterUrl.replace(/\\+(\/)/g, "/");
-        }
+        const directUrl = cleanEscaped(vMatch?.[1]);
+        const rawPosterUrl = cleanEscaped(dMatch?.[1]);
 
         const proxiedPosterUrl = rawPosterUrl
           ? `/api/video/poster?url=${encodeURIComponent(rawPosterUrl)}&id=${encodeURIComponent(parsed.videoId)}`

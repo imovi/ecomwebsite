@@ -55,6 +55,10 @@ interface ApiPublicSettings {
 /** Last-resort display values, used only if the API is unreachable. */
 const FALLBACK: StoreSettings = {
   storeName: "HINAR",
+  tagline: "Smart Gadgets & Lifestyle Essentials",
+  seoTitle: "HINAR — Online Gadget Shop & Smart Lifestyle Store in Bangladesh",
+  seoDescription:
+    "Shop smart gadgets, rechargeable desk lamps, unique lifestyle accessories & everyday electronics at best price in Bangladesh. Fast nationwide cash on delivery.",
   deliveryInsideDhaka: 80,
   deliveryOutsideDhaka: 130,
   freeDeliveryThreshold: 0,

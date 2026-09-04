@@ -1,9 +1,11 @@
+import type { Metadata } from "next";
 import {
   getBanners,
   getCategories,
   getNewArrivals,
   getTrending,
 } from "@/lib/data/catalog";
+import { getSettings } from "@/lib/data/settings";
 import { copy } from "@/lib/copy";
 import { Container, SectionHeader } from "@/components/ui/Layout";
 import { BannerSlider } from "@/components/home/BannerSlider";
@@ -12,6 +14,28 @@ import { TrendingSection } from "@/components/home/TrendingSection";
 import { ProductGrid } from "@/components/product/ProductCard";
 
 export const revalidate = 300;
+
+export async function generateMetadata(): Promise<Metadata> {
+  const settings = await getSettings();
+  const name = settings.storeName || copy.brand.name;
+  const title =
+    settings.seoTitle ||
+    `${name} — Online Gadget Shop & Smart Lifestyle Store in Bangladesh`;
+  const description =
+    settings.seoDescription ||
+    "Shop smart gadgets, rechargeable desk lamps, unique lifestyle accessories & everyday electronics at best price in Bangladesh. Fast nationwide cash on delivery.";
+
+  return {
+    title: {
+      absolute: title,
+    },
+    description,
+    openGraph: {
+      title,
+      description,
+    },
+  };
+}
 
 /**
  * Six sections, no more:

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useState } from "react";
 import { adminApi, AdminApiError } from "@/lib/admin/client";
@@ -153,7 +153,7 @@ export function CheckoutCustomizationForm() {
       });
 
       // Clear storefront cache so checkout page updates immediately
-      await revalidateStorefront();
+      await revalidateStorefront("settings");
 
       setSuccessMessage("Checkout customization successfully saved & storefront updated!");
       toast("Checkout settings saved");

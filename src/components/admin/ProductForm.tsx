@@ -424,8 +424,18 @@ export function ProductForm({ productId }: { productId?: string }) {
           for (const image of staged) upload.append("images", image.file);
 
           try {
-            await adminApi.upload(`admin/products/${newId}/images`, upload);
-            toast("Product created with photos");
+            await adminApi.uploadWithProgress(
+              `admin/products/${newId}/images`,
+              upload,
+              (percent) => {
+                setUploadNote(
+                  percent >= 100
+                    ? "Processing media on server…"
+                    : `Uploading media (${percent}%)…`,
+                );
+              },
+            );
+            toast("Product created with media");
           } catch (uploadFailure) {
             /* The product itself was created. Say so plainly and send the admin
                to it rather than reporting a failure that would suggest nothing

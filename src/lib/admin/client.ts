@@ -180,14 +180,77 @@ export const adminApi = {
 
   /**
    * Multipart upload — product photos, category pictures, the logo, banners.
-   *
-   * Takes a method because editing a banner replaces its artwork through the
-   * same multipart body that carries its text fields, and that endpoint is a
-   * PATCH. Splitting it into a JSON PATCH plus a separate upload would make a
-   * half-applied edit possible.
    */
   upload: <T>(path: string, form: FormData, method: "POST" | "PATCH" = "POST") =>
     data<T>(path, { method, rawBody: form }),
+
+  /**
+   * Multipart upload with real-time percentage progress callback.
+   */
+  uploadWithProgress: <T>(
+    path: string,
+    form: FormData,
+    onProgress?: (percent: number) => void,
+    method: "POST" | "PATCH" = "POST",
+  ): Promise<T> => {
+    return new Promise((resolve, reject) => {
+      const normalizedPath = path.replace(/^\/+/, "");
+      const xhr = new XMLHttpRequest();
+      xhr.open(method, `/api/admin/${normalizedPath}`);
+      xhr.setRequestHeader("accept", "application/json");
+
+      if (onProgress && xhr.upload) {
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable && event.total > 0) {
+            const percent = Math.min(100, Math.round((event.loaded / event.total) * 100));
+            onProgress(percent);
+          }
+        };
+      }
+
+      xhr.onload = async () => {
+        if (xhr.status === 401) handleExpired();
+
+        const scope = scopeFor(normalizedPath);
+        if (xhr.status >= 200 && xhr.status < 300 && method !== "GET" && scope) {
+          await revalidateStorefront(scope).catch(() => {});
+        }
+
+        if (xhr.status === 204) {
+          resolve(undefined as T);
+          return;
+        }
+
+        let body: ApiEnvelope<T> | null = null;
+        try {
+          body = JSON.parse(xhr.responseText);
+        } catch {
+          body = null;
+        }
+
+        if (xhr.status < 200 || xhr.status >= 300 || !body || !body.success) {
+          const error = body && !body.success ? body.error : null;
+          reject(
+            new AdminApiError(
+              error?.message ?? "Something went wrong. Please try again.",
+              xhr.status,
+              error?.code ?? "UNKNOWN",
+              collectFields(error?.details),
+            ),
+          );
+          return;
+        }
+
+        resolve(body.data);
+      };
+
+      xhr.onerror = () => {
+        reject(new AdminApiError("Network error during upload.", 0, "NETWORK_ERROR"));
+      };
+
+      xhr.send(form);
+    });
+  },
 };
 
 /** Builds a query string, dropping empty values so URLs stay readable. */

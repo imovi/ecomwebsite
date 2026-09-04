@@ -58,11 +58,17 @@ export function ProductCard({
       <div className="relative aspect-square overflow-hidden rounded-md bg-surface">
         {/\.(mp4|webm|mov|ogg)($|\?)/i.test(primaryMedia) ? (
           <video
-            src={primaryMedia}
+            src={`${primaryMedia.split("#")[0]}#t=0.5`}
+            preload="metadata"
             muted
             loop
             autoPlay
             playsInline
+            onLoadedMetadata={(e) => {
+              if (e.currentTarget.currentTime < 0.1) {
+                e.currentTarget.currentTime = 0.5;
+              }
+            }}
             className={cn(
               "h-full w-full transition-transform duration-300 ease-out",
               fitClass,

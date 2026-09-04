@@ -85,6 +85,7 @@ export function ProductImageStaging({
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [rejected, setRejected] = useState<string[]>([]);
+  const [previewVideoUrl, setPreviewVideoUrl] = useState<string | null>(null);
 
   /* Revoke object URLs for images that are no longer staged. Without this the
      browser holds every file the admin ever previewed for the life of the page,
@@ -165,15 +166,33 @@ export function ProductImageStaging({
               <li key={image.id} className="flex flex-col gap-1.5">
                 <div className="relative aspect-square overflow-hidden rounded-sm border border-line bg-surface">
                   {image.file.type.startsWith("video/") || /\.(mp4|webm|mov)$/i.test(image.file.name) ? (
-                    <div className="relative size-full bg-neutral-900">
+                    <div className="group/vid relative size-full bg-neutral-900">
                       <video
-                        src={image.previewUrl}
+                        src={`${image.previewUrl}#t=0.5`}
+                        preload="metadata"
                         muted
                         loop
                         playsInline
+                        onLoadedMetadata={(e) => {
+                          if (e.currentTarget.currentTime < 0.1) {
+                            e.currentTarget.currentTime = 0.5;
+                          }
+                        }}
                         className="size-full object-cover"
                       />
-                      <span className="absolute bottom-1.5 right-1.5 flex items-center gap-1 rounded-xs bg-black/75 px-1.5 py-0.5 text-micro font-medium text-white backdrop-blur-xs">
+                      <button
+                        type="button"
+                        onClick={() => setPreviewVideoUrl(image.previewUrl)}
+                        title="Click to preview video"
+                        className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover/vid:bg-black/40 transition-colors"
+                      >
+                        <span className="flex size-9 items-center justify-center rounded-full bg-black/80 text-white backdrop-blur-xs group-hover/vid:scale-110 group-hover/vid:bg-black transition-transform shadow-md">
+                          <svg className="size-4 fill-current ml-0.5" viewBox="0 0 24 24">
+                            <path d="M8 5v14l11-7z" />
+                          </svg>
+                        </span>
+                      </button>
+                      <span className="absolute bottom-1.5 right-1.5 flex items-center gap-1 rounded-xs bg-black/75 px-1.5 py-0.5 text-micro font-medium text-white backdrop-blur-xs pointer-events-none">
                         <svg className="size-2.5 fill-current" viewBox="0 0 24 24">
                           <path d="M8 5v14l11-7z" />
                         </svg>
@@ -252,6 +271,47 @@ export function ProductImageStaging({
           </Button>
         )}
       </div>
+
+      {previewVideoUrl && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-xs"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setPreviewVideoUrl(null);
+          }}
+        >
+          <div className="relative flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-neutral-950 shadow-2xl border border-white/10">
+            <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 text-white">
+              <div className="flex items-center gap-2">
+                <span className="flex size-6 items-center justify-center rounded-full bg-primary/20 text-primary">
+                  <svg className="size-3 fill-current ml-0.5" viewBox="0 0 24 24">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                </span>
+                <span className="text-caption font-semibold">Staged Video Preview</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewVideoUrl(null)}
+                className="flex size-7 items-center justify-center rounded-full bg-white/10 text-white/80 hover:bg-white/20 hover:text-white transition-colors"
+                aria-label="Close preview"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="relative flex aspect-video max-h-[70vh] w-full items-center justify-center bg-black">
+              <video
+                src={previewVideoUrl}
+                controls
+                autoPlay
+                playsInline
+                className="max-h-full max-w-full"
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </Card>
   );
 }

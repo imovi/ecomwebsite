@@ -34,6 +34,8 @@ export function ProductImages({
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [previewVideoUrl, setPreviewVideoUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,19 +43,25 @@ export function ProductImages({
     if (!files || files.length === 0) return;
 
     setUploading(true);
+    setUploadProgress(0);
     setError(null);
 
     const form = new FormData();
     for (const file of Array.from(files)) form.append("images", file);
 
     try {
-      await adminApi.upload(`admin/products/${productId}/images`, form);
-      toast(files.length === 1 ? "Photo uploaded" : `${files.length} photos uploaded`);
+      await adminApi.uploadWithProgress(
+        `admin/products/${productId}/images`,
+        form,
+        (percent) => setUploadProgress(percent),
+      );
+      toast(files.length === 1 ? "Media uploaded" : `${files.length} media uploaded`);
       onChange();
     } catch (caught) {
       setError(caught instanceof AdminApiError ? caught.message : "Upload failed.");
     } finally {
       setUploading(false);
+      setUploadProgress(null);
       /* Clear the input so re-selecting the same file fires `change` again. */
       if (inputRef.current) inputRef.current.value = "";
     }
@@ -151,6 +159,26 @@ export function ProductImages({
       <div className="flex flex-col gap-4 p-4">
         <ErrorBanner message={error} />
 
+        {uploading && (
+          <div className="flex flex-col gap-2 rounded-sm border border-line bg-surface p-3">
+            <div className="flex items-center justify-between text-caption">
+              <span className="font-medium text-ink flex items-center gap-2">
+                <Icon name="spinner" size={15} className="animate-spin text-ink" />
+                {uploadProgress !== null && uploadProgress >= 100
+                  ? "Processing media on server…"
+                  : `Uploading media… ${uploadProgress ?? 0}%`}
+              </span>
+              <span className="text-micro font-bold text-ink">{uploadProgress ?? 0}%</span>
+            </div>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-line/60">
+              <div
+                className="h-full bg-ink transition-all duration-150 rounded-full"
+                style={{ width: `${Math.max(5, uploadProgress ?? 0)}%` }}
+              />
+            </div>
+          </div>
+        )}
+
         {images.length === 0 ? (
           <p className="rounded-sm bg-surface px-3 py-6 text-center text-caption text-muted">
             No photos or videos yet.
@@ -158,7 +186,8 @@ export function ProductImages({
         ) : (
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {images.map((image, index) => {
-              const isVideo = /\.(mp4|webm|mov|ogg)($|\?)/i.test(image.url);
+              const cleanUrl = image.url.split("#")[0] ?? image.url;
+              const isVideo = /\.(mp4|webm|mov|ogg)($|\?)/i.test(cleanUrl);
               const parsed = parseFit(image.alt);
               const fitClass =
                 parsed.fit === "contain"
@@ -173,15 +202,34 @@ export function ProductImages({
                 <li key={image.id} className="flex flex-col gap-1.5">
                   <div className="relative aspect-square overflow-hidden rounded-sm border border-line bg-surface">
                     {isVideo ? (
-                      <div className="relative size-full bg-neutral-900">
+                      <div className="group/vid relative size-full bg-neutral-900">
                         <video
-                          src={image.url}
+                          src={`${cleanUrl}#t=0.5`}
+                          preload="metadata"
                           muted
                           loop
                           playsInline
+                          onLoadedMetadata={(e) => {
+                            if (e.currentTarget.currentTime < 0.1) {
+                              e.currentTarget.currentTime = 0.5;
+                            }
+                          }}
                           className={cn("size-full", fitClass)}
                         />
-                        <span className="absolute bottom-1.5 right-1.5 flex items-center gap-1 rounded-xs bg-black/75 px-1.5 py-0.5 text-micro font-medium text-white backdrop-blur-xs">
+                        {/* Play / Preview button overlay */}
+                        <button
+                          type="button"
+                          onClick={() => setPreviewVideoUrl(cleanUrl)}
+                          title="Click to preview video"
+                          className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover/vid:bg-black/40 transition-colors"
+                        >
+                          <span className="flex size-9 items-center justify-center rounded-full bg-black/80 text-white backdrop-blur-xs group-hover/vid:scale-110 group-hover/vid:bg-black transition-transform shadow-md">
+                            <svg className="size-4 fill-current ml-0.5" viewBox="0 0 24 24">
+                              <path d="M8 5v14l11-7z" />
+                            </svg>
+                          </span>
+                        </button>
+                        <span className="absolute bottom-1.5 right-1.5 flex items-center gap-1 rounded-xs bg-black/75 px-1.5 py-0.5 text-micro font-medium text-white backdrop-blur-xs pointer-events-none">
                           <svg className="size-2.5 fill-current" viewBox="0 0 24 24">
                             <path d="M8 5v14l11-7z" />
                           </svg>
@@ -190,7 +238,7 @@ export function ProductImages({
                       </div>
                     ) : (
                       <Image
-                        src={image.url}
+                        src={cleanUrl}
                         alt={image.alt ?? ""}
                         fill
                         sizes="(min-width: 640px) 25vw, 50vw"
@@ -321,9 +369,54 @@ export function ProductImages({
           className="self-start"
         >
           {!uploading && <Icon name="plus" size={16} />}
-          {uploading ? "Uploading…" : "Add photos or videos"}
+          {uploading
+            ? uploadProgress !== null && uploadProgress >= 100
+              ? "Processing…"
+              : `Uploading (${uploadProgress ?? 0}%)…`
+            : "Add photos or videos"}
         </Button>
       </div>
+
+      {previewVideoUrl && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-xs"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setPreviewVideoUrl(null);
+          }}
+        >
+          <div className="relative flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-neutral-950 shadow-2xl border border-white/10">
+            <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 text-white">
+              <div className="flex items-center gap-2">
+                <span className="flex size-6 items-center justify-center rounded-full bg-primary/20 text-primary">
+                  <svg className="size-3 fill-current ml-0.5" viewBox="0 0 24 24">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                </span>
+                <span className="text-caption font-semibold">Video Preview</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewVideoUrl(null)}
+                className="flex size-7 items-center justify-center rounded-full bg-white/10 text-white/80 hover:bg-white/20 hover:text-white transition-colors"
+                aria-label="Close preview"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="relative flex aspect-video max-h-[70vh] w-full items-center justify-center bg-black">
+              <video
+                src={previewVideoUrl}
+                controls
+                autoPlay
+                playsInline
+                className="max-h-full max-w-full"
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </Card>
   );
 }

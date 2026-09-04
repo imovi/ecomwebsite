@@ -121,10 +121,16 @@ export function Gallery({
               {isVideoMedia(src) ? (
                 <div className="relative size-full bg-neutral-900">
                   <video
-                    src={src}
-                    className="size-full object-cover pointer-events-none"
+                    src={`${src.split("#")[0]}#t=0.5`}
+                    preload="metadata"
                     muted
                     playsInline
+                    onLoadedMetadata={(e) => {
+                      if (e.currentTarget.currentTime < 0.1) {
+                        e.currentTarget.currentTime = 0.5;
+                      }
+                    }}
+                    className="size-full object-cover pointer-events-none"
                   />
                   <div className="absolute inset-0 flex items-center justify-center bg-black/25">
                     <span className="flex size-6 items-center justify-center rounded-full bg-white/90 text-ink shadow-xs">
@@ -188,12 +194,18 @@ export function Gallery({
                 {isVideo ? (
                   <>
                     <video
-                      src={src}
+                      src={`${src.split("#")[0]}#t=0.5`}
+                      preload="metadata"
                       muted
                       loop
                       playsInline
                       autoPlay={i === index}
                       controls
+                      onLoadedMetadata={(e) => {
+                        if (e.currentTarget.currentTime < 0.1 && i !== index) {
+                          e.currentTarget.currentTime = 0.5;
+                        }
+                      }}
                       className={cn("h-full w-full", fitClass)}
                     />
                     <button

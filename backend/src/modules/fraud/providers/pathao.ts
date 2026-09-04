@@ -45,9 +45,9 @@ export const pathao: FraudProvider = {
     let token: string | null = null;
 
     // 1. Direct Bearer token passed in identifier or secret
-    if (credentials.identifier.startsWith("eyJ") || credentials.identifier.length > 50) {
+    if (credentials.identifier.startsWith("eyJ")) {
       token = credentials.identifier.trim();
-    } else if (credentials.secret.startsWith("eyJ") || credentials.secret.length > 50) {
+    } else if (credentials.secret.startsWith("eyJ")) {
       token = credentials.secret.trim();
     }
 

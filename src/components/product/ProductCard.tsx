@@ -84,16 +84,14 @@ export function ProductCard({
               !available && "opacity-55",
             )}
           />
-        ) : isSocial && embed?.type === "youtube" && embed.videoId ? (
+        ) : isSocial && embed?.posterUrl ? (
           <div className="relative size-full">
-            <Image
-              src={`https://img.youtube.com/vi/${embed.videoId}/hqdefault.jpg`}
+            <img
+              src={embed.posterUrl}
               alt={product.title}
-              fill
-              sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 260px"
               loading={priority ? "eager" : "lazy"}
               className={cn(
-                "transition-transform duration-300 ease-out",
+                "size-full object-cover transition-transform duration-300 ease-out",
                 fitClass,
                 "group-hover:scale-[1.03] motion-reduce:transition-none motion-reduce:group-hover:scale-100",
                 !available && "opacity-55",

@@ -5,13 +5,14 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { cn } from "@/lib/utils";
 import { copy } from "@/lib/copy";
 import { useAutoAdvance } from "@/lib/hooks/use-auto-advance";
-import { parseVideoUrl } from "@/lib/video-embed";
+import { parseVideoUrl, type ParsedVideoInfo } from "@/lib/video-embed";
 
 interface GalleryProps {
   images: string[];
   title: string;
   /** When the selected variant changes, jump to its image. */
   activeIndex?: number;
+  resolvedVideos?: Record<string, ParsedVideoInfo>;
   /**
    * Drawn inside one frame, over its photo. Used to hold a second version of
    * the same shot — the lamp switched off — so it can be cross-faded in place.
@@ -49,12 +50,46 @@ export function Gallery({
   images,
   title,
   activeIndex,
+  resolvedVideos,
   renderFrameOverlay,
   renderOverlay,
 }: GalleryProps) {
   const railRef = useRef<HTMLDivElement>(null);
   const [index, setIndex] = useState(0);
   const [overrideFit, setOverrideFit] = useState<Record<number, "cover" | "contain">>({});
+  const [resolvedMap, setResolvedMap] = useState<Record<string, ParsedVideoInfo>>(
+    () => resolvedVideos ?? {},
+  );
+
+  // Sync resolvedVideos prop if updated
+  useEffect(() => {
+    if (resolvedVideos) {
+      setResolvedMap((prev) => ({ ...prev, ...resolvedVideos }));
+    }
+  }, [resolvedVideos]);
+
+  // Client-side auto-resolve fallback for any social videos (Instagram, TikTok, etc.)
+  useEffect(() => {
+    images.forEach((src) => {
+      const clean = src.split("#")[0] ?? src;
+      if (resolvedMap[clean]) return;
+
+      const parsed = parseVideoUrl(clean);
+      if (parsed && (parsed.type === "instagram" || parsed.type === "tiktok")) {
+        fetch(`/api/video/resolve?url=${encodeURIComponent(clean)}`)
+          .then((r) => r.json())
+          .then((res) => {
+            if (res.success && res.data) {
+              setResolvedMap((prev) => ({
+                ...prev,
+                [clean]: res.data,
+              }));
+            }
+          })
+          .catch(() => {});
+      }
+    });
+  }, [images, resolvedMap]);
   // Prevents the scroll handler from fighting a programmatic scroll.
   const jumpingRef = useRef(false);
 
@@ -118,12 +153,29 @@ export function Gallery({
               {isVideoMedia(src) ? (
                 (() => {
                   const clean = src.split("#")[0] ?? src;
-                  const embed = parseVideoUrl(clean);
-                  const isSocial = embed && embed.type !== "direct" && embed.type !== "unknown";
+                  const initialEmbed = parseVideoUrl(clean);
+                  const embed = resolvedMap[clean] ?? initialEmbed;
+                  const hasPoster = Boolean(embed?.posterUrl);
 
                   return (
-                    <div className="relative size-full bg-neutral-900 flex items-center justify-center">
-                      {isSocial ? (
+                    <div className="relative size-full bg-neutral-900 flex items-center justify-center overflow-hidden">
+                      {hasPoster ? (
+                        <>
+                          <img
+                            src={embed!.posterUrl}
+                            alt="Video Cover"
+                            className="size-full object-cover"
+                            loading="lazy"
+                          />
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/25">
+                            <span className="flex size-6 items-center justify-center rounded-full bg-white/90 text-ink shadow-xs">
+                              <svg className="size-3 fill-current ml-0.5" viewBox="0 0 24 24">
+                                <path d="M8 5v14l11-7z" />
+                              </svg>
+                            </span>
+                          </div>
+                        </>
+                      ) : embed && embed.type !== "direct" && embed.type !== "unknown" ? (
                         <div className="flex flex-col items-center justify-center p-1 text-center">
                           <span className="text-micro font-bold text-white uppercase tracking-tight">
                             {embed.platformName.replace(" Video", "").replace(" Reel", "")}
@@ -210,12 +262,56 @@ export function Gallery({
                     : "object-cover object-center";
 
             const cleanMediaUrl = src.split("#")[0] ?? src;
-            const embed = isVideo ? parseVideoUrl(cleanMediaUrl) : null;
-            const isSocial = embed && embed.type !== "direct" && embed.type !== "unknown";
+            const initialEmbed = isVideo ? parseVideoUrl(cleanMediaUrl) : null;
+            const embed = resolvedMap[cleanMediaUrl] ?? initialEmbed;
+            const isDirect = embed?.type === "direct";
+            const isSocial = embed && !isDirect && embed.type !== "unknown";
 
             return (
               <div key={src} className="snap-item relative h-full w-full overflow-hidden bg-neutral-950">
-                {isSocial ? (
+                {isDirect ? (
+                  <>
+                    <video
+                      src={embed.embedUrl}
+                      poster={embed.posterUrl}
+                      preload="metadata"
+                      muted
+                      loop
+                      playsInline
+                      autoPlay={i === index}
+                      controls
+                      onLoadedMetadata={(e) => {
+                        if (e.currentTarget.currentTime < 0.1 && i !== index) {
+                          e.currentTarget.currentTime = 0.5;
+                        }
+                      }}
+                      className={cn(
+                        "h-full w-full",
+                        embed.isVertical ? "object-contain bg-black" : fitClass,
+                      )}
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setOverrideFit((prev) => ({
+                          ...prev,
+                          [i]: activeFit === "contain" ? "cover" : "contain",
+                        }))
+                      }
+                      title={activeFit === "contain" ? "Crop to 1:1 frame" : "Show full video"}
+                      className="absolute bottom-3 left-3 z-10 flex items-center gap-1.5 rounded-full bg-black/75 px-2.5 py-1 text-micro font-medium text-white backdrop-blur-xs hover:bg-black/90 transition-colors shadow-xs"
+                    >
+                      <svg className="size-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        {activeFit === "contain" ? (
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4h16v16H4z" />
+                        ) : (
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                        )}
+                      </svg>
+                      <span>{activeFit === "contain" ? "1:1 Frame" : "Full View"}</span>
+                    </button>
+                  </>
+                ) : isSocial ? (
                   <div className="relative size-full flex items-center justify-center bg-black">
                     <iframe
                       src={embed.embedUrl}
@@ -334,12 +430,29 @@ export function Gallery({
               {isVideoMedia(src) ? (
                 (() => {
                   const clean = src.split("#")[0] ?? src;
-                  const embed = parseVideoUrl(clean);
-                  const isSocial = embed && embed.type !== "direct" && embed.type !== "unknown";
+                  const initialEmbed = parseVideoUrl(clean);
+                  const embed = resolvedMap[clean] ?? initialEmbed;
+                  const hasPoster = Boolean(embed?.posterUrl);
 
                   return (
-                    <div className="relative size-full bg-neutral-900 flex items-center justify-center">
-                      {isSocial ? (
+                    <div className="relative size-full bg-neutral-900 flex items-center justify-center overflow-hidden">
+                      {hasPoster ? (
+                        <>
+                          <img
+                            src={embed!.posterUrl}
+                            alt="Video Cover"
+                            className="size-full object-cover"
+                            loading="lazy"
+                          />
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/25">
+                            <span className="flex size-4 items-center justify-center rounded-full bg-white/90 text-ink">
+                              <svg className="size-2 fill-current ml-0.5" viewBox="0 0 24 24">
+                                <path d="M8 5v14l11-7z" />
+                              </svg>
+                            </span>
+                          </div>
+                        </>
+                      ) : embed && embed.type !== "direct" && embed.type !== "unknown" ? (
                         <div className="flex flex-col items-center justify-center p-0.5 text-center">
                           <span className="text-[9px] font-bold text-white uppercase tracking-tight leading-none">
                             {embed.platformName.replace(" Video", "").replace(" Reel", "").slice(0, 5)}

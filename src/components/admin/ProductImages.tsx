@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { adminApi, AdminApiError } from "@/lib/admin/client";
 import { toast } from "@/lib/stores/toast-store";
@@ -9,7 +9,7 @@ import type { ApiProductImage } from "@/lib/api/types";
 import { Card, CardHeader, ErrorBanner } from "./ui";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
-import { parseVideoUrl } from "@/lib/video-embed";
+import { parseVideoUrl, type ParsedVideoInfo } from "@/lib/video-embed";
 
 /**
  * Product photos.
@@ -42,6 +42,29 @@ export function ProductImages({
   const [addingLink, setAddingLink] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [resolvedMap, setResolvedMap] = useState<Record<string, ParsedVideoInfo>>({});
+
+  useEffect(() => {
+    images.forEach((image) => {
+      const fullUrl = image.url.split("#")[0] ?? image.url;
+      if (resolvedMap[fullUrl]) return;
+
+      const parsed = parseVideoUrl(fullUrl);
+      if (parsed && (parsed.type === "instagram" || parsed.type === "tiktok")) {
+        fetch(`/api/video/resolve?url=${encodeURIComponent(fullUrl)}`)
+          .then((r) => r.json())
+          .then((res) => {
+            if (res.success && res.data) {
+              setResolvedMap((prev) => ({
+                ...prev,
+                [fullUrl]: res.data,
+              }));
+            }
+          })
+          .catch(() => {});
+      }
+    });
+  }, [images, resolvedMap]);
 
   async function handleFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
@@ -220,12 +243,15 @@ export function ProductImages({
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {images.map((image, index) => {
               const cleanUrl = (image.url.split("#")[0] ?? image.url).split("?")[0] ?? image.url;
-              const parsedEmbed = parseVideoUrl(image.url);
-              const isDirectVideo = /\.(mp4|webm|mov|ogg)($|\?)/i.test(cleanUrl);
+              const fullUrl = image.url.split("#")[0] ?? image.url;
+              const initialEmbed = parseVideoUrl(fullUrl);
+              const embed = resolvedMap[fullUrl] ?? initialEmbed;
+              const isDirectVideo =
+                /\.(mp4|webm|mov|ogg)($|\?)/i.test(cleanUrl) || embed?.type === "direct";
               const isSocialVideo =
-                parsedEmbed !== null &&
-                parsedEmbed.type !== "direct" &&
-                parsedEmbed.type !== "unknown";
+                embed !== null &&
+                embed.type !== "direct" &&
+                embed.type !== "unknown";
               const parsed = parseFit(image.alt);
               const fitClass =
                 parsed.fit === "contain"
@@ -236,10 +262,37 @@ export function ProductImages({
                       ? "object-cover object-bottom"
                       : "object-cover object-center";
 
+              const videoPlaybackUrl = embed?.embedUrl || image.url;
+              const hasPoster = Boolean(embed?.posterUrl);
+
               return (
                 <li key={image.id} className="flex flex-col gap-1.5">
                   <div className="relative aspect-square overflow-hidden rounded-sm border border-line bg-surface">
-                    {isDirectVideo ? (
+                    {hasPoster ? (
+                      <div className="group/vid relative size-full bg-neutral-950 text-white overflow-hidden">
+                        <img
+                          src={embed!.posterUrl}
+                          alt={image.alt ?? "Video Cover"}
+                          className="size-full object-cover"
+                          loading="lazy"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setPreviewVideoUrl(videoPlaybackUrl)}
+                          title={`Click to preview ${embed!.platformName}`}
+                          className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover/vid:bg-black/40 transition-colors"
+                        >
+                          <span className="flex size-9 items-center justify-center rounded-full bg-red-600 text-white shadow-md group-hover/vid:scale-110 transition-transform">
+                            <svg className="size-4 fill-current ml-0.5" viewBox="0 0 24 24">
+                              <path d="M8 5v14l11-7z" />
+                            </svg>
+                          </span>
+                        </button>
+                        <span className="absolute bottom-1.5 right-1.5 flex items-center gap-1 rounded-xs bg-black/80 px-1.5 py-0.5 text-micro font-medium text-white backdrop-blur-xs pointer-events-none">
+                          {embed!.platformName}
+                        </span>
+                      </div>
+                    ) : isDirectVideo ? (
                       <div className="group/vid relative size-full bg-neutral-900">
                         <video
                           src={`${image.url.split("#")[0]}#t=0.5`}
@@ -257,7 +310,7 @@ export function ProductImages({
                         {/* Play / Preview button overlay */}
                         <button
                           type="button"
-                          onClick={() => setPreviewVideoUrl(image.url)}
+                          onClick={() => setPreviewVideoUrl(videoPlaybackUrl)}
                           title="Click to preview video"
                           className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover/vid:bg-black/40 transition-colors"
                         >
@@ -276,36 +329,26 @@ export function ProductImages({
                       </div>
                     ) : isSocialVideo ? (
                       <div className="group/vid relative size-full flex flex-col items-center justify-center bg-neutral-950 text-white overflow-hidden">
-                        {parsedEmbed?.type === "youtube" && parsedEmbed.videoId ? (
-                          <Image
-                            src={`https://img.youtube.com/vi/${parsedEmbed.videoId}/hqdefault.jpg`}
-                            alt={image.alt ?? "YouTube Video"}
-                            fill
-                            sizes="(min-width: 640px) 25vw, 50vw"
-                            className="object-cover"
-                          />
-                        ) : (
-                          <div
-                            className={cn(
-                              "absolute inset-0 flex flex-col items-center justify-center p-2 text-center",
-                              parsedEmbed?.type === "facebook"
-                                ? "bg-gradient-to-br from-blue-700 to-blue-950"
-                                : parsedEmbed?.type === "instagram"
-                                  ? "bg-gradient-to-br from-purple-700 via-pink-600 to-amber-600"
-                                  : parsedEmbed?.type === "tiktok"
-                                    ? "bg-neutral-900"
-                                    : "bg-neutral-900",
-                            )}
-                          >
-                            <span className="text-micro font-bold uppercase tracking-wider text-white/90">
-                              {parsedEmbed?.platformName}
-                            </span>
-                          </div>
-                        )}
+                        <div
+                          className={cn(
+                            "absolute inset-0 flex flex-col items-center justify-center p-2 text-center",
+                            embed?.type === "facebook"
+                              ? "bg-gradient-to-br from-blue-700 to-blue-950"
+                              : embed?.type === "instagram"
+                                ? "bg-gradient-to-br from-purple-700 via-pink-600 to-amber-600"
+                                : embed?.type === "tiktok"
+                                  ? "bg-neutral-900"
+                                  : "bg-neutral-900",
+                          )}
+                        >
+                          <span className="text-micro font-bold uppercase tracking-wider text-white/90">
+                            {embed?.platformName}
+                          </span>
+                        </div>
                         <button
                           type="button"
-                          onClick={() => setPreviewVideoUrl(image.url)}
-                          title={`Click to preview ${parsedEmbed?.platformName}`}
+                          onClick={() => setPreviewVideoUrl(videoPlaybackUrl)}
+                          title={`Click to preview ${embed?.platformName}`}
                           className="absolute inset-0 flex items-center justify-center bg-black/30 group-hover/vid:bg-black/50 transition-colors"
                         >
                           <span className="flex size-9 items-center justify-center rounded-full bg-red-600 text-white shadow-md group-hover/vid:scale-110 transition-transform">
@@ -315,7 +358,7 @@ export function ProductImages({
                           </span>
                         </button>
                         <span className="absolute bottom-1.5 right-1.5 flex items-center gap-1 rounded-xs bg-black/80 px-1.5 py-0.5 text-micro font-medium text-white backdrop-blur-xs pointer-events-none">
-                          {parsedEmbed?.platformName}
+                          {embed?.platformName}
                         </span>
                       </div>
                     ) : (
@@ -553,11 +596,12 @@ export function ProductImages({
 
       {/* Video Preview Modal */}
       {previewVideoUrl && (() => {
-        const previewEmbed = parseVideoUrl(previewVideoUrl);
-        const isSocial =
-          previewEmbed !== null &&
-          previewEmbed.type !== "direct" &&
-          previewEmbed.type !== "unknown";
+        const previewEmbed = resolvedMap[previewVideoUrl] ?? parseVideoUrl(previewVideoUrl);
+        const isDirect =
+          previewVideoUrl.includes(".mp4") ||
+          previewEmbed?.type === "direct" ||
+          /\.(mp4|webm|mov|ogg)($|\?)/i.test(previewVideoUrl);
+        const isSocial = !isDirect && previewEmbed !== null && previewEmbed.type !== "unknown";
 
         return (
           <div

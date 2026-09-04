@@ -13,7 +13,7 @@ import { Icon } from "@/components/ui/Icon";
 import { ProductPurchase } from "@/components/product/ProductPurchase";
 import { ProductRail } from "@/components/product/ProductCard";
 import { ProductVideoInline } from "@/components/product/ProductVideoInline";
-import { resolveDirectVideoUrl } from "@/lib/video-embed";
+import { parseVideoUrl, resolveDirectVideoUrl, type ParsedVideoInfo } from "@/lib/video-embed";
 
 /** Statically rendered, refreshed every 5 minutes. Prices and stock still get
  *  re-validated server-side at order placement, so a slightly stale page can
@@ -62,6 +62,16 @@ export default async function ProductPage({
   const inStock = totalStock(product) > 0;
   const videoInfo = product.videoUrl ? await resolveDirectVideoUrl(product.videoUrl) : null;
 
+  const resolvedGalleryVideos: Record<string, ParsedVideoInfo> = {};
+  for (const img of product.images) {
+    const clean = img.split("#")[0] ?? img;
+    const parsed = parseVideoUrl(clean);
+    if (parsed && (parsed.type === "instagram" || parsed.type === "direct")) {
+      const resolved = await resolveDirectVideoUrl(clean);
+      if (resolved) resolvedGalleryVideos[clean] = resolved;
+    }
+  }
+
   /* Product structured data. Reviews are deliberately absent from the store,
      so no aggregateRating is emitted — claiming one without reviews is exactly
      the kind of thing that gets rich results revoked. */
@@ -98,7 +108,7 @@ export default async function ProductPage({
       />
 
       <Container className="pb-10 pt-5">
-        <ProductPurchase product={product} />
+        <ProductPurchase product={product} resolvedVideos={resolvedGalleryVideos} />
       </Container>
 
       <Container className="flex flex-col gap-8 pb-4">

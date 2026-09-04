@@ -5,6 +5,7 @@ export interface ParsedVideoInfo {
   originalUrl: string;
   videoId?: string;
   platformName: string;
+  posterUrl?: string;
 }
 
 export function parseVideoUrl(url: string | null | undefined): ParsedVideoInfo | null {
@@ -23,6 +24,7 @@ export function parseVideoUrl(url: string | null | undefined): ParsedVideoInfo |
       originalUrl: trimmed,
       videoId,
       platformName: "YouTube Shorts",
+      posterUrl: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
     };
   }
 
@@ -39,6 +41,7 @@ export function parseVideoUrl(url: string | null | undefined): ParsedVideoInfo |
       originalUrl: trimmed,
       videoId,
       platformName: "YouTube",
+      posterUrl: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
     };
   }
 
@@ -145,17 +148,25 @@ export async function resolveDirectVideoUrl(
 
       if (res.ok) {
         const html = await res.text();
-        const match = html.match(/\\"video_url\\":\\"([^"\\]*(?:\\.[^"\\]*)*)\\"/);
-        if (match) {
-          const directUrl = JSON.parse(`"${match[1]}"`).replace(/\\\//g, "/");
-          if (directUrl && directUrl.startsWith("http")) {
-            return {
-              ...parsed,
-              type: "direct",
-              embedUrl: directUrl,
-              isVertical: true,
-            };
-          }
+        const vMatch = html.match(/\\"video_url\\":\\"([^"\\]*(?:\\.[^"\\]*)*)\\"/);
+        const dMatch = html.match(/\\"display_url\\":\\"([^"\\]*(?:\\.[^"\\]*)*)\\"/);
+        
+        const directUrl = vMatch ? JSON.parse(`"${vMatch[1]}"`).replace(/\\\//g, "/") : null;
+        const posterUrl = dMatch ? JSON.parse(`"${dMatch[1]}"`).replace(/\\\//g, "/") : null;
+
+        if (directUrl && directUrl.startsWith("http")) {
+          return {
+            ...parsed,
+            type: "direct",
+            embedUrl: directUrl,
+            posterUrl: posterUrl ?? undefined,
+            isVertical: true,
+          };
+        } else if (posterUrl && posterUrl.startsWith("http")) {
+          return {
+            ...parsed,
+            posterUrl: posterUrl,
+          };
         }
       }
     } catch {

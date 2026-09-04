@@ -27,6 +27,8 @@ import { StickyBuyBar } from "./StickyBuyBar";
 import { VariantPicker } from "./VariantPicker";
 import { ProductLiveBadge } from "./ProductLiveBadge";
 
+import type { ParsedVideoInfo } from "@/lib/video-embed";
+
 type Selection = Partial<Record<VariantOptionName, string>>;
 
 /**
@@ -37,7 +39,13 @@ type Selection = Partial<Record<VariantOptionName, string>>;
  * storage option has to move the price, the gallery, the stock line and the
  * button's enabled state together, atomically.
  */
-export function ProductPurchase({ product }: { product: Product }) {
+export function ProductPurchase({
+  product,
+  resolvedVideos,
+}: {
+  product: Product;
+  resolvedVideos?: Record<string, ParsedVideoInfo>;
+}) {
   const router = useRouter();
   const addItem = useCartStore((s) => s.addItem);
   const startBuyNow = useCartStore((s) => s.startBuyNow);
@@ -221,6 +229,7 @@ export function ProductPurchase({ product }: { product: Product }) {
             images={product.images}
             title={product.title}
             activeIndex={variant?.imageIndex}
+            resolvedVideos={resolvedVideos}
             {...(lit
               ? {
                   renderFrameOverlay: (i: number) => (

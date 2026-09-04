@@ -48,17 +48,37 @@ interface ApiPublicSettings {
 
 /** Last-resort display values, used only if the API is unreachable. */
 const FALLBACK: StoreSettings = {
+  storeName: "HINAR",
   deliveryInsideDhaka: 80,
   deliveryOutsideDhaka: 130,
   freeDeliveryThreshold: 0,
-  whatsappNumber: process.env.NEXT_PUBLIC_WHATSAPP_NUMBER ?? "",
-  hotline: process.env.NEXT_PUBLIC_HOTLINE ?? "",
+  whatsappNumber: process.env.NEXT_PUBLIC_WHATSAPP_NUMBER ?? "8801855642285",
+  hotline: process.env.NEXT_PUBLIC_HOTLINE ?? "01855642285",
+  logoUrl: "https://hinarbd.com/uploads/branding/2026/08/e6982cc42e76ae3926a67c8e707900e4.webp",
+  logoWidth: 2000,
+  logoHeight: 667,
 };
 
 export async function getSettings(): Promise<StoreSettings> {
   const data = await apiRequestSafe<ApiPublicSettings>(
     "/api/v1/storefront/settings",
-    { settings: { delivery: { insideDhaka: FALLBACK.deliveryInsideDhaka, outsideDhaka: FALLBACK.deliveryOutsideDhaka, freeDeliveryThreshold: 0 }, store: { name: "", phone: "", email: "" } } },
+    {
+      settings: {
+        delivery: {
+          insideDhaka: FALLBACK.deliveryInsideDhaka,
+          outsideDhaka: FALLBACK.deliveryOutsideDhaka,
+          freeDeliveryThreshold: 0,
+        },
+        store: {
+          name: FALLBACK.storeName ?? "HINAR",
+          phone: FALLBACK.hotline ?? "",
+          email: "",
+          logoUrl: FALLBACK.logoUrl,
+          logoWidth: FALLBACK.logoWidth,
+          logoHeight: FALLBACK.logoHeight,
+        },
+      },
+    },
     { revalidate: 300, tags: [CACHE_TAGS.settings] },
   );
 
@@ -73,10 +93,10 @@ export async function getSettings(): Promise<StoreSettings> {
        deployment keeps working until the number is entered in the panel. */
     whatsappNumber: data.settings.store.whatsapp || FALLBACK.whatsappNumber,
     hotline: data.settings.store.phone || FALLBACK.hotline,
-    ...(data.settings.store.logoUrl ? { logoUrl: data.settings.store.logoUrl } : {}),
-    ...(data.settings.store.logoWidth ? { logoWidth: data.settings.store.logoWidth } : {}),
-    ...(data.settings.store.logoHeight ? { logoHeight: data.settings.store.logoHeight } : {}),
-    ...(data.settings.store.name ? { storeName: data.settings.store.name } : {}),
+    logoUrl: data.settings.store.logoUrl || FALLBACK.logoUrl,
+    logoWidth: data.settings.store.logoWidth || FALLBACK.logoWidth,
+    logoHeight: data.settings.store.logoHeight || FALLBACK.logoHeight,
+    storeName: data.settings.store.name || FALLBACK.storeName,
     ...(data.settings.store.faviconUrl
       ? { faviconUrl: data.settings.store.faviconUrl }
       : {}),

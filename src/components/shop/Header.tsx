@@ -52,11 +52,7 @@ export async function Header() {
             href="/"
             className={cn(
               "flex shrink-0 items-center justify-center",
-              /* With no logo the link would collapse to zero width and the
-                 header would lose its route home entirely. A small invisible
-                 target keeps the top-left corner clickable — which is where
-                 people reach for "home" by habit — without drawing anything. */
-              !settings.logoUrl && "size-10",
+              !settings.logoUrl && "min-h-10",
             )}
             aria-label={`${shopName} — ${copy.nav.home}`}
           >
@@ -81,15 +77,7 @@ export async function Header() {
                 className="h-auto max-h-10 w-auto max-w-[140px] object-contain object-center sm:max-w-[180px]"
               />
             ) : (
-              /* No logo means NO logo. This used to fall back to the shop name
-                 as a wordmark, which read as "the logo would not delete" to
-                 anyone who had just removed one.
-
-                 The name is kept for screen readers and stays the link's
-                 accessible label, so the header still has a working route home
-                 — the link is simply given a tap target rather than a visible
-                 mark, since a zero-width link cannot be clicked. */
-              <span className="sr-only">{shopName}</span>
+              <span className="text-xl font-extrabold tracking-wider text-ink">{shopName}</span>
             )}
           </Link>
 

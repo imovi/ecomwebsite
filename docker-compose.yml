@@ -133,6 +133,12 @@ services:
     # one at a time for exactly this reason, so the ceiling is comfortable.
     mem_limit: 1500m
     mem_reservation: 384m
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
 
   web:
     build:
@@ -168,7 +174,8 @@ services:
         NEXT_DEPLOYMENT_ID: ${DEPLOYMENT_ID:-dev}
     restart: unless-stopped
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     environment:
       NODE_ENV: production
       # Same reason as the API: Node reads the host's memory, not the container

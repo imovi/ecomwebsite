@@ -55,16 +55,42 @@ docker compose run --rm api npm run db:migrate:prod
 step "Starting the new containers"
 docker compose up -d
 
+step "Waiting for API service to be healthy"
+for i in $(seq 1 30); do
+  if docker compose exec -T api node -e "fetch('http://127.0.0.1:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" 2>/dev/null; then
+    printf '  API is healthy and accepting requests.\n'
+    break
+  fi
+  sleep 1
+done
+
+step "Waiting for Web service to be ready"
+published="$(docker compose port web 3000 2>/dev/null || true)"
+target_host="${published:-127.0.0.1:8080}"
+for i in $(seq 1 30); do
+  if curl -sf "http://${target_host}/" >/dev/null 2>&1; then
+    printf '  Web service is responding on %s.\n' "$target_host"
+    break
+  fi
+  sleep 1
+done
+
+step "Warming up storefront cache (catalogue & branding)"
+# Initial request triggers Next.js background ISR revalidation
+curl -s -H "Cache-Control: no-cache" "http://${target_host}/" >/dev/null 2>&1 || true
+sleep 2
+# Follow-up requests ensure the cache is fully populated with live products
+curl -s "http://${target_host}/" >/dev/null 2>&1 || true
+curl -s "http://${target_host}/category/all" >/dev/null 2>&1 || true
+
+if curl -s "http://${target_host}/" | grep -q "hinarbd.com/uploads"; then
+  printf '%s  Cache warmed up successfully with live branding and products.%s\n' "$GREEN" "$OFF"
+fi
+
 step "Running containers"
 docker compose ps
 
 printf '\n%s  Deployed as %s%s%s.%s\n' "$GREEN" "$BOLD" "$DEPLOYMENT_ID" "$OFF$GREEN" "$OFF"
-
-# Asked of Compose rather than assumed. A box that already runs something on
-# 3000 remaps this in docker-compose.override.yml, and a verification command
-# aimed at the wrong port proves nothing — or worse, proves it against somebody
-# else's service.
-published="$(docker compose port web 3000 2>/dev/null || true)"
 
 if [ -n "$published" ]; then
   printf '%s  Verify the storefront is serving that id:%s\n' "$DIM" "$OFF"

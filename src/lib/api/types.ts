@@ -409,7 +409,11 @@ export type ApiOrderStatus =
 export interface ApiCouponQuote {
   code: string;
   applied: boolean;
-  /** The delivery charge it removed. 0 when delivery was already free. */
+  discountType?: "free_delivery" | "fixed" | "percentage";
+  discountValue?: number;
+  deliverySaved?: number;
+  discountSaved?: number;
+  /** The delivery or subtotal discount it removed. */
   saved: number;
   reason?: "unknown" | "used" | "expired" | "cancelled";
   message?: string;
@@ -426,6 +430,7 @@ export interface ApiQuote {
     lineTotal: number;
   }[];
   subtotal: number;
+  discount: number;
   deliveryCharge: number;
   grandTotal: number;
   deliveryZone: ApiDeliveryZone | null;
@@ -458,6 +463,7 @@ export interface ApiOrderConfirmation {
   status: ApiOrderStatus;
   paymentMethod: "cod";
   subtotal: number;
+  discount: number;
   deliveryCharge: number;
   grandTotal: number;
   items: ApiOrderItem[];
@@ -526,6 +532,7 @@ export interface ApiOrderListItem {
   status: ApiOrderStatus;
   paymentMethod: "cod";
   subtotal: number;
+  discount: number;
   deliveryCharge: number;
   grandTotal: number;
   itemCount: number;

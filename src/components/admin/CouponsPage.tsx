@@ -34,6 +34,7 @@ type CouponState = "active" | "used" | "expired" | "cancelled";
 interface CouponUse {
   orderNumber: string;
   deliverySaved: number;
+  discountSaved?: number;
   at: string;
 }
 
@@ -41,6 +42,8 @@ interface Coupon {
   id: string;
   code: string;
   state: CouponState;
+  discountType: "free_delivery" | "fixed" | "percentage";
+  discountValue: number;
   cartValue: number;
   note: string;
   maxUses: number | null;
@@ -207,6 +210,7 @@ export function CouponsPage() {
                 <thead>
                   <tr className="border-b border-line text-left text-muted">
                     <th className="px-4 py-2 font-medium">Code</th>
+                    <th className="px-4 py-2 font-medium">Discount</th>
                     <th className="px-4 py-2 font-medium">Note / purpose</th>
                     <th className="px-4 py-2 font-medium">State</th>
                     <th className="px-4 py-2 text-right font-medium">Used</th>
@@ -254,6 +258,15 @@ function CouponRow({
         <td className="tnum px-4 py-2.5 text-body font-semibold tracking-wider text-ink">
           {coupon.code}
         </td>
+        <td className="px-4 py-2.5 font-medium">
+          {coupon.discountType === "free_delivery" ? (
+            <span className="text-positive">Free delivery</span>
+          ) : coupon.discountType === "fixed" ? (
+            <span className="text-ink">{formatTaka(coupon.discountValue)} off</span>
+          ) : (
+            <span className="text-ink">{coupon.discountValue}% off</span>
+          )}
+        </td>
         <td className="px-4 py-2.5 text-ink-soft">
           {coupon.note || (coupon.phone ? <span className="tnum">{coupon.phone}</span> : null) || (
             <span className="text-muted">—</span>
@@ -295,7 +308,7 @@ function CouponRow({
 
       {open && coupon.uses.length > 0 && (
         <tr className="border-b border-line last:border-0">
-          <td colSpan={6} className="bg-surface px-4 py-3">
+          <td colSpan={7} className="bg-surface px-4 py-3">
             <p className="mb-1 text-micro uppercase tracking-wide text-muted">
               Spent on
             </p>
@@ -307,7 +320,7 @@ function CouponRow({
                 >
                   <span className="tnum text-ink">{use.orderNumber || "order removed"}</span>
                   <span className="text-muted">
-                    {offerDeadline(use.at)} · cost you {formatTaka(use.deliverySaved)}
+                    {offerDeadline(use.at)} · saved {formatTaka(use.deliverySaved + (use.discountSaved ?? 0))}
                   </span>
                 </li>
               ))}
@@ -334,6 +347,8 @@ function MakeOne({
 }) {
   const [note, setNote] = useState("");
   const [code, setCode] = useState("");
+  const [discountType, setDiscountType] = useState<"free_delivery" | "fixed" | "percentage">("free_delivery");
+  const [discountValue, setDiscountValue] = useState("100");
   const [amount, setAmount] = useState("1");
   const [unit, setUnit] = useState<"hours" | "days">("days");
   const [uses, setUses] = useState("1");
@@ -343,6 +358,10 @@ function MakeOne({
     const hours = unit === "days" ? Number(amount) * 24 : Number(amount);
 
     const body: Record<string, unknown> = {
+      discountType,
+      ...(discountType !== "free_delivery" && Number(discountValue) > 0
+        ? { discountValue: Math.round(Number(discountValue)) }
+        : {}),
       ...(note.trim() ? { note: note.trim() } : {}),
       ...(code.trim() ? { code: code.trim() } : {}),
       ...(Number.isFinite(hours) && hours > 0 ? { validHours: Math.round(hours) } : {}),
@@ -361,11 +380,11 @@ function MakeOne({
     <Card>
       <CardHeader
         title="Make a coupon"
-        hint="Free delivery — on your own terms, for anyone, whether or not they are in the abandoned list"
+        hint="Free delivery or custom discount — on your own terms, for anyone, whether or not they are in the abandoned list"
       />
 
       <div className="p-4 pt-0">
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Input
             label="Note / purpose"
             value={note}
@@ -386,6 +405,36 @@ function MakeOne({
             hint="Letters, numbers and dashes."
             className="tnum uppercase"
           />
+
+          <Select
+            label="Discount type"
+            value={discountType}
+            onChange={(event) =>
+              setDiscountType(event.target.value as "free_delivery" | "fixed" | "percentage")
+            }
+            hint="Free delivery or custom amount."
+          >
+            <option value="free_delivery">Free delivery</option>
+            <option value="fixed">Fixed discount (৳)</option>
+            <option value="percentage">Percentage discount (%)</option>
+          </Select>
+
+          {discountType !== "free_delivery" && (
+            <Input
+              label={discountType === "fixed" ? "Discount amount (৳)" : "Discount percentage (%)"}
+              type="number"
+              min={1}
+              max={discountType === "percentage" ? 100 : undefined}
+              step={1}
+              value={discountValue}
+              onChange={(event) => setDiscountValue(event.target.value)}
+              hint={
+                discountType === "fixed"
+                  ? "Amount in taka deducted from subtotal."
+                  : "Percentage of subtotal deducted (1-100%)."
+              }
+            />
+          )}
 
           <div className="flex items-end gap-2">
             <Input
@@ -437,9 +486,13 @@ function MakeOne({
               because a 50-use code is not one delivery charge — it is fifty,
               and that is the number worth seeing before pressing Create. */}
           <p className="text-caption text-muted">
-            {uses === "unlimited"
-              ? "No limit means no ceiling on what this costs you. Give it a deadline you are comfortable with."
-              : `Each use costs you one delivery charge — up to ${uses} of them.`}
+            {discountType === "free_delivery"
+              ? uses === "unlimited"
+                ? "No limit means no ceiling on what this costs you. Give it a deadline you are comfortable with."
+                : `Each use costs you one delivery charge — up to ${uses} of them.`
+              : discountType === "fixed"
+                ? `Each use deducts ৳${discountValue || 0} from the total — up to ${uses === "unlimited" ? "unlimited" : uses} uses.`
+                : `Each use deducts ${discountValue || 0}% from the subtotal — up to ${uses === "unlimited" ? "unlimited" : uses} uses.`}
           </p>
         </div>
 
@@ -457,6 +510,12 @@ function MakeOne({
                 {minted.code}
               </p>
               <p className="text-micro text-muted">
+                {minted.discountType === "free_delivery"
+                  ? "Free delivery"
+                  : minted.discountType === "fixed"
+                    ? `${formatTaka(minted.discountValue)} off`
+                    : `${minted.discountValue}% off`}
+                {" · "}
                 {minted.maxUses === null ? "No use limit" : `Up to ${minted.maxUses} use${minted.maxUses === 1 ? "" : "s"}`}
                 {" · runs out "}
                 {offerDeadline(minted.expiresAt)}

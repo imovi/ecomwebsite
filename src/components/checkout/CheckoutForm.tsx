@@ -247,6 +247,7 @@ export function CheckoutForm({ settings }: { settings: StoreSettings }) {
 
   const [quote, setQuote] = useState<{
     subtotal: number;
+    discount: number;
     deliveryCharge: number;
     grandTotal: number;
     amountToFreeDelivery: number;
@@ -255,6 +256,7 @@ export function CheckoutForm({ settings }: { settings: StoreSettings }) {
   const [pricing, setPricing] = useState(false);
 
   const subtotal = quote?.subtotal ?? localSubtotal;
+  const discount = quote?.discount ?? 0;
   const deliveryCharge = quote?.deliveryCharge ?? 0;
   const total = quote?.grandTotal ?? localSubtotal;
   const freeDeliveryRemaining = quote?.amountToFreeDelivery ?? 0;
@@ -295,6 +297,7 @@ export function CheckoutForm({ settings }: { settings: StoreSettings }) {
         if (result.ok) {
           setQuote({
             subtotal: result.subtotal,
+            discount: result.discount,
             deliveryCharge: result.deliveryCharge,
             grandTotal: result.grandTotal,
             amountToFreeDelivery: result.amountToFreeDelivery,
@@ -612,6 +615,7 @@ export function CheckoutForm({ settings }: { settings: StoreSettings }) {
         <OrderSummary
           lines={lines}
           subtotal={subtotal}
+          discount={discount}
           deliveryCharge={deliveryCharge}
           total={total}
           zoneChosen={zone !== null}

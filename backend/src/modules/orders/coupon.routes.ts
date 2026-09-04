@@ -72,6 +72,10 @@ const createSchema = z
      * not get an unlimited coupon out of it.
      */
     maxUses: z.union([z.coerce.number().int().min(1).max(10000), z.null()]).optional(),
+
+    /** Discount type: free_delivery, fixed (taka), or percentage (%). Defaults to free_delivery. */
+    discountType: z.enum(["free_delivery", "fixed", "percentage"]).default("free_delivery"),
+    discountValue: z.coerce.number().int().min(0).default(0),
   })
   .strict();
 
@@ -102,6 +106,8 @@ const create: RequestHandler = async (req, res) => {
     ...(body.code ? { code: body.code } : {}),
     ...(body.validHours ? { validHours: body.validHours } : {}),
     ...(body.maxUses !== undefined ? { maxUses: body.maxUses } : {}),
+    discountType: body.discountType,
+    discountValue: body.discountValue,
     actor: { adminId: req.auth?.adminId ?? null, name: req.auth?.email ?? "Admin" },
   });
 

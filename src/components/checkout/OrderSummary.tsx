@@ -35,6 +35,7 @@ import { Icon } from "@/components/ui/Icon";
 export function OrderSummary({
   lines,
   subtotal,
+  discount = 0,
   deliveryCharge,
   total,
   zoneChosen,
@@ -44,6 +45,7 @@ export function OrderSummary({
 }: {
   lines: ResolvedLine[];
   subtotal: number;
+  discount?: number;
   deliveryCharge: number;
   total: number;
   zoneChosen: boolean;
@@ -99,6 +101,10 @@ export function OrderSummary({
         )}
       >
         <Row label={copy.checkout.productSubtotal} value={formatTaka(subtotal)} />
+
+        {discount > 0 && (
+          <Row label="Discount" value={`-${formatTaka(discount)}`} tone="positive" />
+        )}
 
         <Row
           label={copy.checkout.deliveryCharge}
@@ -231,7 +237,9 @@ export function CouponField({ applied, result, onApply, onRemove, busy }: Coupon
             {copy.checkout.couponApplied(applied)}
             {result.saved > 0 && (
               <span className="block text-caption font-normal">
-                Free delivery — you save {formatTaka(result.saved)}.
+                {result.discountType === "free_delivery" || !result.discountType
+                  ? `Free delivery — you save ${formatTaka(result.saved)}.`
+                  : `Discount applied — you save ${formatTaka(result.saved)}.`}
               </span>
             )}
           </p>

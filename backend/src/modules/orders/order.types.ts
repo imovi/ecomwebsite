@@ -64,6 +64,7 @@ export interface OrderListItemDto {
   status: OrderStatus;
   paymentMethod: PaymentMethod;
   subtotal: number;
+  discount: number;
   deliveryCharge: number;
   grandTotal: number;
   itemCount: number;
@@ -161,6 +162,7 @@ export interface OrderConfirmationDto {
   status: OrderStatus;
   paymentMethod: PaymentMethod;
   subtotal: number;
+  discount: number;
   deliveryCharge: number;
   grandTotal: number;
   items: Omit<OrderItemDto, "id" | "productId" | "variantId">[];
@@ -220,6 +222,7 @@ function listFields(row: OrderRow): OrderListItemDto {
     status: row.status,
     paymentMethod: row.paymentMethod,
     subtotal: row.subtotal,
+    discount: row.discount ?? 0,
     deliveryCharge: row.deliveryCharge,
     grandTotal: row.grandTotal,
     itemCount: row.itemCount,
@@ -302,6 +305,7 @@ export function toOrderConfirmationDto(
     status: row.status,
     paymentMethod: row.paymentMethod,
     subtotal: row.subtotal,
+    discount: row.discount ?? 0,
     deliveryCharge: row.deliveryCharge,
     grandTotal: row.grandTotal,
     items: items.map((item) => {

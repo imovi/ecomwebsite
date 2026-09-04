@@ -166,7 +166,7 @@ export async function recalculateOrderTotals(
     .set({
       subtotal,
       deliveryCharge,
-      grandTotal: sql<number>`${subtotal} + ${deliveryCharge}`,
+      grandTotal: sql<number>`${subtotal} + ${deliveryCharge} - coalesce(${orders.discount}, 0)`,
       itemCount: sql<number>`(
         select count(*)::int from ${orderItems} where ${orderItems.orderId} = ${orderId}
       )`,

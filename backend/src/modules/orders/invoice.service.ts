@@ -46,6 +46,7 @@ export interface InvoiceDto {
   items: OrderItemDto[];
   totals: {
     subtotal: number;
+    discount: number;
     deliveryCharge: number;
     grandTotal: number;
     totalQuantity: number;
@@ -135,6 +136,7 @@ function toInvoiceDto(detail: OrderDetail, settings: Settings): InvoiceDto {
     items: items.map((item) => toOrderItemDto(item)),
     totals: {
       subtotal: order.subtotal,
+      discount: order.discount ?? 0,
       deliveryCharge: order.deliveryCharge,
       grandTotal: order.grandTotal,
       totalQuantity: order.totalQuantity,
@@ -292,6 +294,11 @@ export function renderInvoiceHtml(invoice: InvoiceDto): string {
 
   <div class="totals">
     <div><span>Subtotal</span><span>${taka(invoice.totals.subtotal)}</span></div>
+    ${
+      invoice.totals.discount > 0
+        ? `<div><span>Discount</span><span>-${taka(invoice.totals.discount)}</span></div>`
+        : ""
+    }
     <div><span>Delivery (${invoice.customer.deliveryZone === "inside_dhaka" ? "Inside Dhaka" : "Outside Dhaka"})</span><span>${
       invoice.totals.deliveryCharge === 0 ? "Free" : taka(invoice.totals.deliveryCharge)
     }</span></div>

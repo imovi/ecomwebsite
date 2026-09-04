@@ -5,6 +5,7 @@ import {
   recoveryCoupons,
   COUPON_ALPHABET,
   COUPON_LENGTH,
+  type CouponDiscountType,
   type RecoveryCouponRow,
   type RecoveryCouponStatus,
 } from "../../db/schema/recovery-coupons.js";
@@ -75,6 +76,8 @@ export type CouponState = "active" | "used" | "cancelled" | "expired";
 export interface CouponDto {
   id: string;
   code: string;
+  discountType: CouponDiscountType;
+  discountValue: number;
   state: CouponState;
   cartValue: number;
   /** Who it was made for, when it was not made for a lead. */
@@ -120,6 +123,8 @@ function toDto(row: RecoveryCouponRow): CouponDto {
   return {
     id: row.id,
     code: row.code,
+    discountType: row.discountType ?? "free_delivery",
+    discountValue: row.discountValue ?? 0,
     state: stateOf(row),
     cartValue: row.cartValue,
     note: row.note,
@@ -250,6 +255,8 @@ export async function generate(input: {
   validHours?: number | undefined;
   /** How many times it may be spent. Null means no limit. Defaults to 1. */
   maxUses?: number | null | undefined;
+  discountType?: CouponDiscountType | undefined;
+  discountValue?: number | undefined;
   actor: LeadActor;
 }): Promise<{ coupon: CouponDto; created: boolean }> {
   const db = getDb();
@@ -288,6 +295,16 @@ export async function generate(input: {
   /* Same rule for the use limit: a lead offer is one use, as it always was. */
   const maxUses = lead ? 1 : input.maxUses === undefined ? 1 : input.maxUses;
 
+  /* Lead offers are always free_delivery by default. Standalone coupons may specify fixed or percentage. */
+  const discountType: CouponDiscountType = lead
+    ? "free_delivery"
+    : (input.discountType ?? "free_delivery");
+  const discountValue = lead
+    ? 0
+    : discountType === "free_delivery"
+      ? 0
+      : Math.max(0, input.discountValue ?? 0);
+
   const chosen = input.code ? normalizeCode(input.code) : null;
   if (chosen) {
     const taken = await findByCode(chosen, db);
@@ -320,6 +337,8 @@ export async function generate(input: {
           cartValue: lead?.estimatedValue ?? 0,
           note: lead ? "" : (input.note ?? "").trim(),
           maxUses,
+          discountType,
+          discountValue,
           expiresAt,
           createdBy: input.actor.adminId,
         })
@@ -508,9 +527,11 @@ export async function findByCode(
 export type CouponRefusal = "unknown" | "used" | "expired" | "cancelled";
 
 export interface CouponCheck {
-  /** True when this code would zero the delivery charge right now. */
+  /** True when this code would apply right now. */
   valid: boolean;
   code: string;
+  discountType?: CouponDiscountType;
+  discountValue?: number;
   reason?: CouponRefusal;
   expiresAt?: string;
 }
@@ -543,7 +564,15 @@ export async function check(
   if (!row) return { valid: false, code, reason: "unknown" };
 
   const state = stateOf(row);
-  if (state === "active") return { valid: true, code, expiresAt: row.expiresAt.toISOString() };
+  if (state === "active") {
+    return {
+      valid: true,
+      code,
+      discountType: row.discountType ?? "free_delivery",
+      discountValue: row.discountValue ?? 0,
+      expiresAt: row.expiresAt.toISOString(),
+    };
+  }
 
   return { valid: false, code, reason: state };
 }
@@ -564,7 +593,7 @@ export async function check(
 export async function redeem(
   rawCode: string,
   order: { id: string; orderNumber: string },
-  deliverySaved: number,
+  saved: { deliverySaved: number; discountSaved: number },
   tx: DatabaseExecutor,
 ): Promise<RecoveryCouponRow> {
   const code = normalizeCode(rawCode);
@@ -618,7 +647,8 @@ export async function redeem(
       couponId: row.id,
       orderId: order.id,
       orderNumber: order.orderNumber,
-      deliverySaved,
+      deliverySaved: saved.deliverySaved,
+      discountSaved: saved.discountSaved,
     });
 
     return row;
@@ -671,6 +701,7 @@ export async function noteRedemption(
 export interface CouponUse {
   orderNumber: string;
   deliverySaved: number;
+  discountSaved: number;
   at: string;
 }
 
@@ -725,6 +756,7 @@ export async function listCoupons(
     select
       c.id, c.code, c.status, c.cart_value, c.note,
       c.max_uses, c.used_count,
+      c.discount_type, c.discount_value,
       c.expires_at, c.used_at, c.used_order_id, c.created_at,
       a.phone as phone,
       o.order_number as order_number
@@ -752,6 +784,8 @@ export async function listCoupons(
     return {
       id: String(row.id),
       code: String(row.code),
+      discountType: (row.discount_type as CouponDiscountType) ?? "free_delivery",
+      discountValue: Number(row.discount_value ?? 0),
       state: stateOf({ status, expiresAt, maxUses, usedCount }),
       cartValue: Number(row.cart_value ?? 0),
       note: typeof row.note === "string" ? row.note : "",
@@ -785,6 +819,7 @@ export async function listCoupons(
     list.push({
       orderNumber: use.orderNumber,
       deliverySaved: use.deliverySaved,
+      discountSaved: use.discountSaved ?? 0,
       at: use.createdAt.toISOString(),
     });
     usesByCoupon.set(use.couponId, list);
@@ -832,7 +867,7 @@ export async function totals(range?: DateRange): Promise<CouponTotals> {
       coalesce(sum(u.saved), 0)::int                           as delivery_cost
     from recovery_coupons c
     left join lateral (
-      select count(*) as uses, coalesce(sum(r.delivery_saved), 0) as saved
+      select count(*) as uses, coalesce(sum(r.delivery_saved + r.discount_saved), 0) as saved
         from coupon_redemptions r
        where r.coupon_id = c.id
     ) u on true

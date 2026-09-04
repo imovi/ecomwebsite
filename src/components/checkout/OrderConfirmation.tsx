@@ -123,6 +123,12 @@ export function OrderConfirmation({
               <dt className="text-muted">{copy.checkout.productSubtotal}</dt>
               <dd className="tnum text-ink">{formatTaka(order.subtotal)}</dd>
             </div>
+            {order.discount > 0 && (
+              <div className="flex justify-between text-positive">
+                <dt>Discount</dt>
+                <dd className="tnum">-{formatTaka(order.discount)}</dd>
+              </div>
+            )}
             <div className="flex justify-between">
               <dt className="text-muted">{copy.checkout.deliveryCharge}</dt>
               <dd className="tnum text-ink">

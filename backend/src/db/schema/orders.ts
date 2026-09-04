@@ -53,6 +53,7 @@ export const orders = pgTable(
 
     /* --- Money ----------------------------------------------------------- */
     subtotal: integer("subtotal").notNull(),
+    discount: integer("discount").notNull().default(0),
     deliveryCharge: integer("delivery_charge").notNull(),
     grandTotal: integer("grand_total").notNull(),
 
@@ -220,11 +221,11 @@ export const orders = pgTable(
        the point of the write rather than in a month-end report. */
     check(
       "orders_totals_consistent",
-      sql`${table.grandTotal} = ${table.subtotal} + ${table.deliveryCharge}`,
+      sql`${table.grandTotal} = ${table.subtotal} + ${table.deliveryCharge} - ${table.discount}`,
     ),
     check(
       "orders_amounts_non_negative",
-      sql`${table.subtotal} >= 0 and ${table.deliveryCharge} >= 0 and ${table.grandTotal} >= 0`,
+      sql`${table.subtotal} >= 0 and ${table.deliveryCharge} >= 0 and ${table.discount} >= 0 and ${table.grandTotal} >= 0`,
     ),
   ],
 );

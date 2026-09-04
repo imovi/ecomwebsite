@@ -312,6 +312,12 @@ export function OrderDetail({ identifier }: { identifier: string }) {
               <dt className="text-muted">Subtotal</dt>
               <dd className="tnum text-ink">{formatTaka(order.subtotal)}</dd>
             </div>
+            {order.discount > 0 && (
+              <div className="flex justify-between text-positive">
+                <dt>Discount</dt>
+                <dd className="tnum">-{formatTaka(order.discount)}</dd>
+              </div>
+            )}
             <div className="flex justify-between">
               <dt className="text-muted">
                 Delivery · {order.deliveryZone === "inside_dhaka" ? "Inside Dhaka" : "Outside Dhaka"}

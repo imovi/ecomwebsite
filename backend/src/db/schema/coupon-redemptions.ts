@@ -42,6 +42,7 @@ export const couponRedemptions = pgTable(
      * today's rate would silently restate what last month's offers cost.
      */
     deliverySaved: integer("delivery_saved").notNull().default(0),
+    discountSaved: integer("discount_saved").notNull().default(0),
 
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
   },
@@ -52,7 +53,10 @@ export const couponRedemptions = pgTable(
     index("coupon_redemptions_order_idx")
       .on(table.orderId)
       .where(sql`${table.orderId} is not null`),
-    check("coupon_redemptions_saved_non_negative", sql`${table.deliverySaved} >= 0`),
+    check(
+      "coupon_redemptions_saved_non_negative",
+      sql`${table.deliverySaved} >= 0 and ${table.discountSaved} >= 0`,
+    ),
   ],
 );
 

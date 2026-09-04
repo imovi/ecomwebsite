@@ -284,6 +284,7 @@ export interface QuoteResult {
     lineTotal: number;
   }[];
   subtotal: number;
+  discount: number;
   deliveryCharge: number;
   grandTotal: number;
   deliveryZone: DeliveryZone | null;
@@ -302,8 +303,10 @@ export interface QuoteResult {
 export interface CouponQuote {
   code: string;
   applied: boolean;
-  /** The delivery charge it removed. 0 when delivery was already free. */
+  /** Total taka removed from the order (delivery saved or discount). */
   saved: number;
+  discountType?: "free_delivery" | "fixed" | "percentage";
+  discountValue?: number;
   /** Set when the code was refused, so the summary can say which of them. */
   reason?: coupons.CouponRefusal;
   message?: string;
@@ -313,18 +316,20 @@ export interface CouponQuote {
  * Applies a coupon to a priced cart.
  *
  * Shared by the quote and by placement so the two cannot drift — a summary
- * promising free delivery and an order charging for it is the failure this
- * shape exists to prevent.
- *
- * A coupon on a cart that ALREADY has free delivery is reported as valid but
- * not applied, and — at placement — deliberately left unspent. Burning a
- * one-time offer to save nothing is a worse outcome for the customer than
- * telling them to keep it, and they would have no way of knowing it happened.
+ * promising a discount or free delivery and an order charging for it is the failure
+ * this shape exists to prevent.
  */
 function applyCoupon(
   check: coupons.CouponCheck,
+  subtotal: number,
   deliveryCharge: number,
-): { quote: CouponQuote; deliveryCharge: number } {
+): {
+  quote: CouponQuote;
+  deliveryCharge: number;
+  discount: number;
+  deliverySaved: number;
+  discountSaved: number;
+} {
   if (!check.valid) {
     const reason = check.reason ?? "unknown";
     return {
@@ -336,24 +341,113 @@ function applyCoupon(
         message: coupons.refusalMessage(reason),
       },
       deliveryCharge,
+      discount: 0,
+      deliverySaved: 0,
+      discountSaved: 0,
     };
   }
 
-  if (deliveryCharge === 0) {
+  const type = check.discountType ?? "free_delivery";
+  const val = check.discountValue ?? 0;
+
+  if (type === "free_delivery") {
+    if (deliveryCharge === 0) {
+      return {
+        quote: {
+          code: check.code,
+          applied: false,
+          saved: 0,
+          discountType: type,
+          discountValue: val,
+          message: "Delivery is already free on this order — your code is still unused.",
+        },
+        deliveryCharge,
+        discount: 0,
+        deliverySaved: 0,
+        discountSaved: 0,
+      };
+    }
+
+    return {
+      quote: {
+        code: check.code,
+        applied: true,
+        saved: deliveryCharge,
+        discountType: type,
+        discountValue: val,
+      },
+      deliveryCharge: 0,
+      discount: 0,
+      deliverySaved: deliveryCharge,
+      discountSaved: 0,
+    };
+  }
+
+  if (type === "fixed") {
+    const discount = Math.min(val, subtotal);
+    if (discount <= 0) {
+      return {
+        quote: {
+          code: check.code,
+          applied: false,
+          saved: 0,
+          discountType: type,
+          discountValue: val,
+          message: "This coupon gives no discount on your current cart.",
+        },
+        deliveryCharge,
+        discount: 0,
+        deliverySaved: 0,
+        discountSaved: 0,
+      };
+    }
+
+    return {
+      quote: {
+        code: check.code,
+        applied: true,
+        saved: discount,
+        discountType: type,
+        discountValue: val,
+      },
+      deliveryCharge,
+      discount,
+      deliverySaved: 0,
+      discountSaved: discount,
+    };
+  }
+
+  // percentage discount
+  const discount = Math.min(subtotal, Math.round((subtotal * val) / 100));
+  if (discount <= 0) {
     return {
       quote: {
         code: check.code,
         applied: false,
         saved: 0,
-        message: "Delivery is already free on this order — your code is still unused.",
+        discountType: type,
+        discountValue: val,
+        message: "This coupon gives no discount on your current cart.",
       },
       deliveryCharge,
+      discount: 0,
+      deliverySaved: 0,
+      discountSaved: 0,
     };
   }
 
   return {
-    quote: { code: check.code, applied: true, saved: deliveryCharge },
-    deliveryCharge: 0,
+    quote: {
+      code: check.code,
+      applied: true,
+      saved: discount,
+      discountType: type,
+      discountValue: val,
+    },
+    deliveryCharge,
+    discount,
+    deliverySaved: 0,
+    discountSaved: discount,
   };
 }
 
@@ -397,25 +491,28 @@ export async function quote(input: QuoteInput): Promise<QuoteResult> {
      reserved itself the moment it was typed would be burnt by every shopper who
      pasted one and then went to look at something else. */
   let deliveryCharge = totals.deliveryCharge;
+  let discount = 0;
   let couponQuote: CouponQuote | null = null;
 
   if (input.couponCode) {
-    /* Only meaningful once a zone is known — before that the charge is 0
-       because nothing has been worked out yet, not because it is free, and
-       reporting "already free" then would be a lie the customer acts on. */
-    if (!zone) {
+    const checkResult = await coupons.check(input.couponCode, db);
+    if (!zone && checkResult.valid && checkResult.discountType === "free_delivery") {
       couponQuote = {
         code: input.couponCode,
         applied: false,
         saved: 0,
+        discountType: "free_delivery",
         message: "Choose your delivery area to see the offer applied.",
       };
     } else {
-      const applied = applyCoupon(await coupons.check(input.couponCode, db), deliveryCharge);
+      const applied = applyCoupon(checkResult, totals.subtotal, deliveryCharge);
       couponQuote = applied.quote;
       deliveryCharge = applied.deliveryCharge;
+      discount = applied.discount;
     }
   }
+
+  const grandTotal = Math.max(0, totals.subtotal - discount + deliveryCharge);
 
   return {
     items: lines.map((line) => ({
@@ -428,8 +525,9 @@ export async function quote(input: QuoteInput): Promise<QuoteResult> {
       lineTotal: line.unitPrice * line.quantity,
     })),
     subtotal: totals.subtotal,
+    discount,
     deliveryCharge,
-    grandTotal: totals.subtotal + deliveryCharge,
+    grandTotal,
     deliveryZone: zone,
     zoneInferred: inferred,
     zoneMatchedOn: matched,
@@ -539,12 +637,22 @@ export async function placeOrder(
      * with a delivery charge nobody paid for.
      */
     let deliveryCharge = totals.deliveryCharge;
-    let couponToSpend: { code: string; saved: number } | null = null;
+    let discount = 0;
+    let couponToSpend: {
+      code: string;
+      saved: number;
+      deliverySaved: number;
+      discountSaved: number;
+    } | null = null;
 
     if (input.couponCode) {
       /* Read on the transaction's own connection. See `findByCode`: going
          through `getDb()` here would deadlock against this very transaction. */
-      const applied = applyCoupon(await coupons.check(input.couponCode, tx), deliveryCharge);
+      const applied = applyCoupon(
+        await coupons.check(input.couponCode, tx),
+        totals.subtotal,
+        deliveryCharge,
+      );
 
       if (applied.quote.reason) {
         /* Refuse the order rather than quietly charging for delivery after the
@@ -559,13 +667,16 @@ export async function placeOrder(
       }
 
       deliveryCharge = applied.deliveryCharge;
+      discount = applied.discount;
       /* Only claim it when it actually took the charge off. A coupon on a cart
          that already had free delivery stays live for next time. */
       if (applied.quote.applied) {
-        /* The charge that was removed, frozen onto the redemption. Delivery
-           charges are settings and settings change; reading today's rate later
-           would restate what last month's offers cost. */
-        couponToSpend = { code: applied.quote.code, saved: applied.quote.saved };
+        couponToSpend = {
+          code: applied.quote.code,
+          saved: applied.quote.saved,
+          deliverySaved: applied.deliverySaved,
+          discountSaved: applied.discountSaved,
+        };
       }
     }
 
@@ -587,8 +698,9 @@ export async function placeOrder(
         areaText: input.areaText,
         deliveryZone: zone,
         subtotal: totals.subtotal,
+        discount,
         deliveryCharge,
-        grandTotal: totals.subtotal + deliveryCharge,
+        grandTotal: Math.max(0, totals.subtotal - discount + deliveryCharge),
         itemCount: lines.length,
         totalQuantity: lines.reduce((sum, line) => sum + line.quantity, 0),
         paymentMethod: "cod",
@@ -621,7 +733,10 @@ export async function placeOrder(
       ? await coupons.redeem(
           couponToSpend.code,
           { id: order.id, orderNumber: order.orderNumber },
-          couponToSpend.saved,
+          {
+            deliverySaved: couponToSpend.deliverySaved,
+            discountSaved: couponToSpend.discountSaved,
+          },
           tx,
         )
       : null;

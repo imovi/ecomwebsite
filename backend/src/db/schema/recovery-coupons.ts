@@ -35,6 +35,9 @@ import { abandonedCheckouts } from "./abandoned-checkouts.js";
 export const RECOVERY_COUPON_STATUSES = ["active", "used", "cancelled", "expired"] as const;
 export type RecoveryCouponStatus = (typeof RECOVERY_COUPON_STATUSES)[number];
 
+export const COUPON_DISCOUNT_TYPES = ["free_delivery", "fixed", "percentage"] as const;
+export type CouponDiscountType = (typeof COUPON_DISCOUNT_TYPES)[number];
+
 /**
  * The alphabet codes are drawn from.
  *
@@ -99,6 +102,15 @@ export const recoveryCoupons = pgTable(
     /** How many times it has been spent. Bumped by the claim, never read for it. */
     usedCount: integer("used_count").notNull().default(0),
 
+    /** The discount type: free_delivery, fixed, or percentage. */
+    discountType: text("discount_type")
+      .$type<CouponDiscountType>()
+      .notNull()
+      .default("free_delivery"),
+
+    /** The discount amount (in taka for 'fixed', or percentage 1-100 for 'percentage'). 0 for 'free_delivery'. */
+    discountValue: integer("discount_value").notNull().default(0),
+
     /**
      * What the shop last recorded. `expiresAt` is what actually decides.
      *
@@ -155,6 +167,10 @@ export const recoveryCoupons = pgTable(
     check(
       "recovery_coupons_uses_sane",
       sql`${table.usedCount} >= 0 and (${table.maxUses} is null or ${table.maxUses} >= 1)`,
+    ),
+    check(
+      "recovery_coupons_discount_sane",
+      sql`${table.discountType} in ('free_delivery', 'fixed', 'percentage') and ${table.discountValue} >= 0`,
     ),
   ],
 );

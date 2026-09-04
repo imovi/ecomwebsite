@@ -342,6 +342,7 @@ export async function quickAddProductAction(
 export interface QuoteResult {
   ok: boolean;
   subtotal: number;
+  discount: number;
   deliveryCharge: number;
   grandTotal: number;
   deliveryZone: ApiDeliveryZone | null;
@@ -371,6 +372,7 @@ export async function quoteAction(input: {
   const empty: QuoteResult = {
     ok: false,
     subtotal: 0,
+    discount: 0,
     deliveryCharge: 0,
     grandTotal: 0,
     deliveryZone: null,
@@ -406,6 +408,7 @@ export async function quoteAction(input: {
     return {
       ok: true,
       subtotal: quote.subtotal,
+      discount: quote.discount,
       deliveryCharge: quote.deliveryCharge,
       grandTotal: quote.grandTotal,
       deliveryZone: quote.deliveryZone,

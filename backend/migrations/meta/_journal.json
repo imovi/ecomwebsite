@@ -267,6 +267,13 @@
       "when": 1786634574319,
       "tag": "0037_product_sort_order",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1788550000000,
+      "tag": "0038_coupon_discount_types",
+      "breakpoints": true
     }
   ]
 }

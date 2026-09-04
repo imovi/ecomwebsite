@@ -24,7 +24,7 @@ ALTER TABLE "courier_fraud_accounts"
 --> statement-breakpoint
 ALTER TABLE "courier_fraud_accounts"
   ADD CONSTRAINT "courier_fraud_accounts_provider_known"
-  CHECK ("provider" IN ('steadfast', 'pathao', 'redx', 'paperfly', 'carrybee'));
+  CHECK ("provider" IN ('steadfast', 'pathao', 'redx', 'paperfly', 'carrybee', 'bdcourier'));
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "courier_fraud_checks" (
   -- Normalised to 01XXXXXXXXX, the form orders store.

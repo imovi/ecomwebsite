@@ -109,11 +109,12 @@ export async function report(
   }
 
   const storedAccounts = await repo.listAccounts();
+  const storedMap = new Map(storedAccounts.map((a) => [a.provider, a]));
   const accounts = storedAccounts.filter(
     (account) => account.enabled && (account.identifier || account.secret),
   );
 
-  // Auto-include configured courier from store settings if credentials exist and not in accounts
+  // Auto-include configured courier from store settings ONLY if the courier has never been configured in courier_fraud_accounts
   const settings = await getSettings().catch(() => null);
   if (
     settings &&
@@ -121,19 +122,9 @@ export async function report(
     settings.courierApiSecret.trim() !== ""
   ) {
     const configuredProvider = (settings.courierProvider || "steadfast") as ProviderKey;
-    if (configuredProvider === "pathao" && !accounts.some((a) => a.provider === "pathao")) {
+    if (!storedMap.has(configuredProvider)) {
       accounts.push({
-        provider: "pathao",
-        identifier: settings.courierApiKey.trim(),
-        secret: settings.courierApiSecret.trim(),
-        enabled: true,
-        updatedAt: new Date(),
-        lastOkAt: null,
-        lastError: "",
-      });
-    } else if (configuredProvider === "steadfast" && !accounts.some((a) => a.provider === "steadfast")) {
-      accounts.push({
-        provider: "steadfast",
+        provider: configuredProvider,
         identifier: settings.courierApiKey.trim(),
         secret: settings.courierApiSecret.trim(),
         enabled: true,
@@ -344,26 +335,26 @@ export async function listAccounts(): Promise<AccountDto[]> {
     let hasSecret = Boolean(account?.secret);
     let enabled = account?.enabled ?? false;
 
-    // If Steadfast is not yet set in courier_fraud_accounts but exists in storeSettings
-    if (
-      key === "steadfast" &&
-      !identifier &&
-      settings?.courierApiKey &&
-      settings?.courierApiSecret
-    ) {
-      identifier = settings.courierApiKey.trim();
-      hasSecret = true;
-      enabled = true;
-    } else if (
-      key === "pathao" &&
-      !identifier &&
-      settings?.courierProvider === "pathao" &&
-      settings?.courierApiKey &&
-      settings?.courierApiSecret
-    ) {
-      identifier = settings.courierApiKey.trim();
-      hasSecret = true;
-      enabled = true;
+    // Only fallback if this courier has NO entry in courier_fraud_accounts at all
+    if (!account) {
+      if (
+        key === "steadfast" &&
+        settings?.courierApiKey &&
+        settings?.courierApiSecret
+      ) {
+        identifier = settings.courierApiKey.trim();
+        hasSecret = true;
+        enabled = false;
+      } else if (
+        key === "pathao" &&
+        settings?.courierProvider === "pathao" &&
+        settings?.courierApiKey &&
+        settings?.courierApiSecret
+      ) {
+        identifier = settings.courierApiKey.trim();
+        hasSecret = true;
+        enabled = false;
+      }
     }
 
     const prov = PROVIDERS[key];
@@ -399,6 +390,13 @@ export async function saveAccount(
       input.secret = input.identifier;
     } else if (input.secret && !input.identifier) {
       input.identifier = "bdcourier";
+    }
+  }
+  // Preserve existing identifier if toggling without re-entering identifier
+  if (!input.identifier) {
+    const existing = await repo.findAccount(provider);
+    if (existing?.identifier) {
+      input.identifier = existing.identifier;
     }
   }
   await repo.saveAccount(provider, input);

@@ -11,6 +11,7 @@ import { Sheet } from "@/components/ui/Sheet";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { AsyncState, ErrorBanner } from "./ui";
+import { FraudCard } from "./FraudCard";
 import type { Lead } from "./LeadCard";
 
 /**
@@ -200,6 +201,7 @@ function Row({
    * the two disagree in front of whoever is working the list.
    */
   const called = lead.status === "contacted";
+  const [showFraudCheck, setShowFraudCheck] = useState(false);
 
   return (
     <li className="flex flex-col gap-2 rounded-md border border-line bg-white p-3">
@@ -208,10 +210,21 @@ function Row({
           <p className="truncate text-caption font-semibold text-ink">
             {lead.customerName || "No name given"}
           </p>
-          <p className="tnum truncate text-micro text-muted">
-            {lead.phone}
-            {lead.areaText ? ` · ${lead.areaText}` : ""}
-          </p>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <p className="tnum truncate text-micro text-muted">
+              {lead.phone}
+              {lead.areaText ? ` · ${lead.areaText}` : ""}
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowFraudCheck((v) => !v)}
+              className="inline-flex items-center gap-0.5 text-micro font-medium text-ink-soft underline-offset-2 hover:text-ink hover:underline"
+              title="Check courier delivery records"
+            >
+              <Icon name="shield" size={11} />
+              <span>{showFraudCheck ? "Hide courier" : "Courier record"}</span>
+            </button>
+          </div>
         </div>
         <span className="tnum shrink-0 rounded-xs bg-warn-soft px-1.5 py-0.5 text-micro font-medium text-warn">
           {formatTaka(lead.estimatedValue)}
@@ -245,6 +258,15 @@ function Row({
         )}
 
         <Button
+          variant={showFraudCheck ? "soft" : "ghost"}
+          size="sm"
+          onClick={() => setShowFraudCheck((v) => !v)}
+        >
+          <Icon name="shield" size={14} />
+          {showFraudCheck ? "Hide courier" : "Courier record"}
+        </Button>
+
+        <Button
           variant="ghost"
           size="sm"
           loading={busy}
@@ -254,6 +276,12 @@ function Row({
           {called ? "Already called" : "Mark called"}
         </Button>
       </div>
+
+      {showFraudCheck && (
+        <div className="mt-1">
+          <FraudCard phone={lead.phone} />
+        </div>
+      )}
     </li>
   );
 }

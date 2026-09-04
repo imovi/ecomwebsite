@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Field";
 import { Icon } from "@/components/ui/Icon";
+import { FraudCard } from "./FraudCard";
 
 /**
  * One incomplete checkout, and everything the desk can do about it.
@@ -159,6 +160,7 @@ export function LeadCard({
   const [note, setNote] = useState(lead.note);
   const [reason, setReason] = useState(lead.reason);
   const [showHistory, setShowHistory] = useState(false);
+  const [showFraudCheck, setShowFraudCheck] = useState(false);
 
   /**
    * Which message the operator has just been handed, and not yet confirmed.
@@ -196,12 +198,28 @@ export function LeadCard({
         <div className="min-w-0">
           {/* The phone is the point of the page, so it is the biggest thing on
               the card and it dials on a tap. */}
-          <a
-            href={`tel:${lead.phone}`}
-            className="tnum text-title font-semibold text-ink underline-offset-4 hover:underline"
-          >
-            {lead.phone}
-          </a>
+          <div className="flex flex-wrap items-center gap-2">
+            <a
+              href={`tel:${lead.phone}`}
+              className="tnum text-title font-semibold text-ink underline-offset-4 hover:underline"
+            >
+              {lead.phone}
+            </a>
+            <button
+              type="button"
+              onClick={() => setShowFraudCheck((v) => !v)}
+              className={cn(
+                "inline-flex items-center gap-1 rounded-xs px-2 py-0.5 text-micro font-medium transition-colors",
+                showFraudCheck
+                  ? "bg-ink text-white"
+                  : "border border-line bg-surface text-ink-soft hover:bg-surface-hover hover:text-ink",
+              )}
+              title="Check customer delivery history and fraud records across couriers"
+            >
+              <Icon name="shield" size={13} />
+              <span>{showFraudCheck ? "Hide courier record" : "Courier record"}</span>
+            </button>
+          </div>
 
           <p className="mt-0.5 flex flex-wrap items-center gap-2 text-caption text-muted">
             {lead.customerName ?? "No name given"}
@@ -376,6 +394,16 @@ export function LeadCard({
           </Button>
 
           <Button
+            variant={showFraudCheck ? "soft" : "ghost"}
+            size="sm"
+            onClick={() => setShowFraudCheck((v) => !v)}
+            title="Check customer delivery records across couriers"
+          >
+            <Icon name="shield" size={15} />
+            {showFraudCheck ? "Hide courier record" : "Courier record"}
+          </Button>
+
+          <Button
             variant="ghost"
             size="sm"
             disabled={busy || lead.status === "dismissed"}
@@ -393,6 +421,13 @@ export function LeadCard({
           >
             <Icon name="trash" size={15} />
           </button>
+        </div>
+      )}
+
+      {/* --- Courier Delivery & Fraud Check --------------------------------- */}
+      {showFraudCheck && (
+        <div className="rounded-md border border-line bg-surface/30 p-1">
+          <FraudCard phone={lead.phone} />
         </div>
       )}
 

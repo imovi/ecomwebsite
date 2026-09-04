@@ -152,20 +152,53 @@ function CourierCard({
     }
   }
 
+  async function toggleEnabled(newVal: boolean) {
+    setEnabled(newVal);
+    setBusy(true);
+    setCardError(null);
+    try {
+      const data = await adminApi.put<{ accounts: ApiFraudAccount[] }>(
+        `admin/fraud/accounts/${account.provider}`,
+        {
+          identifier: identifier.trim() || account.identifier,
+          enabled: newVal,
+        },
+      );
+      onSaved(data.accounts);
+      toast(`${account.label} is now ${newVal ? "enabled (checking on)" : "disabled (checking off)"}`);
+    } catch (caught) {
+      setEnabled(!newVal);
+      setCardError(caught instanceof AdminApiError ? caught.message : "Could not update status.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const canTest = (account.hasSecret || Boolean(account.identifier)) && /^01[3-9]\d{8}$/.test(testPhone.trim());
 
   return (
     <Card>
-      <CardHeader
-        title={account.label}
-        hint={
-          account.hasSecret || account.identifier
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-3">
+        <div className="flex items-center gap-2">
+          <span className="text-body font-semibold text-ink">{account.label}</span>
+          {account.enabled ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-positive-soft px-2 py-0.5 text-micro font-semibold text-positive">
+              ● Active (Checking On)
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 rounded-full bg-surface px-2 py-0.5 text-micro font-medium text-muted">
+              ○ Disabled (Checking Off)
+            </span>
+          )}
+        </div>
+        <p className="text-micro text-muted">
+          {account.hasSecret || account.identifier
             ? account.lastOkAt
               ? `Last answered ${formatDateTime(account.lastOkAt)}`
               : "Saved, but this courier has never answered yet."
-            : "Not set up."
-        }
-      />
+            : "Not configured"}
+        </p>
+      </div>
 
       <div className="flex flex-col gap-3 p-4">
         <ErrorBanner message={cardError} />
@@ -217,29 +250,30 @@ function CourierCard({
           />
         </div>
 
-        <p className="rounded-xs bg-positive-soft/50 px-2.5 py-1.5 text-micro text-positive">
-          ✓ <strong>API Integration:</strong> Connects to {account.label}&apos;s API for automated customer delivery history lookup.
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-sm border border-line bg-surface/50 p-3">
+          <label className="flex cursor-pointer items-center gap-2.5 text-caption font-medium text-ink">
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-line text-ink"
+              checked={enabled}
+              disabled={busy}
+              onChange={(event) => void toggleEnabled(event.target.checked)}
+            />
+            <span>
+              {enabled
+                ? `✓ Customer check is ON for ${account.label}`
+                : `Enable customer delivery record lookup for ${account.label}`}
+            </span>
+          </label>
 
-        <label className="flex w-fit items-center gap-2 text-caption text-ink">
-          <input
-            type="checkbox"
-            checked={enabled}
-            onChange={(event) => setEnabled(event.target.checked)}
-          />
-          Enable customer delivery record lookup for {account.label}
-        </label>
-
-        <div className="flex flex-wrap gap-2">
           <Button
             type="button"
             variant="primary"
             size="sm"
             loading={busy}
-            disabled={enabled && identifier.trim().length === 0}
             onClick={() => void save()}
           >
-            Save API credentials
+            Save credentials
           </Button>
         </div>
 

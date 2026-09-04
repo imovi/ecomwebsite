@@ -1,4 +1,4 @@
-﻿export interface ParsedVideoInfo {
+export interface ParsedVideoInfo {
   type: "youtube" | "facebook" | "tiktok" | "instagram" | "direct" | "unknown";
   embedUrl: string;
   isVertical: boolean;
@@ -139,10 +139,6 @@ export async function resolveDirectVideoUrl(
 
       const res = await fetch(`https://www.instagram.com/reel/${parsed.videoId}/embed/`, {
         signal: controller.signal,
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        },
       });
 
       clearTimeout(timeout);

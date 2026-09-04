@@ -12,6 +12,7 @@ import { Container, Divider, SectionHeader } from "@/components/ui/Layout";
 import { Icon } from "@/components/ui/Icon";
 import { ProductPurchase } from "@/components/product/ProductPurchase";
 import { ProductRail } from "@/components/product/ProductCard";
+import { ProductVideoShowcase } from "@/components/product/ProductVideoShowcase";
 
 /** Statically rendered, refreshed every 5 minutes. Prices and stock still get
  *  re-validated server-side at order placement, so a slightly stale page can
@@ -100,6 +101,13 @@ export default async function ProductPage({
 
       <Container className="flex flex-col gap-8 pb-4">
         <Divider />
+
+        {product.videoUrl && (
+          <ProductVideoShowcase
+            videoUrl={product.videoUrl}
+            productTitle={product.title}
+          />
+        )}
 
         <section>
           <h2 className="text-title text-ink">{copy.product.description}</h2>

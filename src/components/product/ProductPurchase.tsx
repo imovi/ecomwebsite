@@ -216,28 +216,49 @@ export function ProductPurchase({ product }: { product: Product }) {
   return (
     <>
       <div className="md:grid md:grid-cols-2 md:gap-10">
-        <Gallery
-          images={product.images}
-          title={product.title}
-          activeIndex={variant?.imageIndex}
-          {...(lit
-            ? {
-                renderFrameOverlay: (i: number) => (
-                  <OffFrame
-                    state={product.imageStates[i] ?? null}
-                    title={product.title}
-                    index={i}
-                    total={product.images.length}
-                    visible={light.isOff(i)}
-                  />
-                ),
-                renderOverlay: (i: number) =>
-                  light.hasPair(i) ? (
-                    <LightPill isOff={light.isOff(i)} onToggle={() => light.toggle(i)} />
-                  ) : null,
-              }
-            : {})}
-        />
+        <div className="flex flex-col">
+          <Gallery
+            images={product.images}
+            title={product.title}
+            activeIndex={variant?.imageIndex}
+            {...(lit
+              ? {
+                  renderFrameOverlay: (i: number) => (
+                    <OffFrame
+                      state={product.imageStates[i] ?? null}
+                      title={product.title}
+                      index={i}
+                      total={product.images.length}
+                      visible={light.isOff(i)}
+                    />
+                  ),
+                  renderOverlay: (i: number) =>
+                    light.hasPair(i) ? (
+                      <LightPill isOff={light.isOff(i)} onToggle={() => light.toggle(i)} />
+                    ) : null,
+                }
+              : {})}
+          />
+          {product.videoUrl && (
+            <div className="mt-3 flex justify-center">
+              <a
+                href="#product-video-showcase"
+                onClick={(e) => {
+                  e.preventDefault();
+                  document.getElementById("product-video-showcase")?.scrollIntoView({ behavior: "smooth" });
+                }}
+                className="inline-flex items-center gap-2 rounded-full border border-line bg-surface/90 px-3.5 py-1.5 text-caption font-medium text-ink shadow-sm hover:border-ink/30 transition-all hover:bg-surface"
+              >
+                <span className="flex size-5 items-center justify-center rounded-full bg-primary text-white">
+                  <svg className="size-3 translate-x-0.5 fill-current" viewBox="0 0 24 24">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                </span>
+                <span>Watch Product Video / Reel</span>
+              </a>
+            </div>
+          )}
+        </div>
 
         <div className="mt-5 flex flex-col gap-5 md:mt-0">
           {/* Title stays first in the DOM — it is the h1, and a screen reader or

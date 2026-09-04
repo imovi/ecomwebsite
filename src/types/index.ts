@@ -100,6 +100,8 @@ export interface Product {
   imageStates: (ProductImageState | null)[];
   /** Whether the shopper is offered the on/off switch on this product. */
   interactiveEnabled: boolean;
+  /** Optional video or reel URL (YouTube, Facebook, TikTok, Instagram, MP4) */
+  videoUrl?: string | null;
   description: string;
   /** Ordered spec rows, rendered as a definition list. */
   specs: { label: string; value: string }[];

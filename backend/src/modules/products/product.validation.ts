@@ -190,6 +190,7 @@ export const createProductSchema = z
 
     shortDescription: safeString({ max: 300 }).nullish(),
     description: safeString({ max: 20_000 }).nullish(),
+    videoUrl: safeString({ max: 2000 }).nullish(),
     specifications: z.array(specSchema).max(60).default([]),
     whatsIncluded: z.array(safeString({ min: 1, max: 200 })).max(40).default([]),
     warranty: safeString({ max: 120 }).nullish(),
@@ -254,6 +255,7 @@ export const updateProductSchema = z
 
     shortDescription: safeString({ max: 300 }).nullish(),
     description: safeString({ max: 20_000 }).nullish(),
+    videoUrl: safeString({ max: 2000 }).nullish(),
     specifications: z.array(specSchema).max(60).optional(),
     whatsIncluded: z.array(safeString({ min: 1, max: 200 })).max(40).optional(),
     warranty: safeString({ max: 120 }).nullish(),

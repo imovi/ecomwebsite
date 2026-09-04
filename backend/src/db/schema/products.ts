@@ -90,6 +90,7 @@ export const products = pgTable(
     /* --- Content -------------------------------------------------------- */
     shortDescription: text("short_description"),
     description: text("description"),
+    videoUrl: text("video_url"),
 
     /* jsonb, not a child table: specs and inclusions are always read as a
        whole with their product, never queried across products, and never

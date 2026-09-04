@@ -22,6 +22,7 @@ import {
 import { Input, Select, Textarea } from "@/components/ui/Field";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
+import { parseVideoUrl } from "@/lib/video-embed";
 
 /**
  * Product create / edit.
@@ -74,6 +75,7 @@ interface FormState {
   lowStockThreshold: string;
   status: "draft" | "active" | "archived";
   isVisible: boolean;
+  videoUrl: string;
   specifications: SpecRow[];
 }
 
@@ -98,6 +100,7 @@ const EMPTY: FormState = {
   lowStockThreshold: "5",
   status: "draft",
   isVisible: true,
+  videoUrl: "",
   specifications: [],
 };
 
@@ -120,6 +123,7 @@ function fromProduct(product: ApiProduct): FormState {
     categoryId: product.category?.id ?? "",
     shortDescription: product.shortDescription ?? "",
     description: product.description ?? "",
+    videoUrl: product.videoUrl ?? "",
     warranty: product.warranty ?? "",
     tags: product.tags.join(", "),
     whatsIncluded: product.whatsIncluded.join("\n"),
@@ -260,6 +264,7 @@ export function ProductForm({ productId }: { productId?: string }) {
       shortDescription: form.shortDescription.trim() || null,
       description: form.description.trim() || null,
       warranty: form.warranty.trim() || null,
+      videoUrl: form.videoUrl.trim() || null,
       /* Drop the presentation-only row id — the API stores exactly what it is
          given, so an extra key here would end up persisted. */
       specifications: form.specifications
@@ -707,6 +712,87 @@ export function ProductForm({ productId }: { productId?: string }) {
                   error={fieldErrors.tags}
                 />
               </div>
+            </div>
+          </Card>
+
+          <Card>
+            <CardHeader
+              title="Product Video & Reel"
+              hint="Attach a YouTube video, YouTube Shorts, Facebook Reel/Video, TikTok, Instagram Reel, or direct MP4 link to show a video showcase on the product page."
+            />
+            <div className="flex flex-col gap-4 p-4">
+              <Input
+                label="Video or Reel URL"
+                value={form.videoUrl}
+                onChange={(event) => set("videoUrl", event.target.value)}
+                placeholder="e.g. https://www.youtube.com/shorts/... or https://www.facebook.com/reel/..."
+                hint="Supports YouTube (standard & Shorts), Facebook (Reels & Videos), Instagram Reels, TikTok, and direct .mp4 video files."
+                error={fieldErrors.videoUrl}
+              />
+
+              {form.videoUrl.trim() && (() => {
+                const parsed = parseVideoUrl(form.videoUrl);
+                if (!parsed) {
+                  return (
+                    <div className="rounded-md border border-line bg-surface/50 p-3 text-caption text-muted">
+                      Please enter a valid video link (e.g. YouTube, Facebook Reel, TikTok, Instagram, or .mp4 URL).
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="mt-1 flex flex-col gap-3 rounded-lg border border-line bg-surface/30 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 text-caption">
+                        <span className="font-semibold text-ink">{parsed.platformName}</span>
+                        <span className="rounded bg-primary/10 px-2 py-0.5 text-micro font-medium text-primary">
+                          {parsed.isVertical ? "📱 Vertical Reel (9:16)" : "🖥️ Landscape Video (16:9)"}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => set("videoUrl", "")}
+                        className="text-micro font-medium text-sale hover:underline"
+                      >
+                        Remove Video
+                      </button>
+                    </div>
+
+                    <div className="flex justify-center">
+                      {parsed.type === "direct" ? (
+                        <div className="relative w-full max-w-md overflow-hidden rounded-lg bg-black">
+                          <video
+                            src={parsed.embedUrl}
+                            controls
+                            playsInline
+                            className="max-h-64 w-full object-contain"
+                          />
+                        </div>
+                      ) : parsed.isVertical ? (
+                        <div className="relative w-full max-w-[240px] overflow-hidden rounded-xl bg-black border-2 border-line aspect-[9/16]">
+                          <iframe
+                            src={parsed.embedUrl}
+                            title="Product Video Preview"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowFullScreen
+                            className="absolute inset-0 size-full border-0"
+                          />
+                        </div>
+                      ) : (
+                        <div className="relative w-full max-w-md overflow-hidden rounded-lg bg-black aspect-video">
+                          <iframe
+                            src={parsed.embedUrl}
+                            title="Product Video Preview"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowFullScreen
+                            className="absolute inset-0 size-full border-0"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </Card>
 

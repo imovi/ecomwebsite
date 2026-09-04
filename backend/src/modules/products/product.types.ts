@@ -110,12 +110,14 @@ export interface ProductListItemDto {
   courierCostOutsideDhaka?: number | null;
   packagingCost?: number | null;
   sortOrder?: number;
+  videoUrl?: string | null;
   createdAt: string;
 }
 
 export interface ProductDto extends Omit<ProductListItemDto, "featuredImage"> {
   shortDescription: string | null;
   description: string | null;
+  videoUrl: string | null;
   specifications: ProductSpec[];
   whatsIncluded: string[];
   warranty: string | null;
@@ -234,6 +236,7 @@ function baseFields(
       product.stockQuantity > 0 && product.stockQuantity <= product.lowStockThreshold,
     tags: product.tags,
     sortOrder: product.sortOrder,
+    videoUrl: product.videoUrl ?? null,
     createdAt: product.createdAt.toISOString(),
   };
 }
@@ -302,6 +305,7 @@ export function toProductDto(
     ),
     shortDescription: product.shortDescription,
     description: product.description,
+    videoUrl: product.videoUrl ?? null,
     specifications: product.specifications,
     whatsIncluded: product.whatsIncluded,
     warranty: product.warranty,

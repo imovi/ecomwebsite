@@ -133,12 +133,14 @@ export interface ApiProductListItem {
   courierCostOutsideDhaka?: number | null;
   packagingCost?: number | null;
   sortOrder?: number;
+  videoUrl?: string | null;
   createdAt: string;
 }
 
 export interface ApiProduct extends Omit<ApiProductListItem, "featuredImage"> {
   shortDescription: string | null;
   description: string | null;
+  videoUrl?: string | null;
   specifications: { label: string; value: string }[];
   whatsIncluded: string[];
   warranty: string | null;

@@ -268,6 +268,7 @@ export async function create(input: CreateProductInput): Promise<ProductDto> {
         categoryId: input.categoryId,
         shortDescription: input.shortDescription ?? null,
         description: input.description ?? null,
+        videoUrl: input.videoUrl ?? null,
         specifications: input.specifications,
         whatsIncluded: input.whatsIncluded,
         warranty: input.warranty ?? null,
@@ -353,6 +354,7 @@ export async function update(id: string, input: UpdateProductInput): Promise<Pro
       ? { shortDescription: input.shortDescription ?? null }
       : {}),
     ...(input.description !== undefined ? { description: input.description ?? null } : {}),
+    ...(input.videoUrl !== undefined ? { videoUrl: input.videoUrl ?? null } : {}),
     ...(input.specifications !== undefined ? { specifications: input.specifications } : {}),
     ...(input.whatsIncluded !== undefined ? { whatsIncluded: input.whatsIncluded } : {}),
     ...(input.warranty !== undefined ? { warranty: input.warranty ?? null } : {}),

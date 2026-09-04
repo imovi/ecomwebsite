@@ -140,6 +140,7 @@ export function toProduct(product: ApiProduct): Product {
       (image) => (image.states ?? []).find((state) => state.key === "off") ?? null,
     ),
     interactiveEnabled: product.interactiveEnabled ?? false,
+    videoUrl: product.videoUrl ?? null,
     description: product.description ?? product.shortDescription ?? "",
     specs: product.specifications,
     included: product.whatsIncluded,

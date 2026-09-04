@@ -109,7 +109,6 @@ export async function report(
   }
 
   const storedAccounts = await repo.listAccounts();
-  const storedMap = new Map(storedAccounts.map((a) => [a.provider, a]));
   const accounts = storedAccounts.filter(
     (account) => account.enabled && (account.identifier || account.secret),
   );

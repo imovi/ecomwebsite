@@ -186,7 +186,7 @@ export interface CouponFieldProps {
  * The exception is a code that arrived in the link: that shopper was sent one,
  * so the field opens with it already in place.
  */
-function CouponField({ applied, result, onApply, onRemove, busy }: CouponFieldProps) {
+export function CouponField({ applied, result, onApply, onRemove, busy }: CouponFieldProps) {
   const [open, setOpen] = useState(applied !== "");
   const [draft, setDraft] = useState(applied);
 

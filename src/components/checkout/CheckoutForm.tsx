@@ -24,7 +24,7 @@ import { EmptyState, Skeleton } from "@/components/ui/Layout";
 import { Icon } from "@/components/ui/Icon";
 import { AreaField } from "./AreaField";
 import { ZoneSelector } from "./ZoneSelector";
-import { OrderSummary } from "./OrderSummary";
+import { OrderSummary, CouponField } from "./OrderSummary";
 
 const DRAFT_KEY = "gng-checkout-draft-v1";
 
@@ -580,6 +580,17 @@ export function CheckoutForm({ settings }: { settings: StoreSettings }) {
             freeDelivery={zone !== null && deliveryCharge === 0}
             error={errors.zone}
           />
+
+          <CouponField
+            applied={couponCode}
+            /* Only the verdict for the code currently in play. A stale one from
+               the previous code would flash the wrong answer for the length of
+               a re-quote, which is exactly when the shopper is reading it. */
+            result={quote?.coupon?.code === couponCode ? quote.coupon : null}
+            onApply={setCouponCode}
+            onRemove={() => setCouponCode("")}
+            busy={pricing}
+          />
         </section>
 
         <section>
@@ -606,16 +617,6 @@ export function CheckoutForm({ settings }: { settings: StoreSettings }) {
           zoneChosen={zone !== null}
           freeDeliveryRemaining={freeDeliveryRemaining}
           isPricing={pricing}
-          coupon={{
-            applied: couponCode,
-            /* Only the verdict for the code currently in play. A stale one from
-               the previous code would flash the wrong answer for the length of
-               a re-quote, which is exactly when the shopper is reading it. */
-            result: quote?.coupon?.code === couponCode ? quote.coupon : null,
-            onApply: setCouponCode,
-            onRemove: () => setCouponCode(""),
-            busy: pricing,
-          }}
         />
 
         {/* Sticky on mobile, inline on desktop. */}

@@ -218,6 +218,43 @@ function PerCourier({ report }: { report: ApiFraudReport }) {
                 />
               </div>
             )}
+            {courier.breakdown && courier.breakdown.length > 0 && (
+              <div className="mt-2.5 flex flex-wrap gap-1.5 border-t border-line/60 pt-2">
+                {courier.breakdown.map((sub) => (
+                  <span
+                    key={sub.courier}
+                    className="inline-flex items-center gap-1 rounded bg-surface px-2 py-0.5 text-[11px] text-ink-soft border border-line"
+                  >
+                    <strong className="font-semibold text-ink">{sub.label}:</strong>
+                    <span>{sub.success}/{sub.total}</span>
+                    <span
+                      className={cn(
+                        "text-[10px] font-bold",
+                        sub.successRatio >= 80
+                          ? "text-positive"
+                          : sub.successRatio >= 50
+                            ? "text-warn"
+                            : "text-sale",
+                      )}
+                    >
+                      ({sub.successRatio}%)
+                    </span>
+                  </span>
+                ))}
+              </div>
+            )}
+            {courier.reports && courier.reports.length > 0 && (
+              <div className="mt-2 rounded bg-sale-soft/50 p-2 text-micro text-sale">
+                <p className="font-semibold">⚠️ Merchant Fraud Reports ({courier.reports.length}):</p>
+                <ul className="mt-1 list-disc pl-4 space-y-0.5">
+                  {courier.reports.map((rep, idx) => (
+                    <li key={idx}>
+                      {rep.details} {rep.courierName ? `(${rep.courierName})` : ""}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </li>
         ))}
       </ul>

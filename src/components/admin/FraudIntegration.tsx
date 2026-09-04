@@ -152,14 +152,14 @@ function CourierCard({
     }
   }
 
-  const canTest = account.hasSecret && /^01[3-9]\d{8}$/.test(testPhone.trim());
+  const canTest = (account.hasSecret || Boolean(account.identifier)) && /^01[3-9]\d{8}$/.test(testPhone.trim());
 
   return (
     <Card>
       <CardHeader
         title={account.label}
         hint={
-          account.hasSecret
+          account.hasSecret || account.identifier
             ? account.lastOkAt
               ? `Last answered ${formatDateTime(account.lastOkAt)}`
               : "Saved, but this courier has never answered yet."
@@ -185,13 +185,15 @@ function CourierCard({
             value={identifier}
             onChange={(event) => setIdentifier(event.target.value)}
             placeholder={
-              account.provider === "steadfast"
-                ? "Steadfast API Key"
-                : account.provider === "pathao"
-                  ? "Pathao Client ID or Token"
-                  : account.identifierLabel.includes("phone")
-                    ? "01712345678"
-                    : "API Key / Client ID"
+              account.provider === "bdcourier"
+                ? "BD Courier API Key (Bearer token)"
+                : account.provider === "steadfast"
+                  ? "Steadfast API Key"
+                  : account.provider === "pathao"
+                    ? "Pathao Client ID or Token"
+                    : account.identifierLabel.includes("phone")
+                      ? "01712345678"
+                      : "API Key / Client ID"
             }
           />
           <Input
@@ -202,11 +204,13 @@ function CourierCard({
             placeholder={
               account.hasSecret
                 ? `•••••••• (saved ${account.secretLabel || "Secret Key"})`
-                : account.provider === "steadfast"
-                  ? "Steadfast Secret Key"
-                  : account.provider === "pathao"
-                    ? "Pathao Client Secret"
-                    : "Secret Key / API Token"
+                : account.provider === "bdcourier"
+                  ? "Optional if entered on the left"
+                  : account.provider === "steadfast"
+                    ? "Steadfast Secret Key"
+                    : account.provider === "pathao"
+                      ? "Pathao Client Secret"
+                      : "Secret Key / API Token"
             }
             hint={account.hasSecret ? "Leave empty to keep the saved one." : undefined}
             autoComplete="new-password"

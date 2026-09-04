@@ -849,6 +849,10 @@ function CourierCard({
         hint={settings.courier.webhookTokenHint}
         callbackUrl={status.webhookUrl}
       />
+
+      <div className="mt-6">
+        <CourierAccountList />
+      </div>
     </div>
   );
 }

@@ -74,7 +74,7 @@ export interface FraudReport {
 /** Whether any courier is configured at all — the screen asks before showing anything. */
 export async function isConfigured(): Promise<boolean> {
   const accounts = await repo.listAccounts();
-  if (accounts.some((account) => account.enabled && account.identifier && account.secret)) {
+  if (accounts.some((account) => account.enabled && (account.identifier || account.secret))) {
     return true;
   }
   const settings = await getSettings().catch(() => null);
@@ -110,7 +110,7 @@ export async function report(
 
   const storedAccounts = await repo.listAccounts();
   const accounts = storedAccounts.filter(
-    (account) => account.enabled && account.identifier && account.secret,
+    (account) => account.enabled && (account.identifier || account.secret),
   );
 
   // Auto-include configured courier from store settings if credentials exist and not in accounts
@@ -394,6 +394,13 @@ export async function saveAccount(
   provider: ProviderKey,
   input: SaveAccountInput,
 ): Promise<AccountDto[]> {
+  if (provider === "bdcourier") {
+    if (input.identifier && !input.secret) {
+      input.secret = input.identifier;
+    } else if (input.secret && !input.identifier) {
+      input.identifier = "bdcourier";
+    }
+  }
   await repo.saveAccount(provider, input);
   log.info({ courier: provider, enabled: input.enabled }, "Courier fraud credentials saved");
   return listAccounts();
@@ -435,14 +442,15 @@ export async function testAccount(provider: ProviderKey, phone: string): Promise
     }
   }
 
-  if (!account || !account.identifier || !account.secret) {
+  const hasCreds = account && (account.secret || account.identifier);
+  if (!account || !hasCreds) {
     throw new NotFoundError(`${PROVIDERS[provider].name} has no sign-in details saved yet.`);
   }
 
   try {
     const stat = await PROVIDERS[provider].check(phone, {
-      identifier: account.identifier,
-      secret: account.secret,
+      identifier: account.identifier || account.secret,
+      secret: account.secret || account.identifier,
     });
 
     await repo.recordAttempt(provider, { ok: true });

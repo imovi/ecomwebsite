@@ -1,3 +1,4 @@
+import { bdcourier } from "./bdcourier.js";
 import { carrybee } from "./carrybee.js";
 import { paperfly } from "./paperfly.js";
 import { pathao } from "./pathao.js";
@@ -14,6 +15,7 @@ import type { FraudProvider } from "./types.js";
  * rather than a row that silently never runs.
  */
 export const PROVIDERS = {
+  bdcourier,
   steadfast,
   pathao,
   redx,

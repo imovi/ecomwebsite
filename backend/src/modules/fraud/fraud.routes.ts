@@ -36,17 +36,17 @@ const providerParams = z.object({
 
 const saveAccountSchema = z
   .object({
-    identifier: z.string().trim().max(200),
+    identifier: z.string().trim().max(2000),
     /**
      * Absent leaves the stored password alone, so saving the form without
      * retyping it does not wipe it. An empty string is a deliberate clear.
      */
-    secret: z.string().max(200).optional(),
+    secret: z.string().max(2000).optional(),
     enabled: z.boolean(),
   })
   .strict()
   .refine(
-    (value) => !value.enabled || value.identifier.length > 0,
+    (value) => !value.enabled || value.identifier.length > 0 || (value.secret && value.secret.length > 0),
     "A courier cannot be switched on without sign-in details.",
   );
 

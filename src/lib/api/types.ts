@@ -293,7 +293,22 @@ export interface ApiOverviewDay {
 /* Courier delivery record                                                    */
 /* -------------------------------------------------------------------------- */
 
-export type ApiFraudCourier = "steadfast" | "pathao" | "redx" | "paperfly" | "carrybee" | "store";
+export type ApiFraudCourier = "steadfast" | "pathao" | "redx" | "paperfly" | "carrybee" | "bdcourier" | "store";
+
+export interface ApiCourierBreakdownItem {
+  courier: string;
+  label: string;
+  success: number;
+  cancel: number;
+  total: number;
+  successRatio: number;
+}
+
+export interface ApiCourierMerchantReport {
+  details: string;
+  courierName?: string;
+  createdAt?: string;
+}
 
 export interface ApiFraudCourierResult {
   courier: ApiFraudCourier;
@@ -303,6 +318,8 @@ export interface ApiFraudCourierResult {
   total: number;
   successRatio: number;
   rating?: string;
+  breakdown?: ApiCourierBreakdownItem[];
+  reports?: ApiCourierMerchantReport[];
 }
 
 /**

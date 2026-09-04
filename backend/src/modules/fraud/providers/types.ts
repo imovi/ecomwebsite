@@ -6,6 +6,21 @@
  * and quietly making the numbers add up would invent a certainty the courier
  * did not express.
  */
+export interface CourierBreakdownItem {
+  courier: string;
+  label: string;
+  success: number;
+  cancel: number;
+  total: number;
+  successRatio: number;
+}
+
+export interface CourierMerchantReport {
+  details: string;
+  courierName?: string;
+  createdAt?: string;
+}
+
 export interface CourierStat {
   success: number;
   cancel: number;
@@ -13,6 +28,8 @@ export interface CourierStat {
   /** Percentage, to two decimals. Zero when nothing has been carried. */
   successRatio: number;
   rating?: string;
+  breakdown?: CourierBreakdownItem[];
+  reports?: CourierMerchantReport[];
 }
 
 export interface FraudCredentials {

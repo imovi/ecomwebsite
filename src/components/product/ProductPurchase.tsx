@@ -26,6 +26,7 @@ import { QtyStepper } from "./QtyStepper";
 import { StickyBuyBar } from "./StickyBuyBar";
 import { VariantPicker } from "./VariantPicker";
 import { ProductLiveBadge } from "./ProductLiveBadge";
+import { ProductVideoModal } from "./ProductVideoModal";
 
 type Selection = Partial<Record<VariantOptionName, string>>;
 
@@ -56,6 +57,7 @@ export function ProductPurchase({ product }: { product: Product }) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [stickyVisible, setStickyVisible] = useState(false);
   const [errorAxes, setErrorAxes] = useState<VariantOptionName[]>([]);
+  const [videoModalOpen, setVideoModalOpen] = useState(false);
 
   /**
    * The light switch.
@@ -241,21 +243,18 @@ export function ProductPurchase({ product }: { product: Product }) {
           />
           {product.videoUrl && (
             <div className="mt-3 flex justify-center">
-              <a
-                href="#product-video-showcase"
-                onClick={(e) => {
-                  e.preventDefault();
-                  document.getElementById("product-video-showcase")?.scrollIntoView({ behavior: "smooth" });
-                }}
-                className="inline-flex items-center gap-2 rounded-full border border-line bg-surface/90 px-3.5 py-1.5 text-caption font-medium text-ink shadow-sm hover:border-ink/30 transition-all hover:bg-surface"
+              <button
+                type="button"
+                onClick={() => setVideoModalOpen(true)}
+                className="inline-flex items-center gap-2 rounded-full border border-line bg-surface/90 px-4 py-2 text-caption font-medium text-ink shadow-sm hover:border-ink/30 transition-all hover:bg-surface active:scale-95"
               >
                 <span className="flex size-5 items-center justify-center rounded-full bg-primary text-white">
                   <svg className="size-3 translate-x-0.5 fill-current" viewBox="0 0 24 24">
                     <path d="M8 5v14l11-7z" />
                   </svg>
                 </span>
-                <span>Watch Product Video / Reel</span>
-              </a>
+                <span>Watch Product Video</span>
+              </button>
             </div>
           )}
         </div>
@@ -443,6 +442,14 @@ export function ProductPurchase({ product }: { product: Product }) {
             </div>
           </div>
         </Sheet>
+      )}
+
+      {product.videoUrl && (
+        <ProductVideoModal
+          isOpen={videoModalOpen}
+          onClose={() => setVideoModalOpen(false)}
+          videoUrl={product.videoUrl}
+        />
       )}
     </>
   );

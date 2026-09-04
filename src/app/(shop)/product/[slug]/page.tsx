@@ -12,8 +12,6 @@ import { Container, Divider, SectionHeader } from "@/components/ui/Layout";
 import { Icon } from "@/components/ui/Icon";
 import { ProductPurchase } from "@/components/product/ProductPurchase";
 import { ProductRail } from "@/components/product/ProductCard";
-import { ProductVideoShowcase } from "@/components/product/ProductVideoShowcase";
-import { resolveDirectVideoUrl } from "@/lib/video-embed";
 
 /** Statically rendered, refreshed every 5 minutes. Prices and stock still get
  *  re-validated server-side at order placement, so a slightly stale page can
@@ -60,7 +58,6 @@ export default async function ProductPage({
 
   const related = await getRelatedProducts(product);
   const inStock = totalStock(product) > 0;
-  const videoInfo = product.videoUrl ? await resolveDirectVideoUrl(product.videoUrl) : null;
 
   /* Product structured data. Reviews are deliberately absent from the store,
      so no aggregateRating is emitted — claiming one without reviews is exactly
@@ -103,14 +100,6 @@ export default async function ProductPage({
 
       <Container className="flex flex-col gap-8 pb-4">
         <Divider />
-
-        {product.videoUrl && (
-          <ProductVideoShowcase
-            video={videoInfo}
-            videoUrl={product.videoUrl}
-            productTitle={product.title}
-          />
-        )}
 
         <section>
           <h2 className="text-title text-ink">{copy.product.description}</h2>

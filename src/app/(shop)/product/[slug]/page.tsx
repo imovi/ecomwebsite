@@ -34,7 +34,12 @@ const LAMP_FAQS: ProductFaq[] = [
   {
     question: "লোডশেডিংয়ে এক চার্জে কতক্ষণ ব্যাটারি ব্যাকআপ পাওয়া যায়?",
     answer:
-      "এই রিচার্জেবল লাইটে হাই ব্রাইটনেসে একটানা ৩.৫ ঘণ্টা এবং লো/সফট ব্রাইটনেস মোডে সর্বোচ্চ ৭ ঘণ্টা পর্যন্ত চমৎকার ব্যাটারি ব্যাকআপ পাওয়া যায়। লোডশেডিংয়ের সময় পড়াশোনা বা জরুরি কাজ একটানা চালিয়ে নেওয়ার জন্য এটি উপযুক্ত সমাধান।",
+      "এই রিচার্জেবল লাইটে রয়েছে ১২০০ mAh (1200 mAh) হাই-ক্যাপাসিটি রিচার্জেবল লিথিয়াম ব্যাটারি। হাই ব্রাইটনেসে একটানা ৩.৫ ঘণ্টা এবং লো/সফট নাইট-লাইট মোডে সর্বোচ্চ ৭ ঘণ্টা পর্যন্ত চমৎকার ব্যাটারি ব্যাকআপ পাওয়া যায়। লোডশেডিংয়ের সময় পড়াশোনা বা জরুরি কাজ একটানা চালিয়ে নেওয়ার জন্য এটি উপযুক্ত সমাধান।",
+  },
+  {
+    question: "লাইটের সাইজ কতটুকু এবং প্যাকেজের বক্সে কী কী থাকবে?",
+    answer:
+      "লাইটটি ৩২ সেমি (32cm / 12.6 inch) লম্বা, যা পড়ার সম্পূর্ণ টেবিল ও বই সমানভাবে আলোকিত করে। প্যাকেজের বক্সে থাকবে: ১টি ৩২ সেমি রিচার্জেবল ম্যাগনেটিক এলইডি লাইট, ১টি ওয়্যারলেস রিমোট কন্ট্রোল (ব্যাটারিসহ), ১টি ফাস্ট ইউএসবি চার্জিং ক্যাবল, ১টি ম্যাগনেটিক মাউন্টিং বেস, অতিরিক্ত ৩M ডাবল-সাইডেড স্টিকার এবং ব্যবহারের নিয়মাবলী।",
   },
   {
     question: "কারেন্ট না থাকলে পাওয়ার ব্যাংক দিয়ে কি চার্জ দেওয়া যাবে?",
@@ -97,7 +102,7 @@ export async function generateMetadata({
   if (slug === "led-magnetic-desk-lamp") {
     title =
       "Rechargeable LED Study Lamp & Charger Light for Load Shedding — Price in BD";
-    description = `লোডশেডিং ও পড়াশোনার সেরা রিচার্জেবল চার্জার লাইট ও স্টাডি ল্যাম্প। ৩টি কালার মোড, রিমোট ও সর্বোচ্চ ৭ ঘণ্টা ব্যাটারি ব্যাকআপ। Buy Rechargeable Charger Light in BD at ৳${minPrice(product)} with Cash on Delivery.`;
+    description = `লোডশেডিং ও পড়াশোনার সেরা ৩২ সেমি রিচার্জেবল চার্জার লাইট ও স্টাডি ল্যাম্প। ১২০০ mAh ব্যাটারি, ৩টি কালার মোড, রিমোট ও ৭ ঘণ্টা ব্যাটারি ব্যাকআপ। Buy 32cm Rechargeable Charger Light in BD at ৳${minPrice(product)} with Cash on Delivery.`;
     keywords = [
       "charger light",
       "charger light price in bd",
@@ -119,6 +124,12 @@ export async function generateMetadata({
       "লোডশেডিং এ পড়ার লাইট",
       "ব্যাটারি ব্যাকআপ লাইট",
       "রিচার্জেবল লাইট",
+      "1200mah rechargeable light",
+      "32cm study lamp",
+      "32cm led light",
+      "32cm charger light",
+      "32cm magnetic lamp",
+      "1200mah study lamp",
     ];
   }
 
@@ -316,38 +327,42 @@ export default async function ProductPage({
           </p>
         </section>
 
-        <section>
-          <h2 className="text-title text-ink">{copy.product.specifications}</h2>
-          <dl className="mt-3 max-w-2xl">
-            {product.specs.map((spec, i) => (
-              <div
-                key={spec.label}
-                className={`flex gap-4 py-2.5 text-caption ${
-                  i > 0 ? "border-t border-line" : ""
-                }`}
-              >
-                <dt className="w-32 shrink-0 text-muted sm:w-40">{spec.label}</dt>
-                <dd className="min-w-0 flex-1 text-ink-soft">{spec.value}</dd>
-              </div>
-            ))}
-          </dl>
-        </section>
+        {product.specs.length > 0 && (
+          <section>
+            <h2 className="text-title text-ink">{copy.product.specifications}</h2>
+            <dl className="mt-3 max-w-2xl">
+              {product.specs.map((spec, i) => (
+                <div
+                  key={spec.label}
+                  className={`flex gap-4 py-2.5 text-caption ${
+                    i > 0 ? "border-t border-line" : ""
+                  }`}
+                >
+                  <dt className="w-32 shrink-0 text-muted sm:w-40">{spec.label}</dt>
+                  <dd className="min-w-0 flex-1 text-ink-soft">{spec.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        )}
 
-        <section>
-          <h2 className="text-title text-ink">{copy.product.included}</h2>
-          <ul className="mt-3 flex flex-col gap-2">
-            {product.included.map((item) => (
-              <li key={item} className="flex items-start gap-2.5 text-body text-ink-soft">
-                <Icon
-                  name="check"
-                  size={16}
-                  className="mt-1 shrink-0 text-positive"
-                />
-                {item}
-              </li>
-            ))}
-          </ul>
-        </section>
+        {product.included.length > 0 && (
+          <section>
+            <h2 className="text-title text-ink">{copy.product.included}</h2>
+            <ul className="mt-3 flex flex-col gap-2">
+              {product.included.map((item) => (
+                <li key={item} className="flex items-start gap-2.5 text-body text-ink-soft">
+                  <Icon
+                    name="check"
+                    size={16}
+                    className="mt-1 shrink-0 text-positive"
+                  />
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         {/* Frequently Asked Questions (SEO & Conversion Rich Snippet Section) */}
         <section className="border-t border-line pt-8">

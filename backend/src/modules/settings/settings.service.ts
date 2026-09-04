@@ -158,6 +158,7 @@ export interface SettingsDto {
      */
     hasWebhookToken: boolean;
     webhookTokenHint: string;
+    username?: string;
   };
   /**
    * Order integrations.
@@ -205,6 +206,16 @@ function serviceAccountEmailOf(credentials: string): string | null {
     /* A corrupt key is reported by the integration's own status, not here. */
     return null;
   }
+}
+
+function pathaoUsernameOf(secret: string): string | undefined {
+  if (secret.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(secret);
+      return typeof parsed.username === "string" ? parsed.username : undefined;
+    } catch {}
+  }
+  return undefined;
 }
 
 /** Shows enough of a token to tell two apart, never enough to use one. */
@@ -282,6 +293,7 @@ export function toSettingsDto(row: StoreSettingsRow): SettingsDto {
       enabled: row.courierEnabled,
       hasWebhookToken: row.courierWebhookToken !== "",
       webhookTokenHint: tokenHint(row.courierWebhookToken),
+      username: pathaoUsernameOf(row.courierApiSecret),
     },
     integrations: {
       telegram: {
@@ -355,6 +367,8 @@ export interface UpdateSettingsInput {
     /** Omitted keeps the stored key; `null` clears it. */
     apiKey?: string | null;
     apiSecret?: string | null;
+    username?: string | null;
+    password?: string | null;
     storeId?: string;
     baseUrl?: string;
     enabled?: boolean;
@@ -514,7 +528,37 @@ export async function updateSettings(input: UpdateSettingsInput): Promise<Settin
   const courier = input.courier;
   if (courier?.provider !== undefined) patch.courierProvider = courier.provider;
   if (courier?.apiKey !== undefined) patch.courierApiKey = courier.apiKey ?? "";
-  if (courier?.apiSecret !== undefined) patch.courierApiSecret = courier.apiSecret ?? "";
+
+  const currentProvider = courier?.provider !== undefined ? courier.provider : current.courierProvider;
+  if (currentProvider === "pathao") {
+    let existingSecret = current.courierApiSecret || "";
+    let parsed: Record<string, string> = {};
+    if (existingSecret.startsWith("{")) {
+      try { parsed = JSON.parse(existingSecret); } catch {}
+    } else if (existingSecret) {
+      parsed.secret = existingSecret;
+    }
+
+    let modified = false;
+    if (courier?.apiSecret !== undefined) {
+      parsed.secret = courier.apiSecret ?? "";
+      modified = true;
+    }
+    if (courier?.username !== undefined) {
+      parsed.username = courier.username ?? "";
+      modified = true;
+    }
+    if (courier?.password !== undefined) {
+      parsed.password = courier.password ?? "";
+      modified = true;
+    }
+    if (modified) {
+      patch.courierApiSecret = JSON.stringify(parsed);
+    }
+  } else {
+    if (courier?.apiSecret !== undefined) patch.courierApiSecret = courier.apiSecret ?? "";
+  }
+
   if (courier?.storeId !== undefined) patch.courierStoreId = courier.storeId;
   if (courier?.baseUrl !== undefined) patch.courierBaseUrl = courier.baseUrl;
   if (courier?.enabled !== undefined) patch.courierEnabled = courier.enabled;

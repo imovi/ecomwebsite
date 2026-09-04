@@ -102,8 +102,10 @@ const updateSettingsSchema = z
     courier: z
       .object({
         provider: z.enum(["", "steadfast", "pathao"]).optional(),
-        apiKey: z.union([z.null(), z.string().trim().min(6).max(300)]).optional(),
-        apiSecret: z.union([z.null(), z.string().trim().min(6).max(300)]).optional(),
+        apiKey: z.union([z.null(), z.string().trim().min(3).max(1000)]).optional(),
+        apiSecret: z.union([z.null(), z.string().trim().min(3).max(4000)]).optional(),
+        username: z.union([z.null(), z.string().trim().max(300)]).optional(),
+        password: z.union([z.null(), z.string().trim().max(300)]).optional(),
         /* Pathao's merchant store id — digits, and only meaningful for them. */
         storeId: z
           .union([z.literal(""), z.string().trim().regex(/^\d{1,20}$/, "A store id is a number.")])

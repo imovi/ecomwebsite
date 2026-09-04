@@ -634,6 +634,7 @@ export interface ApiStoreSettings {
     /** Webhook secret state only — the value is never returned. */
     hasWebhookToken: boolean;
     webhookTokenHint: string;
+    username?: string;
   };
   store: {
     name: string;

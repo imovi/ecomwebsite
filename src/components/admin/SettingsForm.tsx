@@ -622,6 +622,8 @@ function CourierCard({
   const [provider, setProvider] = useState(settings.courier.provider);
   const [apiKey, setApiKey] = useState("");
   const [apiSecret, setApiSecret] = useState("");
+  const [username, setUsername] = useState(settings.courier.username || "");
+  const [password, setPassword] = useState("");
   const [storeId, setStoreId] = useState(settings.courier.storeId);
 
   const isPathao = provider === "pathao";
@@ -708,7 +710,8 @@ function CourierCard({
           {settings.courier.hasCredentials && (
             <p className="flex items-center gap-2 rounded-sm bg-positive-soft px-3 py-2 text-caption text-positive">
               <Icon name="check" size={15} />
-              Credentials saved ({settings.courier.apiKeyHint}).
+              Credentials saved ({settings.courier.apiKeyHint}
+              {isPathao && settings.courier.username ? ` · ${settings.courier.username}` : ""}).
             </p>
           )}
 
@@ -717,7 +720,7 @@ function CourierCard({
               <div className="grid gap-4 sm:grid-cols-2">
                 <Input
                   label={isPathao ? "Client ID" : "Api Key"}
-                  type="password"
+                  type={isPathao ? "text" : "password"}
                   autoComplete="off"
                   value={apiKey}
                   onChange={(event) => setApiKey(event.target.value)}
@@ -733,13 +736,34 @@ function CourierCard({
               </div>
 
               {isPathao && (
-                <Input
-                  label="Store ID"
-                  value={storeId}
-                  inputMode="numeric"
-                  onChange={(event) => setStoreId(event.target.value.trim())}
-                  hint="From Pathao Merchant → Stores. Parcels are dispatched from this store."
-                />
+                <>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Input
+                      label="Pathao Login Email (Username)"
+                      type="email"
+                      autoComplete="off"
+                      value={username}
+                      onChange={(event) => setUsername(event.target.value.trim())}
+                      hint="The email address you use to log in to merchant.pathao.com."
+                    />
+                    <Input
+                      label="Pathao Login Password"
+                      type="password"
+                      autoComplete="off"
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      hint="Required by Pathao OAuth. Leave blank to keep saved password."
+                    />
+                  </div>
+
+                  <Input
+                    label="Store ID"
+                    value={storeId}
+                    inputMode="numeric"
+                    onChange={(event) => setStoreId(event.target.value.trim())}
+                    hint="From Pathao Merchant → Stores. Parcels are dispatched from this store."
+                  />
+                </>
               )}
             </>
           )}
@@ -755,12 +779,19 @@ function CourierCard({
                     provider,
                     ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
                     ...(apiSecret.trim() ? { apiSecret: apiSecret.trim() } : {}),
-                    ...(isPathao ? { storeId } : {}),
+                    ...(isPathao
+                      ? {
+                          storeId,
+                          ...(username.trim() ? { username: username.trim() } : {}),
+                          ...(password.trim() ? { password: password.trim() } : {}),
+                        }
+                      : {}),
                   },
                   "Courier saved",
                 ).then(() => {
                   setApiKey("");
                   setApiSecret("");
+                  setPassword("");
                 })
               }
             >

@@ -152,23 +152,94 @@ export function createPathaoAdapter(config: PathaoConfig): CourierProviderAdapte
     return body;
   }
 
+  function parsePathaoSecret(raw: string): {
+    clientSecret: string;
+    username?: string;
+    password?: string;
+    refreshToken?: string;
+  } {
+    const trimmed = (raw || "").trim();
+    if (trimmed.startsWith("{")) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        return {
+          clientSecret: typeof parsed.secret === "string" ? parsed.secret : typeof parsed.clientSecret === "string" ? parsed.clientSecret : "",
+          username: typeof parsed.username === "string" ? parsed.username : undefined,
+          password: typeof parsed.password === "string" ? parsed.password : undefined,
+          refreshToken: typeof parsed.refreshToken === "string" ? parsed.refreshToken : undefined,
+        };
+      } catch {}
+    }
+    return { clientSecret: trimmed };
+  }
+
   async function accessToken(): Promise<string> {
     const now = Date.now();
     /* 60s of slack, so a token that expires mid-flight is replaced first. */
     if (cached && cached.expiresAt > now + 60_000) return cached.token;
 
+    const creds = parsePathaoSecret(config.clientSecret);
+    const clientSecret = creds.clientSecret || config.clientSecret.trim();
+
+    // 1. Try refresh token if available
+    if (creds.refreshToken) {
+      try {
+        const body = await request("/aladdin/api/v1/issue-token", {
+          method: "POST",
+          body: {
+            client_id: config.clientId.trim(),
+            client_secret: clientSecret,
+            grant_type: "refresh_token",
+            refresh_token: creds.refreshToken,
+          },
+        });
+        const token = body.access_token;
+        if (typeof token === "string" && token) {
+          const expiresIn = typeof body.expires_in === "number" ? body.expires_in : 432000;
+          cached = { token, expiresAt: now + expiresIn * 1000 };
+          return token;
+        }
+      } catch (err) {
+        log.warn({ err }, "Pathao refresh token failed, falling back to credentials");
+      }
+    }
+
+    // 2. Try password grant with merchant login email & password
+    if (creds.username && creds.password) {
+      const body = await request("/aladdin/api/v1/issue-token", {
+        method: "POST",
+        body: {
+          client_id: config.clientId.trim(),
+          client_secret: clientSecret,
+          grant_type: "password",
+          username: creds.username.trim(),
+          password: creds.password.trim(),
+        },
+      });
+
+      const token = body.access_token;
+      if (typeof token !== "string" || !token) {
+        throw new CourierError("Pathao did not return an access token.");
+      }
+
+      const expiresIn = typeof body.expires_in === "number" ? body.expires_in : 432000;
+      cached = { token, expiresAt: now + expiresIn * 1000 };
+      return token;
+    }
+
+    // 3. Fallback to client_credentials
     const body = await request("/aladdin/api/v1/issue-token", {
       method: "POST",
       body: {
         client_id: config.clientId.trim(),
-        client_secret: config.clientSecret.trim(),
+        client_secret: clientSecret,
         grant_type: "client_credentials",
       },
     });
 
     const token = body.access_token;
     if (typeof token !== "string") {
-      throw new CourierError("Pathao did not return an access token.");
+      throw new CourierError("Pathao did not return an access token. Please provide your Pathao login email & password.");
     }
 
     const expiresIn = typeof body.expires_in === "number" ? body.expires_in : 3600;

@@ -96,17 +96,24 @@ export async function generateMetadata({
 
   if (slug === "led-magnetic-desk-lamp") {
     title =
-      "Rechargeable Magnetic LED Desk Lamp with Remote Control — Study & Reading Light Price in BD";
-    description = `Buy Rechargeable Magnetic LED Desk Lamp with 3 color modes, stepless dimming & remote control in Bangladesh at ৳${minPrice(product)}. Eye-friendly study light with fast cash on delivery.`;
+      "Rechargeable LED Study Lamp & Magnetic Desk Light with Remote — Price in BD";
+    description = `Buy Rechargeable LED Study Lamp & Magnetic Desk Light with 3 color modes, dimming & remote control in Bangladesh at ৳${minPrice(product)}. Eye-care reading light with fast cash on delivery.`;
     keywords = [
-      "magnetic desk lamp price in bangladesh",
-      "rechargeable study lamp bd",
-      "magnetic led light for study table",
-      "rechargeable reading light bd",
+      "study lamp",
+      "study lamp bd",
+      "led rechargeable light",
+      "rechargeable study lamp",
+      "rechargeable led light bd",
+      "study lamp price in bangladesh",
+      "magnetic desk lamp",
+      "reading light for study table",
+      "table lamp for study",
       "desk lamp with remote control bd",
-      "magnetic wall lamp price in bd",
-      "led magnetic desk lamp hinar",
-      "reading light for students bangladesh",
+      "study light rechargeable",
+      "পড়ার টেবিলের লাইট",
+      "স্টাডি ল্যাম্প",
+      "রিচার্জেবল টেবিল ল্যাম্প",
+      "রিচার্জেবল লাইট",
     ];
   }
 

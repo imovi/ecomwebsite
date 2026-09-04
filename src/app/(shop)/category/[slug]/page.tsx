@@ -51,6 +51,20 @@ export async function generateMetadata({
   const category = await getCategoryBySlug(slug);
   if (!category) return { title: copy.common.notFoundTitle };
 
+  if (slug === "light") {
+    return {
+      title: "Rechargeable LED Lights & Study Lamps Price in Bangladesh",
+      description:
+        "Buy rechargeable study lamps, magnetic LED desk lights, reading lamps & emergency lights at best prices in Bangladesh. Fast cash on delivery nationwide from HINAR.",
+      alternates: { canonical: `/category/${category.slug}` },
+      openGraph: {
+        title: "Rechargeable LED Lights & Study Lamps in Bangladesh | HINAR",
+        description:
+          "Buy rechargeable study lamps, magnetic LED desk lights & reading lamps at best prices in Bangladesh.",
+      },
+    };
+  }
+
   return {
     title: `${category.name} Price in BD`,
     description: `Shop original ${category.name.toLowerCase()} at best prices in Bangladesh. Enjoy fast nationwide cash on delivery, easy returns & genuine quality from HINAR.`,

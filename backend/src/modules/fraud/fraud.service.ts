@@ -38,8 +38,10 @@ const log = createLogger("fraud");
 /** How long a stored answer stays good enough to reuse. */
 const FRESH_FOR_MS = 24 * 60 * 60 * 1000;
 
+export type CourierKey = ProviderKey | "store";
+
 export interface CourierResult extends CourierStat {
-  courier: ProviderKey;
+  courier: CourierKey;
   /** What the courier calls itself, for the screen. */
   label: string;
 }
@@ -124,7 +126,6 @@ export async function report(
       identifier: settings.courierApiKey.trim(),
       secret: settings.courierApiSecret.trim(),
       enabled: true,
-      createdAt: new Date(),
       updatedAt: new Date(),
       lastOkAt: null,
       lastError: "",

@@ -44,6 +44,27 @@ function idOf(value: unknown): string | null {
   return null;
 }
 
+export function cleanPhone(raw: string): string {
+  const digits = (raw || "").replace(/\D/g, "");
+  if (digits.length === 11 && digits.startsWith("01")) return digits;
+  if (digits.length === 13 && digits.startsWith("8801")) return digits.slice(2);
+  if (digits.length === 14 && digits.startsWith("8801")) return digits.slice(3);
+  return digits;
+}
+
+export function normalizeAddress(address: string, areaText?: string): string {
+  let cleaned = (address || "").trim();
+  if (cleaned.length < 10) {
+    const area = (areaText || "").trim();
+    if (area && !cleaned.toLowerCase().includes(area.toLowerCase())) {
+      cleaned = `${cleaned}, ${area}`;
+    }
+    if (cleaned.length < 10) {
+      cleaned = cleaned ? `${cleaned}, Bangladesh` : "Dhaka, Bangladesh";
+    }
+  }
+  return cleaned;
+}
 
 const DEFAULT_BASE_URL = "https://api-hermes.pathao.com";
 
@@ -166,15 +187,17 @@ export function createPathaoAdapter(config: PathaoConfig): CourierProviderAdapte
    */
   async function resolveArea(
     areaText: string,
+    addressText: string,
     token: string,
   ): Promise<{ cityId: number; zoneId: number; areaId: number | null }> {
-    const haystack = areaText.toLowerCase();
+    const areaHaystack = (areaText || "").toLowerCase();
+    const fullHaystack = `${areaHaystack} ${(addressText || "").toLowerCase()}`;
 
     const cityBody = await request("/aladdin/api/v1/city-list", { method: "GET", token });
     const cities = extractList(cityBody);
 
     const city =
-      cities.find((entry) => haystack.includes(String(entry.name).toLowerCase())) ??
+      cities.find((entry) => fullHaystack.includes(String(entry.name).toLowerCase())) ??
       /* Almost every order outside a recognised city is still served from
          Dhaka's hub, and that is a better guess than refusing outright. */
       cities.find((entry) => String(entry.name).toLowerCase() === "dhaka");
@@ -191,7 +214,11 @@ export function createPathaoAdapter(config: PathaoConfig): CourierProviderAdapte
       .slice()
       .sort((a, b) => String(b.name).length - String(a.name).length);
 
-    const zone = zones.find((entry) => haystack.includes(String(entry.name).toLowerCase()));
+    let zone = zones.find((entry) => areaHaystack.includes(String(entry.name).toLowerCase()));
+    if (!zone) {
+      zone = zones.find((entry) => fullHaystack.includes(String(entry.name).toLowerCase()));
+    }
+
     if (!zone) {
       throw new CourierError(
         `Pathao does not recognise a delivery zone in "${areaText}". ` +
@@ -206,7 +233,7 @@ export function createPathaoAdapter(config: PathaoConfig): CourierProviderAdapte
         token,
       });
       const areas = extractList(areaBody);
-      areaId = areas.find((entry) => haystack.includes(String(entry.name).toLowerCase()))?.id ?? null;
+      areaId = areas.find((entry) => fullHaystack.includes(String(entry.name).toLowerCase()))?.id ?? null;
     } catch {
       /* The area is optional for Pathao — the zone is enough to dispatch. */
       areaId = null;
@@ -219,8 +246,16 @@ export function createPathaoAdapter(config: PathaoConfig): CourierProviderAdapte
     name: "pathao",
 
     async createParcel(parcel: ParcelRequest): Promise<ParcelCreated> {
+      const phone = cleanPhone(parcel.phone);
+      if (phone.length !== 11 || !phone.startsWith("01")) {
+        throw new CourierError(
+          `Recipient phone must be an 11-digit Bangladeshi mobile number starting with 01 (got "${parcel.phone}").`,
+        );
+      }
+
       const token = await accessToken();
-      const area = await resolveArea(parcel.areaText, token);
+      const area = await resolveArea(parcel.areaText, parcel.address, token);
+      const address = normalizeAddress(parcel.address, parcel.areaText);
 
       const body = await request("/aladdin/api/v1/orders", {
         method: "POST",
@@ -228,9 +263,9 @@ export function createPathaoAdapter(config: PathaoConfig): CourierProviderAdapte
         body: {
           store_id: Number(config.storeId),
           merchant_order_id: parcel.orderNumber,
-          recipient_name: parcel.customerName,
-          recipient_phone: parcel.phone,
-          recipient_address: parcel.address,
+          recipient_name: parcel.customerName.trim(),
+          recipient_phone: phone,
+          recipient_address: address,
           recipient_city: area.cityId,
           recipient_zone: area.zoneId,
           ...(area.areaId === null ? {} : { recipient_area: area.areaId }),

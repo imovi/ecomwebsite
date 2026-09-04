@@ -108,10 +108,12 @@ export function SettingsForm() {
     try {
       const [data, courierData] = await Promise.all([
         adminApi.get<{ settings: ApiStoreSettings }>("admin/settings"),
-        adminApi.get<{ status: CourierStatus }>("admin/courier/status"),
+        adminApi.get<{ status: CourierStatus }>("admin/courier/status").catch(() => null),
       ]);
       hydrate(data.settings);
-      setCourierStatus(courierData.status);
+      if (courierData?.status) {
+        setCourierStatus(courierData.status);
+      }
       setError(null);
     } catch (caught) {
       setError(caught instanceof AdminApiError ? caught.message : "Could not load settings.");
@@ -232,6 +234,99 @@ export function SettingsForm() {
     );
   }
 
+  if (tab === "courier") {
+    const activeStatus: CourierStatus = courierStatus ?? {
+      ready: false,
+      problem: settings?.courier.hasCredentials ? null : "missing_credentials",
+      provider: settings?.courier.provider || "",
+      credentialsConfigured: settings?.courier.hasCredentials ?? false,
+      storeIdConfigured: Boolean(settings?.courier.storeId),
+      enabled: settings?.courier.enabled ?? false,
+      openShipments: 0,
+      webhookConfigured: settings?.courier.hasWebhookToken ?? false,
+      webhookUrl: "",
+    };
+
+    return (
+      <AdminShell title="Settings">
+        <PageBody columns={false}>
+          <SettingsTabs tab={tab} onTab={setTab} />
+        </PageBody>
+        <PageBody>
+          <AsyncState loading={loading} error={error} onRetry={() => void load()}>
+            {settings && (
+              <>
+                <CourierCard
+                  settings={settings}
+                  status={activeStatus}
+                  busy={courierBusy}
+                  saveError={courierSaveError}
+                  result={courierResult}
+                  onSave={saveCourier}
+                  onTest={testCourier}
+                />
+
+                <Card>
+                  <CardHeader
+                    title="What an order costs you"
+                    hint="Used by the profit page and nowhere else. Customers never see these."
+                  />
+                  <div className="grid gap-4 p-4 sm:grid-cols-2">
+                    <Input
+                      label="Courier, inside Dhaka (৳)"
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={form.courierInsideDhaka}
+                      onChange={(event) => set("courierInsideDhaka", event.target.value)}
+                      hint="What the courier bills you — not what you charge the customer."
+                    />
+                    <Input
+                      label="Courier, outside Dhaka (৳)"
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={form.courierOutsideDhaka}
+                      onChange={(event) => set("courierOutsideDhaka", event.target.value)}
+                    />
+                    <Input
+                      label="Packaging per parcel (৳)"
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={form.packagingPerOrder}
+                      onChange={(event) => set("packagingPerOrder", event.target.value)}
+                      hint="Box, tape, bubble wrap, printed invoice."
+                    />
+                    <Input
+                      label="Cost of a returned parcel (৳)"
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={form.returnPerOrder}
+                      onChange={(event) => set("returnPerOrder", event.target.value)}
+                      hint="What it costs you when a customer refuses delivery."
+                    />
+                  </div>
+                  <div className="border-t border-line p-4">
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      loading={saving}
+                      onClick={() => void save()}
+                    >
+                      Save costs
+                    </Button>
+                  </div>
+                </Card>
+              </>
+            )}
+          </AsyncState>
+        </PageBody>
+      </AdminShell>
+    );
+  }
+
   return (
     <AdminShell title="Settings">
       <PageBody columns={false}>
@@ -321,18 +416,6 @@ export function SettingsForm() {
                   />
                 </div>
               </Card>
-
-              {courierStatus && (
-                <CourierCard
-                  settings={settings}
-                  status={courierStatus}
-                  busy={courierBusy}
-                  saveError={courierSaveError}
-                  result={courierResult}
-                  onSave={saveCourier}
-                  onTest={testCourier}
-                />
-              )}
 
               <Card>
                 <CardHeader title="Order rules" />
@@ -887,18 +970,15 @@ function Steps({ steps }: { steps: string[] }) {
 
 /* -------------------------------------------------------------------------- */
 
-type SettingsTab = "shop" | "messages";
+type SettingsTab = "shop" | "courier" | "messages";
 
 /**
- * Two screens under one heading.
- *
- * The message editor is eleven text boxes with a preview each — put on the same
- * page as the delivery charges it would bury them, and an owner looking for a
- * courier cost would scroll past ten Bangla paragraphs to find it.
+ * Three screens under one heading: Shop details, Courier integration, and WhatsApp.
  */
 function SettingsTabs({ tab, onTab }: { tab: SettingsTab; onTab: (tab: SettingsTab) => void }) {
   const tabs: { key: SettingsTab; label: string }[] = [
     { key: "shop", label: "Shop" },
+    { key: "courier", label: "Courier (Steadfast / Pathao)" },
     { key: "messages", label: "WhatsApp messages" },
   ];
 

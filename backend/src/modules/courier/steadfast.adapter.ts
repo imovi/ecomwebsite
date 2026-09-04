@@ -40,6 +40,24 @@ function idOf(value: unknown): string | null {
   return null;
 }
 
+export function cleanPhone(raw: string): string {
+  const digits = (raw || "").replace(/\D/g, "");
+  if (digits.length === 11 && digits.startsWith("01")) return digits;
+  if (digits.length === 13 && digits.startsWith("8801")) return digits.slice(2);
+  if (digits.length === 14 && digits.startsWith("8801")) return digits.slice(3);
+  return digits;
+}
+
+export function normalizeAddress(address: string, areaText?: string): string {
+  const parts = [address?.trim(), areaText?.trim()].filter(
+    (s): s is string => Boolean(s && s !== "undefined"),
+  );
+  let combined = parts.join(", ");
+  if (combined.length < 10) {
+    combined = combined ? `${combined}, Bangladesh` : "Dhaka, Bangladesh";
+  }
+  return combined;
+}
 
 const DEFAULT_BASE_URL = "https://portal.packzy.com/api/v1";
 
@@ -141,15 +159,24 @@ export function createSteadfastAdapter(config: SteadfastConfig): CourierProvider
     name: "steadfast",
 
     async createParcel(parcel: ParcelRequest): Promise<ParcelCreated> {
+      const phone = cleanPhone(parcel.phone);
+      if (phone.length !== 11 || !phone.startsWith("01")) {
+        throw new CourierError(
+          `Recipient phone must be an 11-digit Bangladeshi mobile number starting with 01 (got "${parcel.phone}").`,
+        );
+      }
+
+      const address = normalizeAddress(parcel.address, parcel.areaText);
+
       const body = await call("/create_order", {
         method: "POST",
         body: {
           /* Their invoice field is our order number, which is what makes their
              panel and ours reconcilable by eye. */
           invoice: parcel.orderNumber,
-          recipient_name: parcel.customerName,
-          recipient_phone: parcel.phone,
-          recipient_address: `${parcel.address}, ${parcel.areaText}`,
+          recipient_name: parcel.customerName.trim(),
+          recipient_phone: phone,
+          recipient_address: address,
           cod_amount: parcel.codAmount,
           note: parcel.note ?? parcel.itemDescription,
         },

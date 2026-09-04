@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -116,8 +116,8 @@ export function OrderQuickDrawer({
     ? whatsappHref(
         order.phone,
         orderMessage(order, { storeName: "Hinar BD" }),
-      )
-    : null;
+      ) ?? undefined
+    : undefined;
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-xs transition-opacity animate-in fade-in duration-150">

@@ -217,6 +217,11 @@ export function OrderList() {
     toast(`Copied details for #${order.orderNumber}!`, { tone: "positive" });
   }
 
+  function getOrderWhatsAppHref(order: ApiOrderListItem): string | undefined {
+    const text = `আসসালামু আলাইকুম ${order.customerName},\nআপনার অর্ডার #${order.orderNumber} এর বিষয়ে যোগাযোগ করা হচ্ছে। মোট: ৳${order.grandTotal} (ক্যাশ অন ডেলিভারি)।`;
+    return whatsappHref(order.phone, text) ?? undefined;
+  }
+
   /**
    * Exports what is ticked, or the whole filtered list when nothing is.
    *
@@ -485,12 +490,9 @@ export function OrderList() {
                   </svg>
                   Copy
                 </button>
-                {whatsappNumber(order.phone) ? (
+                {getOrderWhatsAppHref(order) ? (
                   <a
-                    href={whatsappHref(
-                      order.phone,
-                      `আসসালামু আলাইকুম ${order.customerName},\nআপনার অর্ডার #${order.orderNumber} এর বিষয়ে যোগাযোগ করা হচ্ছে। মোট: ৳${order.grandTotal} (ক্যাশ অন ডেলিভারি)।`,
-                    )}
+                    href={getOrderWhatsAppHref(order)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex min-h-10 items-center justify-center gap-1 font-medium text-emerald-700 hover:bg-emerald-50 active:bg-emerald-100 transition-colors"
@@ -624,12 +626,9 @@ export function OrderList() {
                           </svg>
                         </button>
 
-                        {whatsappNumber(order.phone) && (
+                        {getOrderWhatsAppHref(order) && (
                           <a
-                            href={whatsappHref(
-                              order.phone,
-                              `আসসালামু আলাইকুম ${order.customerName},\nআপনার অর্ডার #${order.orderNumber} এর বিষয়ে যোগাযোগ করা হচ্ছে। মোট: ৳${order.grandTotal} (ক্যাশ অন ডেলিভারি)।`,
-                            )}
+                            href={getOrderWhatsAppHref(order)}
                             target="_blank"
                             rel="noopener noreferrer"
                             title="Open WhatsApp chat"

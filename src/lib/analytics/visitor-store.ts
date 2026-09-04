@@ -83,6 +83,13 @@ export interface DailyBreakdownItem {
   uniqueVisitors: number;
 }
 
+export interface VisitorSummaryOverview {
+  today: { uniqueVisitors: number; totalVisits: number; liveNow: number };
+  yesterday: { uniqueVisitors: number; totalVisits: number };
+  last7days: { uniqueVisitors: number; totalVisits: number };
+  last30days: { uniqueVisitors: number; totalVisits: number };
+}
+
 export interface VisitorStatsResponse {
   date: string;
   startDate?: string;
@@ -103,6 +110,7 @@ export interface VisitorStatsResponse {
   liveProducts: LiveProductStat[];
   recentSessions: RecentSessionRow[];
   dailyBreakdown: DailyBreakdownItem[];
+  summary?: VisitorSummaryOverview;
 }
 
 export interface StoredEvent {
@@ -155,14 +163,99 @@ function detectDevice(userAgent?: string): "Mobile" | "Desktop" | "Tablet" {
 
 const HEARTBEAT_WINDOW_MS = 60 * 1000; // 60 seconds inactivity = offline
 
+let hasMigratedTmp = false;
+
 function getDataDir(): string {
-  const dir = process.platform === "win32"
-    ? path.join(process.cwd(), ".data", "visitors")
-    : path.join("/tmp", "hinar-visitors");
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+  const custom = process.env.VISITOR_DATA_DIR;
+  let dir = "";
+  if (custom) {
+    dir = custom;
+  } else if (process.platform === "win32") {
+    dir = path.join(process.cwd(), ".data", "visitors");
+  } else {
+    dir = "/app/data/visitors";
   }
+
+  if (!fs.existsSync(dir)) {
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+    } catch {
+      dir = path.join("/tmp", "hinar-visitors");
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    }
+  }
+
+  // One-time automatic migration of any existing files from /tmp/hinar-visitors to persistent dir
+  if (!hasMigratedTmp && process.platform !== "win32" && dir !== "/tmp/hinar-visitors") {
+    hasMigratedTmp = true;
+    try {
+      const tmpDir = "/tmp/hinar-visitors";
+      if (fs.existsSync(tmpDir)) {
+        const files = fs.readdirSync(tmpDir);
+        for (const file of files) {
+          const src = path.join(tmpDir, file);
+          const dst = path.join(dir, file);
+          if (!fs.existsSync(dst)) {
+            fs.copyFileSync(src, dst);
+          }
+        }
+      }
+    } catch {}
+  }
+
   return dir;
+}
+
+function getQuickDayStats(dataDir: string, targetDate: string): { totalVisits: number; uniqueVisitors: number } {
+  const filePath = path.join(dataDir, `${targetDate}.jsonl`);
+  if (!fs.existsSync(filePath)) {
+    return { totalVisits: 0, uniqueVisitors: 0 };
+  }
+  try {
+    const lines = fs.readFileSync(filePath, "utf8").split("\n");
+    let totalVisits = 0;
+    const vids = new Set<string>();
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      totalVisits++;
+      try {
+        const ev = JSON.parse(line);
+        if (ev.visitorId) vids.add(ev.visitorId);
+      } catch {}
+    }
+    return { totalVisits, uniqueVisitors: vids.size };
+  } catch {
+    return { totalVisits: 0, uniqueVisitors: 0 };
+  }
+}
+
+function getQuickRangeStats(dataDir: string, startDate: string, endDate: string): { totalVisits: number; uniqueVisitors: number } {
+  try {
+    const allFiles = fs.existsSync(dataDir)
+      ? fs.readdirSync(dataDir).filter((f) => f.endsWith(".jsonl"))
+      : [];
+    let totalVisits = 0;
+    const vids = new Set<string>();
+    for (const f of allFiles) {
+      const d = f.replace(".jsonl", "");
+      if (d >= startDate && d <= endDate) {
+        const lines = fs.readFileSync(path.join(dataDir, f), "utf8").split("\n");
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i].trim();
+          if (!line) continue;
+          totalVisits++;
+          try {
+            const ev = JSON.parse(line);
+            if (ev.visitorId) vids.add(ev.visitorId);
+          } catch {}
+        }
+      }
+    }
+    return { totalVisits, uniqueVisitors: vids.size };
+  } catch {
+    return { totalVisits: 0, uniqueVisitors: 0 };
+  }
 }
 
 function getLogFilePath(date: string): string {
@@ -601,6 +694,22 @@ export function getVisitorStats(param?: string | VisitorStatsQuery): VisitorStat
       isLive: isLiveSupported ? liveVisitorIds.has(ev.visitorId) : false,
     }));
 
+  const yesterdayDate = offsetDhakaDate(-1);
+  const sevenDaysAgoDate = offsetDhakaDate(-6);
+  const thirtyDaysAgoDate = offsetDhakaDate(-29);
+
+  const todayMetrics = getQuickDayStats(dataDir, today);
+  const yesterdayMetrics = getQuickDayStats(dataDir, yesterdayDate);
+  const last7Metrics = getQuickRangeStats(dataDir, sevenDaysAgoDate, today);
+  const last30Metrics = getQuickRangeStats(dataDir, thirtyDaysAgoDate, today);
+
+  const summary: VisitorSummaryOverview = {
+    today: { ...todayMetrics, liveNow: getLiveVisitorsCount() },
+    yesterday: yesterdayMetrics,
+    last7days: last7Metrics,
+    last30days: last30Metrics,
+  };
+
   return {
     date: query.date || startDate || today,
     startDate,
@@ -617,6 +726,7 @@ export function getVisitorStats(param?: string | VisitorStatsQuery): VisitorStat
     liveProducts,
     recentSessions,
     dailyBreakdown,
+    summary,
   };
 }
 

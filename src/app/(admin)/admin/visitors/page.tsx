@@ -139,7 +139,7 @@ export default function VisitorsPage() {
             onClick={() => selectPreset("today")}
             className={cn(filterType === "today" && "border-ink bg-ink text-white font-bold")}
           >
-            Today
+            Today / আজকে
           </Button>
           <Button
             size="sm"
@@ -147,7 +147,7 @@ export default function VisitorsPage() {
             onClick={() => selectPreset("yesterday")}
             className={cn(filterType === "yesterday" && "border-ink bg-ink text-white font-bold")}
           >
-            Yesterday
+            Yesterday / গতকাল
           </Button>
           <Button
             size="sm"
@@ -182,7 +182,7 @@ export default function VisitorsPage() {
               customOpen && "ring-2 ring-accent"
             )}
           >
-            Custom ▾
+            Custom Date ▾
           </Button>
           <Button
             size="sm"
@@ -197,6 +197,120 @@ export default function VisitorsPage() {
       }
     >
       <div className="space-y-6">
+        {/* Quick Glance Comparison Cards (Google Analytics style) */}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {/* 1. Live Right Now */}
+          <div
+            onClick={() => selectPreset("today")}
+            className={cn(
+              "cursor-pointer rounded-xl border p-4 transition-all hover:shadow-md",
+              filterType === "today"
+                ? "border-emerald-500 bg-emerald-50/70 ring-2 ring-emerald-500/30"
+                : "border-line bg-white hover:border-emerald-300"
+            )}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-micro font-bold text-emerald-700 uppercase tracking-wider">
+                🟢 Live Now
+              </span>
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500"></span>
+              </span>
+            </div>
+            <p className="mt-2 text-3xl font-extrabold tracking-tight text-emerald-800">
+              {stats?.summary?.today?.liveNow ?? stats?.liveNow ?? 0}
+            </p>
+            <p className="mt-1 text-micro text-emerald-600 font-medium">
+              Active in last 60s
+            </p>
+          </div>
+
+          {/* 2. Today */}
+          <div
+            onClick={() => selectPreset("today")}
+            className={cn(
+              "cursor-pointer rounded-xl border p-4 transition-all hover:shadow-md",
+              filterType === "today"
+                ? "border-accent bg-accent/5 ring-2 ring-accent/30"
+                : "border-line bg-white hover:border-accent/40"
+            )}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-micro font-bold text-muted uppercase tracking-wider">
+                📅 Today (আজকে)
+              </span>
+              {filterType === "today" && (
+                <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-bold text-accent">
+                  Active
+                </span>
+              )}
+            </div>
+            <p className="mt-2 text-3xl font-extrabold tracking-tight text-ink">
+              {(stats?.summary?.today?.uniqueVisitors ?? stats?.uniqueVisitors ?? 0).toLocaleString()}
+            </p>
+            <p className="mt-1 text-micro text-muted">
+              <strong>{(stats?.summary?.today?.totalVisits ?? stats?.totalVisits ?? 0).toLocaleString()}</strong> views · Unique
+            </p>
+          </div>
+
+          {/* 3. Yesterday */}
+          <div
+            onClick={() => selectPreset("yesterday")}
+            className={cn(
+              "cursor-pointer rounded-xl border p-4 transition-all hover:shadow-md",
+              filterType === "yesterday"
+                ? "border-accent bg-accent/5 ring-2 ring-accent/30"
+                : "border-line bg-white hover:border-accent/40"
+            )}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-micro font-bold text-muted uppercase tracking-wider">
+                ⏮️ Yesterday (গতকাল)
+              </span>
+              {filterType === "yesterday" && (
+                <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-bold text-accent">
+                  Active
+                </span>
+              )}
+            </div>
+            <p className="mt-2 text-3xl font-extrabold tracking-tight text-ink">
+              {(stats?.summary?.yesterday?.uniqueVisitors ?? 0).toLocaleString()}
+            </p>
+            <p className="mt-1 text-micro text-muted">
+              <strong>{(stats?.summary?.yesterday?.totalVisits ?? 0).toLocaleString()}</strong> views · Unique
+            </p>
+          </div>
+
+          {/* 4. Last 7 Days */}
+          <div
+            onClick={() => selectPreset("last7")}
+            className={cn(
+              "cursor-pointer rounded-xl border p-4 transition-all hover:shadow-md",
+              filterType === "last7"
+                ? "border-accent bg-accent/5 ring-2 ring-accent/30"
+                : "border-line bg-white hover:border-accent/40"
+            )}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-micro font-bold text-muted uppercase tracking-wider">
+                📈 Last 7 Days (৭ দিন)
+              </span>
+              {filterType === "last7" && (
+                <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-bold text-accent">
+                  Active
+                </span>
+              )}
+            </div>
+            <p className="mt-2 text-3xl font-extrabold tracking-tight text-ink">
+              {(stats?.summary?.last7days?.uniqueVisitors ?? 0).toLocaleString()}
+            </p>
+            <p className="mt-1 text-micro text-muted">
+              <strong>{(stats?.summary?.last7days?.totalVisits ?? 0).toLocaleString()}</strong> views · Past week
+            </p>
+          </div>
+        </div>
+
         {/* Custom Filter Selection Box */}
         {customOpen && (
           <Card className="border-accent/40 bg-white p-4 shadow-md transition-all">

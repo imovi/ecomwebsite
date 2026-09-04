@@ -88,7 +88,11 @@ export function VisitorTracker() {
     if (!pathname) return;
     if (lastPath.current !== pathname) {
       lastPath.current = pathname;
-      sendTrack("pageview", pathname);
+      // 150ms timeout ensures Next.js metadata has rendered the product/page title
+      const timer = setTimeout(() => {
+        sendTrack("pageview", pathname);
+      }, 150);
+      return () => clearTimeout(timer);
     }
   }, [pathname]);
 

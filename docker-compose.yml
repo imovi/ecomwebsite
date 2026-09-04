@@ -205,6 +205,7 @@ services:
       # directory is build output that MUST come from the image, and a stale
       # volume over it would serve the previous release's code.
       - next-cache:/app/.next/cache
+      - visitor-data:/app/data/visitors
     ports:
       # Loopback only. TLS is the reverse proxy's job — exposing this directly
       # would serve the shop over plaintext HTTP.
@@ -243,3 +244,4 @@ volumes:
   postgres-data:
   uploads:
   next-cache:
+  visitor-data:

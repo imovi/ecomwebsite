@@ -97,7 +97,7 @@ COPY --from=build /app/public ./public
 # the source, which on this deployment exhausted the API's rate limit and made
 # every image on the shop fail — while the HTML kept rendering, so it read as an
 # empty catalogue rather than as a permissions error.
-RUN mkdir -p .next/cache && chown -R node:node .next
+RUN mkdir -p .next/cache data/visitors && chown -R node:node .next data
 
 USER node
 

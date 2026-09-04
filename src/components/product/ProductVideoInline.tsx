@@ -47,9 +47,9 @@ export function ProductVideoInline({ videoUrl, initialVideo }: ProductVideoInlin
   if (!videoUrl) return null;
 
   return (
-    <div id="product-video-section" ref={sectionRef} className="w-full">
+    <div id="product-video-section" ref={sectionRef} className="w-full flex flex-col items-center sm:items-start">
       {!isOpen ? (
-        <div>
+        <div className="w-full flex justify-center sm:justify-start">
           <button
             type="button"
             onClick={() => setIsOpen(true)}
@@ -72,8 +72,8 @@ export function ProductVideoInline({ videoUrl, initialVideo }: ProductVideoInlin
           </button>
         </div>
       ) : (
-        <div className="flex flex-col animate-in fade-in duration-200">
-          <div className="flex justify-end mb-2 max-w-[340px] sm:max-w-md">
+        <div className="w-full flex flex-col items-center sm:items-start animate-in fade-in duration-200">
+          <div className="w-full max-w-[340px] sm:max-w-md flex justify-end mb-2">
             <button
               type="button"
               onClick={() => setIsOpen(false)}
@@ -86,7 +86,7 @@ export function ProductVideoInline({ videoUrl, initialVideo }: ProductVideoInlin
             </button>
           </div>
 
-          {/* Pure Clean Video Player - Zero extra text/badges */}
+          {/* Pure Clean Video Player - Centered on mobile */}
           {video?.type === "direct" && video.isVertical ? (
             <div className="relative w-full max-w-[340px] aspect-[9/16] overflow-hidden rounded-2xl bg-black shadow-md border border-line">
               <video

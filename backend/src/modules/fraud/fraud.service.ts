@@ -335,22 +335,19 @@ export async function listAccounts(): Promise<AccountDto[]> {
     let hasSecret = Boolean(account?.secret);
     let enabled = account?.enabled ?? false;
 
-    // Only fallback if this courier has NO entry in courier_fraud_accounts at all
-    if (!account) {
-      if (
-        key === "steadfast" &&
-        settings?.courierApiKey &&
-        settings?.courierApiSecret
-      ) {
+    // For Pathao: keep credentials synced from store settings if not manually typed in fraud accounts
+    if (key === "pathao") {
+      if (!identifier && settings?.courierApiKey) {
         identifier = settings.courierApiKey.trim();
+      }
+      if (!hasSecret && settings?.courierApiSecret) {
         hasSecret = true;
-        enabled = false;
-      } else if (
-        key === "pathao" &&
-        settings?.courierProvider === "pathao" &&
-        settings?.courierApiKey &&
-        settings?.courierApiSecret
-      ) {
+      }
+      if (!account && settings?.courierProvider === "pathao") {
+        enabled = true;
+      }
+    } else if (!account && key === "steadfast") {
+      if (settings?.courierApiKey && settings?.courierApiSecret) {
         identifier = settings.courierApiKey.trim();
         hasSecret = true;
         enabled = false;
@@ -392,11 +389,28 @@ export async function saveAccount(
       input.identifier = "bdcourier";
     }
   }
+  // If saving Pathao without retyping secret, automatically pull from existing or storeSettings
+  if (provider === "pathao" && !input.secret) {
+    const existing = await repo.findAccount("pathao");
+    if (existing?.secret) {
+      input.secret = existing.secret;
+    } else {
+      const settings = await getSettings().catch(() => null);
+      if (settings?.courierApiSecret) {
+        input.secret = settings.courierApiSecret.trim();
+      }
+    }
+  }
   // Preserve existing identifier if toggling without re-entering identifier
   if (!input.identifier) {
     const existing = await repo.findAccount(provider);
     if (existing?.identifier) {
       input.identifier = existing.identifier;
+    } else if (provider === "pathao") {
+      const settings = await getSettings().catch(() => null);
+      if (settings?.courierApiKey) {
+        input.identifier = settings.courierApiKey.trim();
+      }
     }
   }
   await repo.saveAccount(provider, input);

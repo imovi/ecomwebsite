@@ -8,7 +8,9 @@ const API_BASE = "https://portal.packzy.com/api/v1";
 
 export const steadfast: FraudProvider = {
   name: NAME,
-  identifierLabel: "API Key or Merchant email",
+  identifierLabel: "API Key",
+  secretLabel: "Secret Key",
+  hint: "Official Steadfast API Key and Secret Key (no password needed).",
 
   async check(phone: string, credentials: FraudCredentials): Promise<CourierStat> {
     const rawPhone = (phone || "").replace(/\D/g, "");

@@ -342,18 +342,26 @@ export async function listAccounts(): Promise<AccountDto[]> {
       identifier = settings.courierApiKey.trim();
       hasSecret = true;
       enabled = true;
+    } else if (
+      key === "pathao" &&
+      !identifier &&
+      settings?.courierProvider === "pathao" &&
+      settings?.courierApiKey &&
+      settings?.courierApiSecret
+    ) {
+      identifier = settings.courierApiKey.trim();
+      hasSecret = true;
+      enabled = true;
     }
+
+    const prov = PROVIDERS[key];
 
     return {
       provider: key,
-      label: PROVIDERS[key].name,
-      identifierLabel:
-        key === "steadfast" ? "API Key" : PROVIDERS[key].identifierLabel,
-      secretLabel: key === "steadfast" ? "Secret Key" : "Password",
-      hint:
-        key === "steadfast"
-          ? "Official API Key & Secret Key (No login password needed)."
-          : undefined,
+      label: prov.name,
+      identifierLabel: prov.identifierLabel,
+      secretLabel: prov.secretLabel || "Secret Key / API Token",
+      hint: prov.hint || `${prov.name} API Key & Secret Key`,
       identifier,
       hasSecret,
       enabled,
@@ -399,12 +407,12 @@ export async function testAccount(provider: ProviderKey, phone: string): Promise
 
   if (
     (!account || !account.identifier || !account.secret) &&
-    provider === "steadfast"
+    (provider === "steadfast" || provider === "pathao")
   ) {
     const settings = await getSettings().catch(() => null);
     if (settings?.courierApiKey && settings?.courierApiSecret) {
       account = {
-        provider: "steadfast",
+        provider,
         identifier: settings.courierApiKey.trim(),
         secret: settings.courierApiSecret.trim(),
         enabled: true,

@@ -23,23 +23,39 @@ const CAME_BACK = /return|cancel|fail/i;
 
 export const paperfly: FraudProvider = {
   name: NAME,
-  identifierLabel: "Merchant username",
+  identifierLabel: "API Key / Username",
+  secretLabel: "Secret Key / API Token",
+  hint: "Paperfly API Key or Username & Secret.",
 
   async check(phone: string, credentials: FraudCredentials): Promise<CourierStat> {
-    const login = await request(NAME, `${BASE}/authentication/login_using_password.php`, {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        username: credentials.identifier,
-        password: credentials.secret,
-      }).toString(),
-    });
+    let token: string | null = null;
 
-    if (login.status === 401) throw credentialsRejected(NAME);
+    if (credentials.identifier.startsWith("eyJ") || credentials.identifier.length > 50) {
+      token = credentials.identifier.trim();
+    } else if (credentials.secret.startsWith("eyJ") || credentials.secret.length > 50) {
+      token = credentials.secret.trim();
+    }
 
-    const parsed = asJson(NAME, login.body);
-    const token = pick(parsed, "token") ?? pick(parsed, "data", "token");
-    if (typeof token !== "string" || !token) throw credentialsRejected(NAME, "no token was issued");
+    if (!token) {
+      const login = await request(NAME, `${BASE}/authentication/login_using_password.php`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          username: credentials.identifier.trim(),
+          password: credentials.secret.trim(),
+        }).toString(),
+      });
+
+      if (login.status === 401) throw credentialsRejected(NAME);
+
+      const parsed = asJson(NAME, login.body);
+      const parsedToken = pick(parsed, "token") ?? pick(parsed, "data", "token");
+      if (typeof parsedToken === "string" && parsedToken) {
+        token = parsedToken;
+      }
+    }
+
+    if (!token) throw credentialsRejected(NAME, "no token was issued");
 
     const check = await request(NAME, `${BASE}/smart-check/list.php`, {
       method: "POST",

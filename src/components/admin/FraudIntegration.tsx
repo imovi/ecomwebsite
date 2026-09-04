@@ -181,43 +181,41 @@ function CourierCard({
 
         <div className="grid gap-3 sm:grid-cols-2">
           <Input
-            label={account.identifierLabel || (account.provider === "steadfast" ? "API Key" : "Merchant email")}
+            label={account.identifierLabel || "API Key / Client ID"}
             value={identifier}
             onChange={(event) => setIdentifier(event.target.value)}
             placeholder={
               account.provider === "steadfast"
                 ? "Steadfast API Key"
-                : account.identifierLabel.includes("phone")
-                  ? "01712345678"
-                  : ""
+                : account.provider === "pathao"
+                  ? "Pathao Client ID or Token"
+                  : account.identifierLabel.includes("phone")
+                    ? "01712345678"
+                    : "API Key / Client ID"
             }
           />
           <Input
-            label={account.secretLabel || (account.provider === "steadfast" ? "Secret Key" : "Password")}
+            label={account.secretLabel || "Secret Key / API Token"}
             type="password"
             value={secret}
             onChange={(event) => setSecret(event.target.value)}
             placeholder={
               account.hasSecret
-                ? `•••••••• (saved ${account.provider === "steadfast" ? "Secret Key" : "Password"})`
+                ? `•••••••• (saved ${account.secretLabel || "Secret Key"})`
                 : account.provider === "steadfast"
                   ? "Steadfast Secret Key"
-                  : "••••••••"
+                  : account.provider === "pathao"
+                    ? "Pathao Client Secret"
+                    : "Secret Key / API Token"
             }
             hint={account.hasSecret ? "Leave empty to keep the saved one." : undefined}
             autoComplete="new-password"
           />
         </div>
 
-        {account.provider === "steadfast" ? (
-          <p className="rounded-xs bg-positive-soft/60 px-2.5 py-1.5 text-micro text-positive">
-            ✓ <strong>API Key supported:</strong> Steadfast uses official API Key &amp; Secret Key (no login password needed).
-          </p>
-        ) : (
-          <p className="rounded-xs bg-surface-raised px-2.5 py-1.5 text-micro text-muted">
-            ℹ️ <strong>Merchant login:</strong> {account.label} does not provide an open fraud API key. Merchant dashboard sign-in is used to fetch customer delivery rate.
-          </p>
-        )}
+        <p className="rounded-xs bg-positive-soft/50 px-2.5 py-1.5 text-micro text-positive">
+          ✓ <strong>API Integration:</strong> Connects to {account.label}&apos;s API for automated customer delivery history lookup.
+        </p>
 
         <label className="flex w-fit items-center gap-2 text-caption text-ink">
           <input
@@ -225,7 +223,7 @@ function CourierCard({
             checked={enabled}
             onChange={(event) => setEnabled(event.target.checked)}
           />
-          Ask this courier about new customers
+          Enable customer delivery record lookup for {account.label}
         </label>
 
         <div className="flex flex-wrap gap-2">
@@ -237,16 +235,13 @@ function CourierCard({
             disabled={enabled && identifier.trim().length === 0}
             onClick={() => void save()}
           >
-            Save
+            Save API credentials
           </Button>
         </div>
 
-        {/* A live sign-in on demand. This is the only proof that a password
-            works, and it has to be here because only the account's owner can
-            run it. */}
         <div className="flex flex-col gap-2 border-t border-line pt-3">
           <p className="text-micro uppercase tracking-wide text-muted">
-            {account.provider === "steadfast" ? "Test the API connection" : "Test the sign-in"}
+            Test API connection
           </p>
           <div className="flex flex-wrap items-end gap-2">
             <Input
@@ -270,7 +265,7 @@ function CourierCard({
 
           {!account.hasSecret && (
             <p className="text-micro text-muted">
-              {account.provider === "steadfast" ? "Save Secret Key first." : "Save a password first."}
+              Save {account.secretLabel || "Secret Key"} first.
             </p>
           )}
 

@@ -19,7 +19,9 @@ const API = "https://api-merchant.carrybee.com";
  */
 export const carrybee: FraudProvider = {
   name: NAME,
-  identifierLabel: "Merchant phone",
+  identifierLabel: "API Key / Client ID",
+  secretLabel: "Secret Key / API Token",
+  hint: "Carrybee API Key or Merchant Phone & Secret.",
 
   async check(phone: string, credentials: FraudCredentials): Promise<CourierStat> {
     const csrfResponse = await request(NAME, `${PANEL}/api/auth/csrf`, {

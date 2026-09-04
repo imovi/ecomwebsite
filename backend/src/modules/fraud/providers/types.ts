@@ -31,6 +31,8 @@ export interface FraudProvider {
   readonly name: string;
   /** What the courier calls the thing you sign in with — shown in Settings. */
   readonly identifierLabel: string;
+  readonly secretLabel?: string;
+  readonly hint?: string;
   check(phone: string, credentials: FraudCredentials): Promise<CourierStat>;
 }
 

@@ -18,19 +18,64 @@ const BASE = "https://merchant.pathao.com/api/v1";
  */
 export const pathao: FraudProvider = {
   name: NAME,
-  identifierLabel: "Merchant email or phone",
+  identifierLabel: "Client ID / API Key",
+  secretLabel: "Client Secret / API Token",
+  hint: "Pathao Developer Client ID & Client Secret or API Token.",
 
   async check(phone: string, credentials: FraudCredentials): Promise<CourierStat> {
-    const login = await request(NAME, `${BASE}/login`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ username: credentials.identifier, password: credentials.secret }),
-    });
+    let token: string | null = null;
 
-    if (login.status === 401 || login.status === 422) throw credentialsRejected(NAME);
+    // 1. Direct Bearer token passed in identifier or secret
+    if (credentials.identifier.startsWith("eyJ") || credentials.identifier.length > 50) {
+      token = credentials.identifier.trim();
+    } else if (credentials.secret.startsWith("eyJ") || credentials.secret.length > 50) {
+      token = credentials.secret.trim();
+    }
 
-    const token = pick(asJson(NAME, login.body), "access_token");
-    if (typeof token !== "string" || !token) throw credentialsRejected(NAME, "no token was issued");
+    // 2. Try Pathao OAuth client_credentials via Hermes Developer API
+    if (!token && !credentials.identifier.includes("@")) {
+      try {
+        const oauthRes = await request(NAME, "https://api-hermes.pathao.com/aladdin/api/v1/issue-token", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            client_id: credentials.identifier.trim(),
+            client_secret: credentials.secret.trim(),
+            grant_type: "client_credentials",
+          }),
+        });
+        if (oauthRes.status === 200) {
+          const parsed = asJson(NAME, oauthRes.body);
+          const t = pick(parsed, "access_token");
+          if (typeof t === "string" && t) {
+            token = t;
+          }
+        }
+      } catch {
+        // Fallback to merchant login
+      }
+    }
+
+    // 3. Fallback to merchant login
+    if (!token) {
+      const login = await request(NAME, `${BASE}/login`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          username: credentials.identifier.trim(),
+          password: credentials.secret.trim(),
+        }),
+      });
+
+      if (login.status === 401 || login.status === 422) throw credentialsRejected(NAME);
+
+      const parsedToken = pick(asJson(NAME, login.body), "access_token");
+      if (typeof parsedToken === "string" && parsedToken) {
+        token = parsedToken;
+      }
+    }
+
+    if (!token) throw credentialsRejected(NAME, "Could not authenticate with Pathao API");
 
     const check = await request(NAME, `${BASE}/user/success`, {
       method: "POST",

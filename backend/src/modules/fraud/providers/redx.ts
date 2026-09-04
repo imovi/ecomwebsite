@@ -17,22 +17,38 @@ const NAME = "RedX";
  */
 export const redx: FraudProvider = {
   name: NAME,
-  identifierLabel: "Merchant phone",
+  identifierLabel: "App Key / Phone",
+  secretLabel: "Secret Key / API Token",
+  hint: "RedX API App-Key or API Token.",
 
   async check(phone: string, credentials: FraudCredentials): Promise<CourierStat> {
-    const login = await request(NAME, "https://api.redx.com.bd/v4/auth/login", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        phone: withCountryCode(credentials.identifier),
-        password: credentials.secret,
-      }),
-    });
+    let token: string | null = null;
 
-    if (login.status === 401 || login.status === 400) throw credentialsRejected(NAME);
+    if (credentials.identifier.startsWith("eyJ") || credentials.identifier.length > 50) {
+      token = credentials.identifier.trim();
+    } else if (credentials.secret.startsWith("eyJ") || credentials.secret.length > 50) {
+      token = credentials.secret.trim();
+    }
 
-    const token = pick(asJson(NAME, login.body), "data", "accessToken");
-    if (typeof token !== "string" || !token) throw credentialsRejected(NAME, "no token was issued");
+    if (!token) {
+      const login = await request(NAME, "https://api.redx.com.bd/v4/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          phone: withCountryCode(credentials.identifier),
+          password: credentials.secret,
+        }),
+      });
+
+      if (login.status === 401 || login.status === 400) throw credentialsRejected(NAME);
+
+      const parsedToken = pick(asJson(NAME, login.body), "data", "accessToken");
+      if (typeof parsedToken === "string" && parsedToken) {
+        token = parsedToken;
+      }
+    }
+
+    if (!token) throw credentialsRejected(NAME, "no token was issued");
 
     const url =
       "https://redx.com.bd/api/redx_se/admin/parcel/customer-success-return-rate" +

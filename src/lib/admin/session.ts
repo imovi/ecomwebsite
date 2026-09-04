@@ -29,6 +29,7 @@ import type { ApiAdmin, ApiEnvelope, ApiLogin } from "@/lib/api/types";
 const ACCESS_COOKIE = "gng_admin_at";
 const REFRESH_COOKIE = "gng_admin_rt";
 const ADMIN_COOKIE = "gng_admin_who";
+const ROLE_COOKIE = "gng_admin_role";
 
 /** The API's own refresh cookie name, as set on its responses. */
 const API_REFRESH_COOKIE = "gng_refresh_token";
@@ -132,12 +133,17 @@ export async function writeSession(session: {
       ...cookieOptions,
       maxAge: REFRESH_MAX_AGE,
     });
+    store.set(ROLE_COOKIE, session.admin.role, {
+      ...cookieOptions,
+      httpOnly: false,
+      maxAge: REFRESH_MAX_AGE,
+    });
   }
 }
 
 export async function clearSession(): Promise<void> {
   const store = await cookies();
-  for (const name of [ACCESS_COOKIE, REFRESH_COOKIE, ADMIN_COOKIE]) {
+  for (const name of [ACCESS_COOKIE, REFRESH_COOKIE, ADMIN_COOKIE, ROLE_COOKIE]) {
     store.delete(name);
   }
 }
@@ -334,4 +340,4 @@ export async function logout(): Promise<void> {
   await clearSession();
 }
 
-export { ACCESS_COOKIE, REFRESH_COOKIE, ADMIN_COOKIE, API_REFRESH_COOKIE };
+export { ACCESS_COOKIE, REFRESH_COOKIE, ADMIN_COOKIE, ROLE_COOKIE, API_REFRESH_COOKIE };

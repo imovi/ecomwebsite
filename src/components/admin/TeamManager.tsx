@@ -39,7 +39,7 @@ interface TeamMember {
 const ROLES: { value: Role; label: string; description: string }[] = [
   {
     value: "manager",
-    label: "Staff",
+    label: "Admin Member",
     description: "Works the order queue and the catalogue. Cannot change prices, settings or people.",
   },
   {

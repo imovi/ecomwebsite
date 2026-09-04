@@ -983,7 +983,7 @@ function NotesCard({
 
   return (
     <Card>
-      <CardHeader title="Internal notes" hint="Staff only. Never shown to the customer." />
+      <CardHeader title="Internal notes" hint="Admin members only. Never shown to the customer." />
       <div className="flex flex-col gap-3 p-4">
         <Textarea
           label="Notes"

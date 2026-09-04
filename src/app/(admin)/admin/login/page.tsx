@@ -52,7 +52,7 @@ export default async function AdminLoginPage({
         </div>
 
         <p className="mt-6 text-center text-micro text-muted">
-          Authorised staff only. All changes are recorded.
+          Authorised admin members only. All changes are recorded.
         </p>
       </div>
     </main>

@@ -298,7 +298,8 @@ export function ProductImages({
                   </button>
                 </div>
               </li>
-            ))}
+            );
+          })}
           </ul>
         )}
 

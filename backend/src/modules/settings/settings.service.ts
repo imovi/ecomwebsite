@@ -439,6 +439,7 @@ export interface UpdateSettingsInput {
 
 export async function updateSettings(input: UpdateSettingsInput): Promise<SettingsDto> {
   const patch: Partial<StoreSettingsRow> = {};
+  const current = await getSettings();
 
   if (input.delivery?.insideDhaka !== undefined) {
     patch.deliveryChargeInsideDhaka = input.delivery.insideDhaka;

@@ -60,6 +60,53 @@ export function Gallery({
   const [resolvedMap, setResolvedMap] = useState<Record<string, ParsedVideoInfo>>(
     () => resolvedVideos ?? {},
   );
+  const [isMuted, setIsMuted] = useState(true);
+  const [volume, setVolume] = useState(1);
+  const videoRefs = useRef<Map<number, HTMLVideoElement>>(new Map());
+
+  const handleVolumeChange = useCallback((newVolume: number) => {
+    setVolume(newVolume);
+    if (newVolume > 0) {
+      setIsMuted(false);
+      videoRefs.current.forEach((vid) => {
+        vid.muted = false;
+        vid.volume = newVolume;
+      });
+    } else {
+      setIsMuted(true);
+      videoRefs.current.forEach((vid) => {
+        vid.muted = true;
+        vid.volume = 0;
+      });
+    }
+  }, []);
+
+  const handleMuteToggle = useCallback(() => {
+    setIsMuted((prev) => {
+      const next = !prev;
+      videoRefs.current.forEach((vid) => {
+        vid.muted = next;
+        if (!next) {
+          vid.volume = volume > 0 ? volume : 1;
+        }
+      });
+      if (!next && volume === 0) setVolume(1);
+      return next;
+    });
+  }, [volume]);
+
+  // Sync volume and active video play state
+  useEffect(() => {
+    videoRefs.current.forEach((vid, vidIndex) => {
+      vid.muted = isMuted;
+      vid.volume = isMuted ? 0 : volume;
+      if (vidIndex === index) {
+        vid.play().catch(() => {});
+      } else {
+        vid.pause();
+      }
+    });
+  }, [index, isMuted, volume]);
 
   // Sync resolvedVideos prop if updated
   useEffect(() => {
@@ -277,15 +324,21 @@ export function Gallery({
                 {isDirect ? (
                   <>
                     <video
+                      ref={(el) => {
+                        if (el) videoRefs.current.set(i, el);
+                        else videoRefs.current.delete(i);
+                      }}
                       src={embed.embedUrl}
                       poster={embed.posterUrl}
                       preload="metadata"
-                      muted
+                      muted={isMuted}
                       loop
                       playsInline
                       autoPlay={i === index}
                       controls
                       onLoadedMetadata={(e) => {
+                        e.currentTarget.muted = isMuted;
+                        e.currentTarget.volume = isMuted ? 0 : volume;
                         if (e.currentTarget.currentTime < 0.1 && i !== index) {
                           e.currentTarget.currentTime = 0.5;
                         }
@@ -295,6 +348,51 @@ export function Gallery({
                         embed.isVertical ? "object-contain bg-black" : fitClass,
                       )}
                     />
+                    {/* Volume Control Overlay */}
+                    <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5 rounded-full bg-black/80 px-2.5 py-1 text-white backdrop-blur-xs shadow-md transition-all">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleMuteToggle();
+                        }}
+                        title={isMuted ? "Unmute sound" : "Mute sound"}
+                        className="flex items-center gap-1 hover:text-amber-300 transition-colors"
+                      >
+                        {isMuted || volume === 0 ? (
+                          <svg className="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                          </svg>
+                        ) : volume < 0.5 ? (
+                          <svg className="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                          </svg>
+                        ) : (
+                          <svg className="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                          </svg>
+                        )}
+                        <span className="text-micro font-semibold tracking-tight">
+                          {isMuted || volume === 0 ? "Muted" : `${Math.round(volume * 100)}%`}
+                        </span>
+                      </button>
+                      <div className="flex items-center pl-1">
+                        <input
+                          type="range"
+                          min={0}
+                          max={1}
+                          step={0.05}
+                          value={isMuted ? 0 : volume}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            handleVolumeChange(parseFloat(e.target.value));
+                          }}
+                          className="h-1.5 w-14 sm:w-16 accent-white cursor-pointer"
+                          title={`Volume: ${isMuted ? 0 : Math.round(volume * 100)}%`}
+                        />
+                      </div>
+                    </div>
                     <button
                       type="button"
                       onClick={() =>
@@ -329,20 +427,71 @@ export function Gallery({
                 ) : isVideo ? (
                   <>
                     <video
+                      ref={(el) => {
+                        if (el) videoRefs.current.set(i, el);
+                        else videoRefs.current.delete(i);
+                      }}
                       src={`${cleanMediaUrl.split("?")[0]}#t=0.5`}
                       preload="metadata"
-                      muted
+                      muted={isMuted}
                       loop
                       playsInline
                       autoPlay={i === index}
                       controls
                       onLoadedMetadata={(e) => {
+                        e.currentTarget.muted = isMuted;
+                        e.currentTarget.volume = isMuted ? 0 : volume;
                         if (e.currentTarget.currentTime < 0.1 && i !== index) {
                           e.currentTarget.currentTime = 0.5;
                         }
                       }}
                       className={cn("h-full w-full", fitClass)}
                     />
+                    {/* Volume Control Overlay */}
+                    <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5 rounded-full bg-black/80 px-2.5 py-1 text-white backdrop-blur-xs shadow-md transition-all">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleMuteToggle();
+                        }}
+                        title={isMuted ? "Unmute sound" : "Mute sound"}
+                        className="flex items-center gap-1 hover:text-amber-300 transition-colors"
+                      >
+                        {isMuted || volume === 0 ? (
+                          <svg className="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                          </svg>
+                        ) : volume < 0.5 ? (
+                          <svg className="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                          </svg>
+                        ) : (
+                          <svg className="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                          </svg>
+                        )}
+                        <span className="text-micro font-semibold tracking-tight">
+                          {isMuted || volume === 0 ? "Muted" : `${Math.round(volume * 100)}%`}
+                        </span>
+                      </button>
+                      <div className="flex items-center pl-1">
+                        <input
+                          type="range"
+                          min={0}
+                          max={1}
+                          step={0.05}
+                          value={isMuted ? 0 : volume}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            handleVolumeChange(parseFloat(e.target.value));
+                          }}
+                          className="h-1.5 w-14 sm:w-16 accent-white cursor-pointer"
+                          title={`Volume: ${isMuted ? 0 : Math.round(volume * 100)}%`}
+                        />
+                      </div>
+                    </div>
                     <button
                       type="button"
                       onClick={() =>

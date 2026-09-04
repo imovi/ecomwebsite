@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useRef, useState } from "react";
 import { parseVideoUrl, type ParsedVideoInfo } from "@/lib/video-embed";
@@ -14,6 +14,38 @@ export function ProductVideoInline({ videoUrl, initialVideo }: ProductVideoInlin
     () => initialVideo ?? parseVideoUrl(videoUrl),
   );
   const sectionRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [isMuted, setIsMuted] = useState(false);
+  const [volume, setVolume] = useState(1);
+
+  const handleVolumeChange = (newVolume: number) => {
+    setVolume(newVolume);
+    if (videoRef.current) {
+      if (newVolume > 0) {
+        setIsMuted(false);
+        videoRef.current.muted = false;
+        videoRef.current.volume = newVolume;
+      } else {
+        setIsMuted(true);
+        videoRef.current.muted = true;
+        videoRef.current.volume = 0;
+      }
+    }
+  };
+
+  const handleMuteToggle = () => {
+    setIsMuted((prev) => {
+      const next = !prev;
+      if (videoRef.current) {
+        videoRef.current.muted = next;
+        if (!next) {
+          videoRef.current.volume = volume > 0 ? volume : 1;
+        }
+      }
+      if (!next && volume === 0) setVolume(1);
+      return next;
+    });
+  };
 
   // If video link needs resolution to direct MP4 (e.g. Instagram Reel)
   useEffect(() => {
@@ -90,24 +122,126 @@ export function ProductVideoInline({ videoUrl, initialVideo }: ProductVideoInlin
           {video?.type === "direct" && video.isVertical ? (
             <div className="relative w-full max-w-[340px] aspect-[9/16] overflow-hidden rounded-2xl bg-black shadow-md border border-line">
               <video
+                ref={videoRef}
                 src={video.embedUrl}
                 controls
                 autoPlay
                 playsInline
                 loop
+                muted={isMuted}
+                onLoadedMetadata={(e) => {
+                  e.currentTarget.muted = isMuted;
+                  e.currentTarget.volume = isMuted ? 0 : volume;
+                }}
                 className="size-full object-cover"
               />
+              {/* Volume Control Overlay */}
+              <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5 rounded-full bg-black/80 px-2.5 py-1 text-white backdrop-blur-xs shadow-md transition-all">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleMuteToggle();
+                  }}
+                  title={isMuted ? "Unmute sound" : "Mute sound"}
+                  className="flex items-center gap-1 hover:text-amber-300 transition-colors"
+                >
+                  {isMuted || volume === 0 ? (
+                    <svg className="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                    </svg>
+                  ) : volume < 0.5 ? (
+                    <svg className="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                    </svg>
+                  ) : (
+                    <svg className="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                    </svg>
+                  )}
+                  <span className="text-micro font-semibold tracking-tight">
+                    {isMuted || volume === 0 ? "Muted" : `${Math.round(volume * 100)}%`}
+                  </span>
+                </button>
+                <div className="flex items-center pl-1">
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={isMuted ? 0 : volume}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      handleVolumeChange(parseFloat(e.target.value));
+                    }}
+                    className="h-1.5 w-14 sm:w-16 accent-white cursor-pointer"
+                    title={`Volume: ${isMuted ? 0 : Math.round(volume * 100)}%`}
+                  />
+                </div>
+              </div>
             </div>
           ) : video?.type === "direct" ? (
             <div className="relative w-full max-w-2xl aspect-video overflow-hidden rounded-2xl bg-black shadow-md border border-line">
               <video
+                ref={videoRef}
                 src={video.embedUrl}
                 controls
                 autoPlay
                 playsInline
                 loop
+                muted={isMuted}
+                onLoadedMetadata={(e) => {
+                  e.currentTarget.muted = isMuted;
+                  e.currentTarget.volume = isMuted ? 0 : volume;
+                }}
                 className="size-full object-contain"
               />
+              {/* Volume Control Overlay */}
+              <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5 rounded-full bg-black/80 px-2.5 py-1 text-white backdrop-blur-xs shadow-md transition-all">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleMuteToggle();
+                  }}
+                  title={isMuted ? "Unmute sound" : "Mute sound"}
+                  className="flex items-center gap-1 hover:text-amber-300 transition-colors"
+                >
+                  {isMuted || volume === 0 ? (
+                    <svg className="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                    </svg>
+                  ) : volume < 0.5 ? (
+                    <svg className="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                    </svg>
+                  ) : (
+                    <svg className="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                    </svg>
+                  )}
+                  <span className="text-micro font-semibold tracking-tight">
+                    {isMuted || volume === 0 ? "Muted" : `${Math.round(volume * 100)}%`}
+                  </span>
+                </button>
+                <div className="flex items-center pl-1">
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={isMuted ? 0 : volume}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      handleVolumeChange(parseFloat(e.target.value));
+                    }}
+                    className="h-1.5 w-14 sm:w-16 accent-white cursor-pointer"
+                    title={`Volume: ${isMuted ? 0 : Math.round(volume * 100)}%`}
+                  />
+                </div>
+              </div>
             </div>
           ) : video?.isVertical ? (
             <div className="relative w-full max-w-[340px] aspect-[9/16] overflow-hidden rounded-2xl bg-black shadow-md border border-line">

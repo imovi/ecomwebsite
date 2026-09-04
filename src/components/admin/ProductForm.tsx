@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { adminApi, AdminApiError } from "@/lib/admin/client";
 import { useLoad } from "@/lib/admin/use-load";
-import { slugify } from "@/lib/utils";
+import { cn, slugify } from "@/lib/utils";
 import { toast } from "@/lib/stores/toast-store";
 import type { ApiCategory, ApiProduct } from "@/lib/api/types";
 import { AdminShell } from "./AdminShell";

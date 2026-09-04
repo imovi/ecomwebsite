@@ -114,24 +114,20 @@ export async function report(
     (account) => account.enabled && (account.identifier || account.secret),
   );
 
-  // Auto-include configured courier from store settings ONLY if the courier has never been configured in courier_fraud_accounts
   const settings = await getSettings().catch(() => null);
-  if (
-    settings &&
-    settings.courierApiKey.trim() !== "" &&
-    settings.courierApiSecret.trim() !== ""
-  ) {
-    const configuredProvider = (settings.courierProvider || "steadfast") as ProviderKey;
-    if (!storedMap.has(configuredProvider)) {
-      accounts.push({
-        provider: configuredProvider,
-        identifier: settings.courierApiKey.trim(),
-        secret: settings.courierApiSecret.trim(),
-        enabled: true,
-        updatedAt: new Date(),
-        lastOkAt: null,
-        lastError: "",
-      });
+
+  // For any enabled courier, ensure credentials exist (pull from store settings if not explicitly saved in fraud accounts)
+  for (const acc of accounts) {
+    if (acc.provider === "pathao" && (!acc.secret || !acc.identifier)) {
+      if (settings?.courierApiKey && settings?.courierApiSecret) {
+        acc.identifier = acc.identifier || settings.courierApiKey.trim();
+        acc.secret = acc.secret || settings.courierApiSecret.trim();
+      }
+    } else if (acc.provider === "steadfast" && (!acc.secret || !acc.identifier)) {
+      if (settings?.courierApiKey && settings?.courierApiSecret) {
+        acc.identifier = acc.identifier || settings.courierApiKey.trim();
+        acc.secret = acc.secret || settings.courierApiSecret.trim();
+      }
     }
   }
 
@@ -343,14 +339,10 @@ export async function listAccounts(): Promise<AccountDto[]> {
       if (!hasSecret && settings?.courierApiSecret) {
         hasSecret = true;
       }
-      if (!account && settings?.courierProvider === "pathao") {
-        enabled = true;
-      }
     } else if (!account && key === "steadfast") {
       if (settings?.courierApiKey && settings?.courierApiSecret) {
         identifier = settings.courierApiKey.trim();
         hasSecret = true;
-        enabled = false;
       }
     }
 

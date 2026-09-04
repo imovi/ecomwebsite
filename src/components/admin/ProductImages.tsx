@@ -95,8 +95,8 @@ export function ProductImages({
   return (
     <Card>
       <CardHeader
-        title="Photos"
-        hint="First photo is the one shown in listings and ads. JPG, PNG or WebP."
+        title="Photos & Videos"
+        hint="First item is shown in listings and ads. Supports JPG, PNG, WebP and MP4/WebM videos (auto-cropped to square frame)."
       />
 
       <div className="flex flex-col gap-4 p-4">
@@ -104,20 +104,38 @@ export function ProductImages({
 
         {images.length === 0 ? (
           <p className="rounded-sm bg-surface px-3 py-6 text-center text-caption text-muted">
-            No photos yet.
+            No photos or videos yet.
           </p>
         ) : (
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {images.map((image, index) => (
               <li key={image.id} className="flex flex-col gap-1.5">
                 <div className="relative aspect-square overflow-hidden rounded-sm border border-line bg-surface">
-                  <Image
-                    src={image.url}
-                    alt={image.alt ?? ""}
-                    fill
-                    sizes="(min-width: 640px) 25vw, 50vw"
-                    className="object-cover"
-                  />
+                  {/\.(mp4|webm|mov|ogg)($|\?)/i.test(image.url) ? (
+                    <div className="relative size-full bg-neutral-900">
+                      <video
+                        src={image.url}
+                        muted
+                        loop
+                        playsInline
+                        className="size-full object-cover"
+                      />
+                      <span className="absolute bottom-1.5 right-1.5 flex items-center gap-1 rounded-xs bg-black/75 px-1.5 py-0.5 text-micro font-medium text-white backdrop-blur-xs">
+                        <svg className="size-2.5 fill-current" viewBox="0 0 24 24">
+                          <path d="M8 5v14l11-7z" />
+                        </svg>
+                        Video
+                      </span>
+                    </div>
+                  ) : (
+                    <Image
+                      src={image.url}
+                      alt={image.alt ?? ""}
+                      fill
+                      sizes="(min-width: 640px) 25vw, 50vw"
+                      className="object-cover"
+                    />
+                  )}
                   {image.isFeatured && (
                     <span className="absolute left-1.5 top-1.5 rounded-xs bg-ink px-1.5 py-0.5 text-micro font-semibold text-white">
                       Main
@@ -195,7 +213,7 @@ export function ProductImages({
         <input
           ref={inputRef}
           type="file"
-          accept="image/jpeg,image/png,image/webp"
+          accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime"
           multiple
           onChange={(event) => void handleFiles(event.target.files)}
           className="hidden"
@@ -210,7 +228,7 @@ export function ProductImages({
           className="self-start"
         >
           {!uploading && <Icon name="plus" size={16} />}
-          {uploading ? "Uploading…" : "Add photos"}
+          {uploading ? "Uploading…" : "Add photos or videos"}
         </Button>
       </div>
     </Card>

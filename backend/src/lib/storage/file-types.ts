@@ -62,6 +62,33 @@ const SIGNATURES: FileTypeSignature[] = [
     offset: 4,
     magic: ascii("ftypavis"),
   },
+  /* MP4 container: 4 size bytes, then "ftyp" */
+  {
+    mimeType: "video/mp4",
+    extension: ".mp4",
+    offset: 4,
+    magic: ascii("ftyp"),
+  },
+  /* WebM container: EBML ID [0x1A, 0x45, 0xDF, 0xA3] */
+  {
+    mimeType: "video/webm",
+    extension: ".webm",
+    offset: 0,
+    magic: [0x1a, 0x45, 0xdf, 0xa3],
+  },
+  /* QuickTime container: 4 size bytes, then "moov" or "wide" */
+  {
+    mimeType: "video/quicktime",
+    extension: ".mov",
+    offset: 4,
+    magic: ascii("moov"),
+  },
+  {
+    mimeType: "video/quicktime",
+    extension: ".mov",
+    offset: 4,
+    magic: ascii("wide"),
+  },
 ];
 
 /** Longest offset+pattern, so callers know how many bytes to read. */

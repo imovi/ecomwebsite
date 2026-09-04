@@ -43,6 +43,11 @@ interface GalleryProps {
   renderOverlay?: (index: number) => ReactNode;
 }
 
+function isVideoMedia(url: string): boolean {
+  if (!url) return false;
+  return /\.(mp4|webm|mov|ogg)($|\?)/i.test(url) || url.includes("video/");
+}
+
 export function Gallery({
   images,
   title,
@@ -112,13 +117,31 @@ export function Gallery({
                 i === index ? "border-ink" : "border-line hover:border-muted",
               )}
             >
-              <Image
-                src={src}
-                alt=""
-                fill
-                sizes="64px"
-                className="object-cover"
-              />
+              {isVideoMedia(src) ? (
+                <div className="relative size-full bg-neutral-900">
+                  <video
+                    src={src}
+                    className="size-full object-cover pointer-events-none"
+                    muted
+                    playsInline
+                  />
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/25">
+                    <span className="flex size-6 items-center justify-center rounded-full bg-white/90 text-ink shadow-xs">
+                      <svg className="size-3 fill-current ml-0.5" viewBox="0 0 24 24">
+                        <path d="M8 5v14l11-7z" />
+                      </svg>
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <Image
+                  src={src}
+                  alt=""
+                  fill
+                  sizes="64px"
+                  className="object-cover"
+                />
+              )}
             </button>
           ))}
         </div>
@@ -145,43 +168,28 @@ export function Gallery({
               the cap above actually binds — an aspect-square item would grow
               past a capped rail and spill out of it. */}
           {images.map((src, i) => (
-            <div key={src} className="snap-item relative h-full w-full">
-              <Image
-                src={src}
-                alt={`${title} — ${copy.product.imageOf(i + 1, images.length)}`}
-                fill
-                /* What this frame is actually rendered at, which is not what it
-                   used to claim.
-
-                   Phone: the rail is the full page width.
-
-                   From `md` up the page is a two-column grid inside a container
-                   that caps at 1600px with a 1rem gutter each side, the columns
-                   are separated by gap-10, and the gallery then gives 64px to the
-                   thumbnail column plus gap-4 beside it. So the frame is
-                     (min(100vw, 1600px) - 32 - 40) / 2 - 80
-                   which is `50vw - 116px` until the container caps at a viewport
-                   of 1632px, and a flat 684px above that.
-
-                   The old value said a flat 520px, so the browser picked a
-                   candidate for a box a quarter narrower than the real one and
-                   the desktop photo was being upscaled to fit. */
-                sizes="(max-width: 767px) 100vw, (min-width: 1632px) 684px, calc(50vw - 116px)"
-                /* The first frame is the LCP element on this page, and an image
-                   is only "Low" priority to the browser until layout proves it
-                   is in view — on a phone over mobile data that delay is the
-                   whole problem. `fetchPriority` says so up front instead.
-
-                   This used to be `preload`, which puts a <link> in the head.
-                   Next's own guidance is to use `loading`/`fetchPriority`
-                   *instead of* preload rather than alongside it, and the pair
-                   here was emitting a preload link that carried no priority at
-                   all — so neither the link nor the <img> ever told the browser
-                   this was the important one. The rest stay lazy. */
-                fetchPriority={i === 0 ? "high" : undefined}
-                loading={i === 0 ? "eager" : "lazy"}
-                className="object-cover"
-              />
+            <div key={src} className="snap-item relative h-full w-full overflow-hidden bg-neutral-900">
+              {isVideoMedia(src) ? (
+                <video
+                  src={src}
+                  muted
+                  loop
+                  playsInline
+                  autoPlay={i === index}
+                  controls
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <Image
+                  src={src}
+                  alt={`${title} — ${copy.product.imageOf(i + 1, images.length)}`}
+                  fill
+                  sizes="(max-width: 767px) 100vw, (min-width: 1632px) 684px, calc(50vw - 116px)"
+                  fetchPriority={i === 0 ? "high" : undefined}
+                  loading={i === 0 ? "eager" : "lazy"}
+                  className="object-cover"
+                />
+              )}
               {renderFrameOverlay?.(i)}
             </div>
           ))}
@@ -238,7 +246,25 @@ export function Gallery({
                 i === index ? "border-ink" : "border-transparent",
               )}
             >
-              <Image src={src} alt="" fill sizes="56px" className="object-cover" />
+              {isVideoMedia(src) ? (
+                <div className="relative size-full bg-neutral-900">
+                  <video
+                    src={src}
+                    className="size-full object-cover pointer-events-none"
+                    muted
+                    playsInline
+                  />
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/25">
+                    <span className="flex size-4 items-center justify-center rounded-full bg-white/90 text-ink">
+                      <svg className="size-2 fill-current ml-0.5" viewBox="0 0 24 24">
+                        <path d="M8 5v14l11-7z" />
+                      </svg>
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <Image src={src} alt="" fill sizes="56px" className="object-cover" />
+              )}
               {/* The unselected thumbnails are dimmed rather than the selected one
                   highlighted, so the current frame reads as the bright one. */}
               {i !== index && <span className="absolute inset-0 bg-white/35" />}

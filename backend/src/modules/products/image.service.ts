@@ -3,7 +3,7 @@ import { ConflictError, NotFoundError, ValidationError } from "../../core/errors
 import { ErrorCode } from "../../core/http-status.js";
 import { createLogger } from "../../core/logger.js";
 import { optimizeImage } from "../../lib/images/optimizer.js";
-import { getStorage } from "../../lib/storage/index.js";
+import { detectFileType, getStorage } from "../../lib/storage/index.js";
 import type { StoredFile } from "../../lib/storage/index.js";
 import { findProductById } from "./product.repository.js";
 import {
@@ -61,7 +61,7 @@ export async function list(productId: string): Promise<ProductImageDto[]> {
 
 export async function upload(
   productId: string,
-  files: { buffer: Buffer; originalname: string }[],
+  files: { buffer: Buffer; originalname: string; mimetype?: string }[],
   options: { alt?: string } = {},
 ): Promise<ProductImageDto[]> {
   const product = await findProductById(productId);
@@ -90,16 +90,34 @@ export async function upload(
        batch concurrently starves every other async operation in the process,
        database queries included. */
     for (const file of files) {
-      const optimized = await optimizeImage(file.buffer, { label: file.originalname });
+      const detected = detectFileType(file.buffer);
+      const isVideo =
+        detected?.mimeType.startsWith("video/") ||
+        file.mimetype?.startsWith("video/") ||
+        /\.(mp4|webm|mov)$/i.test(file.originalname);
 
-      const object = await storage.put({
-        folder: "products",
-        buffer: optimized.buffer,
-        mimeType: optimized.mimeType,
-        originalName: file.originalname,
-      });
+      if (isVideo) {
+        const mimeType = detected?.mimeType ?? file.mimetype ?? "video/mp4";
+        const object = await storage.put({
+          folder: "products",
+          buffer: file.buffer,
+          mimeType,
+          originalName: file.originalname,
+        });
 
-      stored.push({ ...object, width: optimized.width, height: optimized.height });
+        stored.push({ ...object, width: 1080, height: 1080 });
+      } else {
+        const optimized = await optimizeImage(file.buffer, { label: file.originalname });
+
+        const object = await storage.put({
+          folder: "products",
+          buffer: optimized.buffer,
+          mimeType: optimized.mimeType,
+          originalName: file.originalname,
+        });
+
+        stored.push({ ...object, width: optimized.width, height: optimized.height });
+      }
     }
   } catch (error) {
     await Promise.allSettled(stored.map((object) => storage.delete(object.key)));

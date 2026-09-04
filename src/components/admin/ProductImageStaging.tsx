@@ -27,9 +27,16 @@ export interface StagedImage {
 }
 
 /** Matches what the API's upload middleware will accept. */
-const ACCEPTED = ["image/jpeg", "image/png", "image/webp"];
-const MAX_BYTES = 5 * 1024 * 1024;
-const MAX_FILES = 10;
+const ACCEPTED = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "video/mp4",
+  "video/webm",
+  "video/quicktime",
+];
+const MAX_BYTES = 50 * 1024 * 1024;
+const MAX_FILES = 12;
 
 export function createStagedImages(
   files: FileList | File[],
@@ -41,18 +48,18 @@ export function createStagedImages(
 
   for (const file of Array.from(files)) {
     if (budget <= 0) {
-      rejected.push(`${file.name} — over the ${MAX_FILES} photo limit`);
+      rejected.push(`${file.name} — over the ${MAX_FILES} photo/video limit`);
       continue;
     }
     /* Checked here as well as server-side. The point is not security — the API
        re-validates and re-encodes every byte — it is telling the admin now
        instead of after a slow upload on a phone connection. */
-    if (!ACCEPTED.includes(file.type)) {
-      rejected.push(`${file.name} — must be JPG, PNG or WebP`);
+    if (!ACCEPTED.includes(file.type) && !/\.(mp4|webm|mov)$/i.test(file.name)) {
+      rejected.push(`${file.name} — must be JPG, PNG, WebP or MP4/WebM video`);
       continue;
     }
     if (file.size > MAX_BYTES) {
-      rejected.push(`${file.name} — larger than 5 MB`);
+      rejected.push(`${file.name} — larger than 50 MB`);
       continue;
     }
 
@@ -126,8 +133,8 @@ export function ProductImageStaging({
   return (
     <Card>
       <CardHeader
-        title="Photos"
-        hint="Pick them now — they upload as soon as the product is created. The first one is used in listings and ads."
+        title="Photos & Videos"
+        hint="Pick them now — they upload as soon as the product is created. The first one is used in listings and ads. Videos auto-crop to square frame."
       />
 
       <div className="flex flex-col gap-4 p-4">
@@ -149,22 +156,38 @@ export function ProductImageStaging({
             className="flex flex-col items-center gap-2 rounded-sm border border-dashed border-line bg-surface px-4 py-8 text-center transition-colors hover:border-ink/30 hover:bg-white disabled:opacity-50"
           >
             <Icon name="camera" size={24} className="text-muted" />
-            <span className="text-caption font-medium text-ink">Add photos</span>
-            <span className="text-micro text-muted">JPG, PNG or WebP · up to 5 MB each</span>
+            <span className="text-caption font-medium text-ink">Add photos or videos</span>
+            <span className="text-micro text-muted">JPG, PNG, WebP or MP4/WebM video · up to 50 MB each</span>
           </button>
         ) : (
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {images.map((image, index) => (
               <li key={image.id} className="flex flex-col gap-1.5">
                 <div className="relative aspect-square overflow-hidden rounded-sm border border-line bg-surface">
-                  {/* A plain <img>: the source is a local blob URL, so there is
-                      nothing for the image optimiser to fetch or cache. */}
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={image.previewUrl}
-                    alt=""
-                    className="size-full object-cover"
-                  />
+                  {image.file.type.startsWith("video/") || /\.(mp4|webm|mov)$/i.test(image.file.name) ? (
+                    <div className="relative size-full bg-neutral-900">
+                      <video
+                        src={image.previewUrl}
+                        muted
+                        loop
+                        playsInline
+                        className="size-full object-cover"
+                      />
+                      <span className="absolute bottom-1.5 right-1.5 flex items-center gap-1 rounded-xs bg-black/75 px-1.5 py-0.5 text-micro font-medium text-white backdrop-blur-xs">
+                        <svg className="size-2.5 fill-current" viewBox="0 0 24 24">
+                          <path d="M8 5v14l11-7z" />
+                        </svg>
+                        Video
+                      </span>
+                    </div>
+                  ) : (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      src={image.previewUrl}
+                      alt=""
+                      className="size-full object-cover"
+                    />
+                  )}
                   {index === 0 && (
                     <span className="absolute left-1.5 top-1.5 rounded-xs bg-ink px-1.5 py-0.5 text-micro font-semibold text-white">
                       Main

@@ -42,7 +42,7 @@ function buildMulter(maxFiles: number): Multer {
   return multer({
     storage: memoryStorage(),
     limits: {
-      fileSize: config.upload.maxFileSizeBytes,
+      fileSize: Math.max(config.upload.maxFileSizeBytes, 50 * 1024 * 1024),
       files: maxFiles,
       /* Bound every other multipart dimension too — an unbounded field count
          or name length is a cheap memory-exhaustion vector. */

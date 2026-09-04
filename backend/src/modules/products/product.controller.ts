@@ -263,7 +263,11 @@ export const uploadImages: RequestHandler = async (req, res) => {
 
   const images = await imageService.upload(
     params.id,
-    files.map((file) => ({ buffer: file.buffer, originalname: file.originalname })),
+    files.map((file) => ({
+      buffer: file.buffer,
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+    })),
   );
   sendCreated(res, { images });
 };

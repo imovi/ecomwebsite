@@ -44,24 +44,33 @@ export function ProductCard({
   return (
     <div className="group relative flex flex-col">
       <div className="relative aspect-square overflow-hidden rounded-md bg-surface">
-        <Image
-          src={product.images[0]}
-          alt={product.title}
-          fill
-          sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 260px"
-          /* Eager, but deliberately not preloaded and not `fetchPriority`.
-             A first row is two to six cards depending on the breakpoint, so
-             there is no single card that is the LCP element — marking them all
-             as the important one just makes them compete with each other, and
-             the preload links this used to emit carried no priority anyway.
-             Dropping the lazy deferral is the whole win here. */
-          loading={priority ? "eager" : "lazy"}
-          className={cn(
-            "object-cover transition-transform duration-300 ease-out",
-            "group-hover:scale-[1.03] motion-reduce:transition-none motion-reduce:group-hover:scale-100",
-            !available && "opacity-55",
-          )}
-        />
+        {/\.(mp4|webm|mov|ogg)($|\?)/i.test(product.images[0]) ? (
+          <video
+            src={product.images[0]}
+            muted
+            loop
+            autoPlay
+            playsInline
+            className={cn(
+              "h-full w-full object-cover transition-transform duration-300 ease-out",
+              "group-hover:scale-[1.03] motion-reduce:transition-none motion-reduce:group-hover:scale-100",
+              !available && "opacity-55",
+            )}
+          />
+        ) : (
+          <Image
+            src={product.images[0]}
+            alt={product.title}
+            fill
+            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 260px"
+            loading={priority ? "eager" : "lazy"}
+            className={cn(
+              "object-cover transition-transform duration-300 ease-out",
+              "group-hover:scale-[1.03] motion-reduce:transition-none motion-reduce:group-hover:scale-100",
+              !available && "opacity-55",
+            )}
+          />
+        )}
 
         {percent > 0 && available && (
           <Badge tone="sale" className="absolute left-2 top-2">

@@ -189,8 +189,12 @@ export async function update(
 
   /* Guard against a partial price update that inverts the discount. */
   const nextPrice = input.price ?? variant.price;
-  const nextOldPrice = input.oldPrice === undefined ? variant.oldPrice : input.oldPrice;
-  if (nextOldPrice !== null && nextOldPrice <= nextPrice) {
+  let nextOldPrice = input.oldPrice === undefined ? variant.oldPrice : input.oldPrice;
+  if (input.oldPrice === undefined && nextOldPrice !== null && nextOldPrice <= nextPrice) {
+    /* If the price was raised above the existing oldPrice without explicitly
+       specifying oldPrice, clear the stale oldPrice so the price update succeeds. */
+    nextOldPrice = null;
+  } else if (nextOldPrice !== null && nextOldPrice <= nextPrice) {
     throw new ValidationError([
       { field: "body.oldPrice", message: "Old price must be greater than the current price." },
     ]);
@@ -210,7 +214,9 @@ export async function update(
         ...(input.sku !== undefined ? { sku: input.sku } : {}),
         ...(input.options !== undefined ? { options: input.options } : {}),
         ...(input.price !== undefined ? { price: input.price } : {}),
-        ...(input.oldPrice !== undefined ? { oldPrice: input.oldPrice ?? null } : {}),
+        ...(input.oldPrice !== undefined || (variant.oldPrice !== null && nextOldPrice === null)
+          ? { oldPrice: nextOldPrice }
+          : {}),
         ...(input.costPrice !== undefined ? { costPrice: input.costPrice ?? null } : {}),
         ...(input.stockQuantity !== undefined ? { stockQuantity: input.stockQuantity } : {}),
         ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),

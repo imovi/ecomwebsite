@@ -342,11 +342,16 @@ function VariantRow({
   onRun: (action: () => Promise<unknown>, message: string) => Promise<boolean>;
 }) {
   const [price, setPrice] = useState(String(variant.price));
+  const [oldPrice, setOldPrice] = useState(variant.oldPrice !== null ? String(variant.oldPrice) : "");
   const [stock, setStock] = useState(String(variant.stockQuantity));
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
 
-  const changed = price !== String(variant.price) || stock !== String(variant.stockQuantity);
+  const parsedOldPrice = oldPrice.trim() === "" ? null : Number(oldPrice);
+  const changed =
+    price !== String(variant.price) ||
+    parsedOldPrice !== variant.oldPrice ||
+    stock !== String(variant.stockQuantity);
   const label = Object.values(variant.options).join(" / ");
 
   /**
@@ -409,7 +414,7 @@ function VariantRow({
         </p>
       </div>
 
-      <label className="flex items-center gap-1 text-micro text-muted">
+      <label className="flex items-center gap-1 text-micro text-muted" title="Selling price">
         ৳
         <input
           type="number"
@@ -418,7 +423,22 @@ function VariantRow({
           value={price}
           onChange={(event) => setPrice(event.target.value)}
           aria-label={`Price for ${label || variant.sku}`}
-          className="tnum h-9 w-24 rounded-sm border border-line bg-white px-2 text-caption text-ink outline-none focus:border-ink"
+          placeholder="Price"
+          className="tnum h-9 w-20 rounded-sm border border-line bg-white px-2 text-caption text-ink outline-none focus:border-ink"
+        />
+      </label>
+
+      <label className="flex items-center gap-1 text-micro text-muted" title="Regular / Old price (strike-through, optional)">
+        <span className="line-through text-muted/80">৳</span>
+        <input
+          type="number"
+          min={0}
+          step={1}
+          value={oldPrice}
+          onChange={(event) => setOldPrice(event.target.value)}
+          aria-label={`Old price for ${label || variant.sku}`}
+          placeholder="Was ৳"
+          className="tnum h-9 w-20 rounded-sm border border-line bg-white px-2 text-caption text-muted outline-none focus:border-ink focus:text-ink"
         />
       </label>
 
@@ -523,16 +543,23 @@ function VariantRow({
           variant="secondary"
           size="sm"
           loading={busy}
-          onClick={() =>
+          onClick={() => {
+            const nextP = Number(price);
+            const nextOld = oldPrice.trim() === "" ? null : Number(oldPrice);
+            if (nextOld !== null && nextOld <= nextP) {
+              toast("আগের দাম (Old price) অবশ্যই বর্তমান দামের চেয়ে বেশি হতে হবে।", { tone: "error" });
+              return;
+            }
             void onRun(
               () =>
                 adminApi.patch(`admin/products/${productId}/variants/${variant.id}`, {
-                  price: Number(price),
+                  price: nextP,
+                  oldPrice: nextOld,
                   stockQuantity: Number(stock),
                 }),
               "Variant updated",
-            )
-          }
+            );
+          }}
         >
           Save
         </Button>
@@ -569,11 +596,13 @@ function VariantCreate({
     sku: string;
     options: Record<string, string>;
     price: number;
+    oldPrice?: number | null;
     stockQuantity: number;
   }) => Promise<void>;
 }) {
   const [sku, setSku] = useState("");
   const [price, setPrice] = useState("");
+  const [oldPrice, setOldPrice] = useState("");
   const [stock, setStock] = useState("0");
   const [options, setOptions] = useState<Record<string, string>>(() =>
     Object.fromEntries(axes.map((axis) => [axis.name, axis.values[0] ?? ""])),
@@ -628,6 +657,19 @@ function VariantCreate({
         </label>
 
         <label className="flex flex-col gap-1 text-micro text-muted">
+          Old Price (৳)
+          <input
+            type="number"
+            min={0}
+            step={1}
+            value={oldPrice}
+            onChange={(event) => setOldPrice(event.target.value)}
+            placeholder="Optional"
+            className="tnum h-10 rounded-sm border border-line bg-white px-2 text-caption text-ink outline-none focus:border-ink"
+          />
+        </label>
+
+        <label className="flex flex-col gap-1 text-micro text-muted">
           Stock
           <input
             type="number"
@@ -647,14 +689,21 @@ function VariantCreate({
           size="sm"
           loading={busy}
           disabled={!complete}
-          onClick={() =>
+          onClick={() => {
+            const p = Number(price);
+            const op = oldPrice.trim() === "" ? null : Number(oldPrice);
+            if (op !== null && op <= p) {
+              toast("আগের দাম (Old price) অবশ্যই বর্তমান দামের চেয়ে বেশি হতে হবে।", { tone: "error" });
+              return;
+            }
             void onCreate({
               sku: sku.trim(),
               options,
-              price: Number(price),
+              price: p,
+              oldPrice: op,
               stockQuantity: Number(stock),
-            })
-          }
+            });
+          }}
         >
           Add variant
         </Button>

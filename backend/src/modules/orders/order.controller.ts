@@ -28,6 +28,7 @@ import type {
   UpdateItemQuantityInput,
   UpdateItemVariantInput,
   UpdateStatusInput,
+  BulkUpdateStatusInput,
 } from "./order.validation.js";
 
 /**
@@ -309,6 +310,13 @@ export const updateStatus: RequestHandler = async (req, res) => {
   const { body, params } = validated<UpdateStatusInput, unknown, { id: string }>(req);
   const order = await orderService.updateStatus(params.id, body, actorFrom(req));
   sendSuccess(res, { order });
+};
+
+/** POST /api/v1/admin/orders/bulk-status */
+export const bulkUpdateStatus: RequestHandler = async (req, res) => {
+  const { body } = validated<BulkUpdateStatusInput>(req);
+  const result = await orderService.bulkUpdateStatus(body.orderIds, body.status, actorFrom(req));
+  sendSuccess(res, result);
 };
 
 /** POST /api/v1/admin/orders/:id/cancel */

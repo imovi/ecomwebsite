@@ -26,6 +26,7 @@ import {
   updateItemQuantitySchema,
   updateItemVariantSchema,
   updateStatusSchema,
+  bulkUpdateStatusSchema,
 } from "./order.validation.js";
 
 /**
@@ -216,6 +217,13 @@ orderAdminRouter.post(
   "/",
   validate({ body: adminCreateOrderSchema }),
   controller.adminCreateOrder,
+);
+
+/* Bulk status update for selected orders in the admin queue. */
+orderAdminRouter.post(
+  "/bulk-status",
+  validate({ body: bulkUpdateStatusSchema }),
+  controller.bulkUpdateStatus,
 );
 
 orderAdminRouter.post(

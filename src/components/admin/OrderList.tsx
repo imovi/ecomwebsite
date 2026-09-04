@@ -26,6 +26,9 @@ import {
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
+import { toast } from "@/lib/stores/toast-store";
+import { OrderQuickDrawer } from "./OrderQuickDrawer";
+import { whatsappHref, whatsappNumber } from "@/lib/admin/whatsapp";
 
 /** The presets a link may name. Anything else falls back to today. */
 const PRESETS: DateRangePreset[] = ["today", "yesterday", "last7", "last30", "all"];
@@ -103,6 +106,8 @@ export function OrderList() {
      status or search changes, and an index would then point at a different
      order with nothing looking wrong. */
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkUpdating, setBulkUpdating] = useState(false);
+  const [drawerOrderId, setDrawerOrderId] = useState<string | null>(null);
   /* Four to a page is the useful default: a 2×2 cell is large enough to read
      an address off at arm's length, and it quarters the paper. */
   const [perSheet, setPerSheet] = useState<number>(4);
@@ -166,6 +171,50 @@ export function OrderList() {
 
   function toggleAll() {
     setSelected(allShownSelected ? new Set() : new Set(orders.map((o) => o.id)));
+  }
+
+  async function handleBulkStatus(newStatus: ApiOrderStatus) {
+    if (selected.size === 0) return;
+    setBulkUpdating(true);
+    try {
+      const res = await adminApi.post<{
+        succeeded: string[];
+        failed: { id: string; error: string }[];
+      }>("admin/orders/bulk-status", {
+        orderIds: Array.from(selected),
+        status: newStatus,
+      });
+
+      if (res.succeeded.length > 0) {
+        toast(`Updated ${res.succeeded.length} order(s) to ${copy.orderStatus[newStatus] || newStatus}!`, {
+          tone: "positive",
+        });
+      }
+      if (res.failed.length > 0) {
+        toast(`${res.failed.length} order(s) could not be transitioned.`, { tone: "warn" });
+      }
+
+      await load();
+      setSelected(new Set());
+    } catch (caught) {
+      toast(caught instanceof AdminApiError ? caught.message : "Bulk status update failed", {
+        tone: "error",
+      });
+    } finally {
+      setBulkUpdating(false);
+    }
+  }
+
+  function copyOrderInfo(order: ApiOrderListItem) {
+    const text = [
+      `Order: #${order.orderNumber}`,
+      `Customer: ${order.customerName}`,
+      `Phone: ${order.phone}`,
+      `Area: ${order.areaText}`,
+      `Total: Tk ${order.grandTotal} (COD)`,
+    ].join("\n");
+    navigator.clipboard.writeText(text);
+    toast(`Copied details for #${order.orderNumber}!`, { tone: "positive" });
   }
 
   /**
@@ -280,13 +329,34 @@ export function OrderList() {
       </div>
 
       {selected.size > 0 && (
-        <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-sm bg-surface px-3 py-2.5">
-          <span className="text-caption font-medium text-ink">{selected.size} selected</span>
+        <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg bg-surface border border-line p-3 shadow-xs">
+          <span className="text-caption font-semibold text-ink">{selected.size} selected</span>
 
-          {/* Order numbers rather than uuids: the endpoint takes either, and
-              fifty of these fit in a query string where fifty uuids would be
-              four times the length for a URL nobody can read. Sent in the
-              order they appear on screen so the printed stack matches. */}
+          {/* Bulk Status Changer */}
+          <div className="flex items-center gap-1.5">
+            <select
+              defaultValue=""
+              onChange={(e) => {
+                if (e.target.value) {
+                  handleBulkStatus(e.target.value as ApiOrderStatus);
+                  e.target.value = "";
+                }
+              }}
+              disabled={bulkUpdating}
+              className="h-9 rounded-sm border border-ink bg-ink text-white px-2.5 text-caption font-medium outline-none cursor-pointer hover:bg-ink-soft transition-colors"
+            >
+              <option value="" disabled>
+                {bulkUpdating ? "Updating..." : "Change Status..."}
+              </option>
+              <option value="confirmed">✓ Mark Confirmed</option>
+              <option value="processing">⚙ Mark Processing</option>
+              <option value="packed">📦 Mark Packed</option>
+              <option value="shipped">🚚 Mark Shipped</option>
+              <option value="delivered">★ Mark Delivered</option>
+              <option value="cancelled">✕ Mark Cancelled</option>
+            </select>
+          </div>
+
           <Button
             href={`/api/admin/admin/orders/invoices?ids=${encodeURIComponent(
               orders
@@ -322,7 +392,7 @@ export function OrderList() {
           <button
             type="button"
             onClick={() => setSelected(new Set())}
-            className="text-caption text-muted underline hover:text-ink"
+            className="text-caption text-muted underline hover:text-ink ml-auto"
           >
             Clear
           </button>
@@ -397,13 +467,54 @@ export function OrderList() {
                 </div>
               </div>
 
-              <a
-                href={`tel:${order.phone}`}
-                className="flex min-h-12 items-center justify-center gap-2 border-t border-line text-caption font-medium text-ink active:bg-surface"
-              >
-                <Icon name="phone" size={16} />
-                <span className="tnum">{order.phone}</span>
-              </a>
+              <div className="grid grid-cols-4 border-t border-line divide-x divide-line text-caption">
+                <a
+                  href={`tel:${order.phone}`}
+                  className="flex min-h-10 items-center justify-center gap-1 font-medium text-ink hover:bg-surface active:bg-line transition-colors"
+                >
+                  <Icon name="phone" size={14} />
+                  Call
+                </a>
+                <button
+                  type="button"
+                  onClick={() => copyOrderInfo(order)}
+                  className="flex min-h-10 items-center justify-center gap-1 font-medium text-ink hover:bg-surface active:bg-line transition-colors"
+                >
+                  <svg className="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+                  </svg>
+                  Copy
+                </button>
+                {whatsappNumber(order.phone) ? (
+                  <a
+                    href={whatsappHref(
+                      order.phone,
+                      `আসসালামু আলাইকুম ${order.customerName},\nআপনার অর্ডার #${order.orderNumber} এর বিষয়ে যোগাযোগ করা হচ্ছে। মোট: ৳${order.grandTotal} (ক্যাশ অন ডেলিভারি)।`,
+                    )}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex min-h-10 items-center justify-center gap-1 font-medium text-emerald-700 hover:bg-emerald-50 active:bg-emerald-100 transition-colors"
+                  >
+                    <svg className="size-3.5 fill-current" viewBox="0 0 24 24">
+                      <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766.001-3.187-2.575-5.77-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.299.045-.677.063-1.092-.069-.252-.08-.575-.187-.988-.365-1.739-.751-2.874-2.502-2.961-2.617-.087-.116-.708-.94-.708-1.793s.448-1.273.607-1.446c.159-.173.346-.217.462-.217l.332.006c.106.005.249-.04.39.298.144.347.491 1.2.534 1.287.043.087.072.188.014.304-.058.116-.087.188-.173.289l-.26.304c-.087.086-.177.18-.076.354.101.174.449.741.964 1.201.662.591 1.221.774 1.394.86.174.086.275.072.376-.044.101-.116.433-.506.549-.68.116-.173.231-.144.39-.086s1.011.477 1.184.564.289.13.332.202c.045.072.045.419-.099.824z" />
+                    </svg>
+                    WA
+                  </a>
+                ) : (
+                  <span className="flex min-h-10 items-center justify-center text-muted">—</span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setDrawerOrderId(order.id)}
+                  className="flex min-h-10 items-center justify-center gap-1 font-medium text-ink hover:bg-surface active:bg-line transition-colors"
+                >
+                  <svg className="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  </svg>
+                  View
+                </button>
+              </div>
             </li>
           ))}
         </ul>
@@ -427,11 +538,12 @@ export function OrderList() {
                   <th className="w-full px-3 py-2.5 font-medium">Customer</th>
                   <th className="whitespace-nowrap px-3 py-2.5 font-medium">Total</th>
                   <th className="whitespace-nowrap px-3 py-2.5 font-medium">Status</th>
+                  <th className="whitespace-nowrap px-3 py-2.5 font-medium text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {orders.map((order) => (
-                  <tr key={order.id} className="border-b border-line last:border-0">
+                  <tr key={order.id} className="border-b border-line last:border-0 hover:bg-surface/30 transition-colors">
                     <td className="px-3 py-2.5">
                       <input
                         type="checkbox"
@@ -446,12 +558,13 @@ export function OrderList() {
                         narrowest wrap — "SB-" over "10167" over four lines of
                         date. */}
                     <td className="whitespace-nowrap px-3 py-2.5">
-                      <Link
-                        href={`/admin/orders/${order.orderNumber}`}
-                        className="block text-caption font-semibold text-ink hover:underline"
+                      <button
+                        type="button"
+                        onClick={() => setDrawerOrderId(order.id)}
+                        className="block text-left text-caption font-semibold text-ink hover:underline cursor-pointer"
                       >
                         {order.orderNumber}
-                      </Link>
+                      </button>
                       <span className="block text-micro text-muted">
                         {formatDateTime(order.createdAt)}
                       </span>
@@ -462,9 +575,13 @@ export function OrderList() {
                         customer name would push Total and Status off-screen. */}
                     <td className="w-full max-w-0 px-3 py-2.5">
                       <span className="flex items-center gap-1.5">
-                        <span className="truncate text-caption text-ink">
+                        <button
+                          type="button"
+                          onClick={() => setDrawerOrderId(order.id)}
+                          className="truncate text-caption text-ink font-medium text-left hover:underline cursor-pointer"
+                        >
                           {order.customerName}
-                        </span>
+                        </button>
                         {/* The delivery rate, read only from what is already
                             stored — see useCachedFraud. */}
                         <FraudBadge report={fraud[order.phone]} />
@@ -493,6 +610,50 @@ export function OrderList() {
                         {copy.orderStatus[order.status]}
                       </Badge>
                     </td>
+
+                    <td className="whitespace-nowrap px-3 py-2.5 text-right">
+                      <div className="inline-flex items-center justify-end gap-1">
+                        <button
+                          type="button"
+                          onClick={() => copyOrderInfo(order)}
+                          title="Copy details"
+                          className="p-1.5 rounded-sm text-muted hover:bg-surface hover:text-ink transition-colors"
+                        >
+                          <svg className="size-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+                          </svg>
+                        </button>
+
+                        {whatsappNumber(order.phone) && (
+                          <a
+                            href={whatsappHref(
+                              order.phone,
+                              `আসসালামু আলাইকুম ${order.customerName},\nআপনার অর্ডার #${order.orderNumber} এর বিষয়ে যোগাযোগ করা হচ্ছে। মোট: ৳${order.grandTotal} (ক্যাশ অন ডেলিভারি)।`,
+                            )}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="Open WhatsApp chat"
+                            className="p-1.5 rounded-sm text-emerald-600 hover:bg-emerald-50 transition-colors"
+                          >
+                            <svg className="size-4 fill-current" viewBox="0 0 24 24">
+                              <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766.001-3.187-2.575-5.77-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.299.045-.677.063-1.092-.069-.252-.08-.575-.187-.988-.365-1.739-.751-2.874-2.502-2.961-2.617-.087-.116-.708-.94-.708-1.793s.448-1.273.607-1.446c.159-.173.346-.217.462-.217l.332.006c.106.005.249-.04.39.298.144.347.491 1.2.534 1.287.043.087.072.188.014.304-.058.116-.087.188-.173.289l-.26.304c-.087.086-.177.18-.076.354.101.174.449.741.964 1.201.662.591 1.221.774 1.394.86.174.086.275.072.376-.044.101-.116.433-.506.549-.68.116-.173.231-.144.39-.086s1.011.477 1.184.564.289.13.332.202c.045.072.045.419-.099.824z" />
+                            </svg>
+                          </a>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => setDrawerOrderId(order.id)}
+                          title="Quick preview drawer"
+                          className="p-1.5 rounded-sm text-ink-soft hover:bg-surface hover:text-ink transition-colors"
+                        >
+                          <svg className="size-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                          </svg>
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -500,6 +661,12 @@ export function OrderList() {
           </div>
         </TableWrap>
       </AsyncState>
+
+      <OrderQuickDrawer
+        orderId={drawerOrderId}
+        onClose={() => setDrawerOrderId(null)}
+        onStatusUpdated={load}
+      />
     </AdminShell>
   );
 }

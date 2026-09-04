@@ -253,6 +253,15 @@ export const updateStatusSchema = z
 
 export type UpdateStatusInput = z.infer<typeof updateStatusSchema>;
 
+export const bulkUpdateStatusSchema = z
+  .object({
+    orderIds: z.array(uuidSchema).min(1).max(100),
+    status: z.enum(orderStatusEnum.enumValues),
+  })
+  .strict();
+
+export type BulkUpdateStatusInput = z.infer<typeof bulkUpdateStatusSchema>;
+
 export const cancelOrderSchema = z
   .object({
     /* Required, unlike a generic status change: on a cash-on-delivery store

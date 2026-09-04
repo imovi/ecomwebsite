@@ -898,6 +898,41 @@ export async function updateStatus(
   return getByIdentifier(orderId);
 }
 
+export interface BulkStatusResult {
+  succeeded: string[];
+  failed: { id: string; error: string }[];
+}
+
+/**
+ * Bulk updates the status of multiple orders.
+ * Executes each state transition safely and reports outcomes.
+ */
+export async function bulkUpdateStatus(
+  orderIds: string[],
+  status: OrderDto["status"],
+  actor: Actor,
+): Promise<BulkStatusResult> {
+  const succeeded: string[] = [];
+  const failed: { id: string; error: string }[] = [];
+
+  for (const id of orderIds) {
+    try {
+      await updateStatus(id, { status }, actor);
+      succeeded.push(id);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to update status";
+      failed.push({ id, error: msg });
+    }
+  }
+
+  log.info(
+    { total: orderIds.length, succeeded: succeeded.length, failed: failed.length, status },
+    "Bulk order status update completed",
+  );
+
+  return { succeeded, failed };
+}
+
 /**
  * Cancels an order.
  *

@@ -14,9 +14,15 @@ interface ProductReorderModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSaved: () => void;
+  initialProducts?: ApiProductListItem[];
 }
 
-export function ProductReorderModal({ isOpen, onClose, onSaved }: ProductReorderModalProps) {
+export function ProductReorderModal({
+  isOpen,
+  onClose,
+  onSaved,
+  initialProducts,
+}: ProductReorderModalProps) {
   const [items, setItems] = useState<ApiProductListItem[]>([]);
   const [initialOrder, setInitialOrder] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -35,13 +41,20 @@ export function ProductReorderModal({ isOpen, onClose, onSaved }: ProductReorder
   useEffect(() => {
     if (!isOpen) return;
 
+    if (initialProducts && initialProducts.length > 0) {
+      setItems(initialProducts);
+      setInitialOrder(initialProducts.map((p) => p.id));
+    }
+
     let mounted = true;
     async function loadProducts() {
-      setLoading(true);
+      if (!initialProducts || initialProducts.length === 0) {
+        setLoading(true);
+      }
       setError(null);
       try {
         const { items: fetched } = await adminApi.list<ApiProductListItem>(
-          "admin/products?perPage=200",
+          "admin/products?perPage=100",
         );
         if (!mounted) return;
         setItems(fetched);
@@ -58,7 +71,7 @@ export function ProductReorderModal({ isOpen, onClose, onSaved }: ProductReorder
     return () => {
       mounted = false;
     };
-  }, [isOpen]);
+  }, [isOpen, initialProducts]);
 
   if (!isOpen) return null;
 
@@ -261,7 +274,7 @@ export function ProductReorderModal({ isOpen, onClose, onSaved }: ProductReorder
             </div>
           ) : filteredItems.length === 0 ? (
             <p className="py-12 text-center text-caption text-muted">
-              No products match your search.
+              {search ? "No products match your search." : "No products available."}
             </p>
           ) : (
             filteredItems.map((product) => {

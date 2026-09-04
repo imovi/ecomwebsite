@@ -151,6 +151,7 @@ export function ProductList() {
         isOpen={reordering}
         onClose={() => setReordering(false)}
         onSaved={() => void load()}
+        initialProducts={products}
       />
       <div className="mb-4 flex flex-col gap-2">
         <div className="flex gap-1 self-start rounded-sm bg-white p-1 ring-1 ring-line">

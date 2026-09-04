@@ -32,29 +32,29 @@ interface ProductFaq {
 
 const LAMP_FAQS: ProductFaq[] = [
   {
-    question: "How long does the battery last on a single charge?",
+    question: "লোডশেডিংয়ে এক চার্জে কতক্ষণ ব্যাটারি ব্যাকআপ পাওয়া যায়?",
     answer:
-      "The built-in rechargeable lithium battery provides 4 to 24 hours of illumination depending on your chosen brightness level. At medium study/reading brightness, it comfortably lasts around 8 to 12 hours. It easily recharges via any standard USB phone charger, power bank, or laptop in about 2.5 to 3 hours.",
+      "এই রিচার্জেবল লাইটে রয়েছে হাই-ক্যাপাসিটি লিথিয়াম ব্যাটারি। সাধারণ রিডিং ব্রাইটনেসে একটানা ৮ থেকে ১২ ঘণ্টা এবং সফট নাইট-লাইট মোডে সর্বোচ্চ ২৪ ঘণ্টা পর্যন্ত ব্যাকআপ পাওয়া যায়। কারেন্ট চলে গেলেও পড়াশোনা বা জরুরি কাজ একটানা চালিয়ে নেওয়া সম্ভব।",
   },
   {
-    question: "How do the touch controls and remote control work?",
+    question: "কারেন্ট না থাকলে পাওয়ার ব্যাংক দিয়ে কি চার্জ দেওয়া যাবে?",
     answer:
-      "You can tap the touch sensor directly on the lamp to cycle between 3 color temperatures (Warm Yellow 3000K, Warm White 4500K, Cool White 6000K) or long-press for smooth stepless dimming. The included wireless remote control lets you turn it on/off, adjust brightness, change color modes, and set 10-minute or 30-minute auto-off timers from up to 5 meters away.",
+      "হ্যাঁ! এটিতে স্ট্যান্ডার্ড ইউএসবি চার্জিং পোর্ট রয়েছে। ফলে লোডশেডিংয়ের সময় বিদ্যুৎ না থাকলেও আপনি যেকোনো মোবাইল পাওয়ার ব্যাংক, ল্যাপটপ বা ৫ ভোল্ট অ্যাডাপ্টার দিয়ে অনায়াসে এটি রিচার্জ করতে পারবেন (ফুল চার্জ হতে প্রায় ২.৫-৩ ঘণ্টা লাগে)।",
   },
   {
-    question: "Can I stick it on any surface? Does the magnet hold firmly?",
+    question: "৩টি কালার মোড ও রিমোট কন্ট্রোল কীভাবে কাজ করে?",
     answer:
-      "Yes! The package includes a magnetic base with strong 3M adhesive tape that mounts securely to study desks, walls, wood, metal, glass, or closets. The powerful built-in neodymium magnets hold the light firmly at any angle without slipping, yet allow easy detachment whenever you need a portable flashlight or need to recharge it.",
+      "লাইটের ওপর টাচ করলেই ৩টি আলাদা লাইট মোড চেঞ্জ হয়: ওয়ার্ম ইয়েলো (৩০০০K - চোখের আরাম ও রাতের পড়ার জন্য), ওয়ার্ম হোয়াইট (৪৫০০K) এবং কুল হোয়াইট (৬০০০K - স্পষ্ট লেখার জন্য)। সাথে থাকা ওয়্যারলেস রিমোট দিয়ে দূর থেকেই লাইট অন/অফ, ব্রাইটনেস কমানো-বাড়ানো এবং ১০ ও ৩০ মিনিটের অটো-অফ টাইমার সেট করা যায়।",
   },
   {
-    question: "Is this lamp eye-friendly for long study or reading sessions?",
+    question: "ম্যাগনেটিক বেস কীভাবে যেকোনো জায়গায় লাগানো যায়?",
     answer:
-      "Yes. It uses upgraded flicker-free LED beads with diffused anti-glare light guide technology, eliminating blue light hazards and harsh shadows to protect your eyes during late-night study or computer work.",
+      "লাইটের সাথে একটি ম্যাগনেটিক স্টিকি হোল্ডার ও স্ট্রং ৩M আঠা দেওয়া থাকে। কোনো ড্রিল বা পেরেক ছাড়াই পড়ার টেবিল, দেয়াল, আলমারি, রান্নাঘর বা খাটের পাশে অনায়াসে লাগিয়ে নেওয়া যায়। প্রয়োজনমতো লাইটটি স্ট্যান্ড থেকে আলাদা করে পোর্টেবল টর্চ বা হ্যান্ডেল লাইট হিসেবেও ব্যবহার করা যায়।",
   },
   {
-    question: "What is the delivery time and payment method in Bangladesh?",
+    question: "ডেলিভারি এবং পেমেন্ট সিস্টেম কী?",
     answer:
-      "HINAR offers 100% Cash on Delivery across all 64 districts in Bangladesh. Delivery takes 24 to 48 hours inside Dhaka (৳80 delivery charge) and 48 to 72 hours outside Dhaka (৳130 delivery charge). You can inspect the package upon delivery before making payment.",
+      "HINAR সারা বাংলাদেশে ১০০% ক্যাশ অন ডেলিভারি সুবিধা প্রদান করে। ঢাকার ভেতরে ২৪-৪৮ ঘণ্টার মধ্যে এবং ঢাকার বাইরে ৪৮-৭২ ঘণ্টার মধ্যে হোম ডেলিভারি দেওয়া হয়। ডেলিভারি ম্যানের সামনে পণ্য দেখে নেওয়ার পর মূল্য পরিশোধ করতে পারবেন।",
   },
 ];
 
@@ -96,23 +96,28 @@ export async function generateMetadata({
 
   if (slug === "led-magnetic-desk-lamp") {
     title =
-      "Rechargeable LED Study Lamp & Magnetic Desk Light with Remote — Price in BD";
-    description = `Buy Rechargeable LED Study Lamp & Magnetic Desk Light with 3 color modes, dimming & remote control in Bangladesh at ৳${minPrice(product)}. Eye-care reading light with fast cash on delivery.`;
+      "Rechargeable LED Study Lamp & Charger Light for Load Shedding — Price in BD";
+    description = `লোডশেডিং ও পড়াশোনার সেরা রিচার্জেবল চার্জার লাইট ও স্টাডি ল্যাম্প। ৩টি কালার মোড, রিমোট ও ২৪ ঘণ্টা ব্যাটারি ব্যাকআপ। Buy Rechargeable Charger Light in BD at ৳${minPrice(product)} with Cash on Delivery.`;
     keywords = [
+      "charger light",
+      "charger light price in bd",
+      "rechargeable light",
+      "rechargeable light price in bangladesh",
       "study lamp",
       "study lamp bd",
-      "led rechargeable light",
       "rechargeable study lamp",
-      "rechargeable led light bd",
-      "study lamp price in bangladesh",
+      "emergency light bd",
+      "loadshedding light bd",
+      "load shedding study lamp",
       "magnetic desk lamp",
       "reading light for study table",
-      "table lamp for study",
-      "desk lamp with remote control bd",
-      "study light rechargeable",
-      "পড়ার টেবিলের লাইট",
-      "স্টাডি ল্যাম্প",
-      "রিচার্জেবল টেবিল ল্যাম্প",
+      "পড়ার টেবিলের রিচার্জেবল লাইট",
+      "চার্জার লাইট",
+      "লোডশেডিং লাইট",
+      "ইমার্জেন্সি লাইট",
+      "কারেন্ট না থাকলে পড়ার লাইট",
+      "লোডশেডিং এ পড়ার লাইট",
+      "ব্যাটারি ব্যাকআপ লাইট",
       "রিচার্জেবল লাইট",
     ];
   }

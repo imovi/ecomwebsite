@@ -3,7 +3,7 @@
 import { useCallback, useState } from "react";
 import { adminApi, AdminApiError } from "@/lib/admin/client";
 import { useLoad } from "@/lib/admin/use-load";
-import { formatDateTime } from "@/lib/utils";
+import { cn, formatDateTime } from "@/lib/utils";
 import { toast } from "@/lib/stores/toast-store";
 import type { ApiFraudAccount } from "@/lib/api/types";
 import { AdminShell } from "./AdminShell";
@@ -110,6 +110,7 @@ function CourierCard({
   const [cardError, setCardError] = useState<string | null>(null);
   const [testPhone, setTestPhone] = useState("");
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   async function save() {
     setBusy(true);
@@ -177,30 +178,61 @@ function CourierCard({
   const canTest = (account.hasSecret || Boolean(account.identifier)) && /^01[3-9]\d{8}$/.test(testPhone.trim());
 
   return (
-    <Card>
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-3">
-        <div className="flex items-center gap-2">
-          <span className="text-body font-semibold text-ink">{account.label}</span>
-          {account.enabled ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-positive-soft px-2 py-0.5 text-micro font-semibold text-positive">
-              ● Active (Checking On)
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1 rounded-full bg-surface px-2 py-0.5 text-micro font-medium text-muted">
-              ○ Disabled (Checking Off)
-            </span>
-          )}
+    <Card className="overflow-hidden transition-all">
+      {/* Clickable Dropdown / Accordion Header */}
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => setIsExpanded((prev) => !prev)}
+        className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 cursor-pointer select-none hover:bg-surface/50 transition-colors"
+      >
+        <div className="flex items-center gap-3">
+          <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-surface border border-line text-caption font-bold text-ink shadow-2xs">
+            {account.label.charAt(0)}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-body font-semibold text-ink">{account.label}</span>
+            {account.enabled ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-positive-soft px-2 py-0.5 text-micro font-semibold text-positive">
+                ● Active (Checking On)
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 rounded-full bg-surface px-2 py-0.5 text-micro font-medium text-muted">
+                ○ Disabled (Checking Off)
+              </span>
+            )}
+            {account.lastError && (
+              <span className="inline-flex items-center rounded-full bg-sale-soft px-2 py-0.5 text-micro font-medium text-sale">
+                Alert
+              </span>
+            )}
+          </div>
         </div>
-        <p className="text-micro text-muted">
-          {account.hasSecret || account.identifier
-            ? account.lastOkAt
-              ? `Last answered ${formatDateTime(account.lastOkAt)}`
-              : "Saved, but this courier has never answered yet."
-            : "Not configured"}
-        </p>
+
+        <div className="flex items-center gap-3">
+          <p className="hidden sm:block text-micro text-muted">
+            {account.hasSecret || account.identifier
+              ? account.lastOkAt
+                ? `Last answered ${formatDateTime(account.lastOkAt)}`
+                : "Credentials saved"
+              : "Not configured"}
+          </p>
+          <span className="flex size-7 items-center justify-center rounded-xs border border-line bg-surface/50 text-muted hover:text-ink transition-colors">
+            <svg
+              className={cn("size-4 transition-transform duration-200", isExpanded && "rotate-180")}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </span>
+        </div>
       </div>
 
-      <div className="flex flex-col gap-3 p-4">
+      {/* Expandable Dropdown Content */}
+      {isExpanded && (
+        <div className="flex flex-col gap-3 border-t border-line p-4 animate-in fade-in-50 duration-150">
         <ErrorBanner message={cardError} />
 
         {/* The courier's own words about why it last refused. Kept on screen
@@ -320,6 +352,7 @@ function CourierCard({
           )}
         </div>
       </div>
+      )}
     </Card>
   );
 }

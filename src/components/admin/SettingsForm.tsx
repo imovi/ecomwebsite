@@ -625,6 +625,7 @@ function CourierCard({
   const [username, setUsername] = useState(settings.courier.username || "");
   const [password, setPassword] = useState("");
   const [storeId, setStoreId] = useState(settings.courier.storeId);
+  const [isConfigOpen, setIsConfigOpen] = useState(false);
 
   const isPathao = provider === "pathao";
 
@@ -637,89 +638,87 @@ function CourierCard({
 
       <Card>
         <CardHeader
-          title="Active 1-Click courier provider"
-          hint="Choose which provider handles 1-click parcel dispatch right now. Switch anytime."
+          title="Active 1-Click Courier Provider"
+          hint="Select which courier handles automated 1-click parcel dispatch from your order list."
         />
 
         <div className="flex flex-col gap-4 p-4">
-          <div className="flex flex-col gap-2.5">
-            {[
-              {
-                key: "steadfast",
-                name: "Steadfast",
-                description: "Steadfast Courier API (Auto parcel creation & consignment tracking).",
-              },
-              {
-                key: "pathao",
-                name: "Pathao",
-                description: "Pathao Merchant API (Client ID, Client Secret & Store ID).",
-              },
-              {
-                key: "",
-                name: "Disabled (Manual)",
-                description: "Manual order dispatch — no automated API parcel creation.",
-              },
-            ].map((p) => {
-              const isActive = provider === p.key;
-              return (
-                <div
-                  key={p.key}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => {
-                    setProvider(p.key);
-                    void onSave(
-                      { provider: p.key, enabled: p.key !== "" },
-                      `Active courier switched to ${p.name}`,
-                    );
-                  }}
-                  className={cn(
-                    "flex cursor-pointer items-center justify-between rounded-md border p-3.5 transition-all select-none",
-                    isActive
-                      ? "border-positive/70 bg-positive/[0.04] shadow-xs"
-                      : "border-line bg-surface/30 hover:border-ink/30 hover:bg-surface/60",
-                  )}
-                >
-                  <div className="flex flex-col gap-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-body font-semibold text-ink">{p.name}</span>
-                      {isActive && (
-                        <span className="inline-flex items-center rounded-full bg-positive/15 px-2 py-0.5 text-micro font-semibold text-positive">
-                          Active
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-caption text-muted">{p.description}</p>
-                  </div>
-
-                  <div className="flex items-center pl-3">
-                    {isActive ? (
-                      <span className="flex items-center gap-1.5 text-caption font-bold text-positive">
-                        <span className="size-2 rounded-full bg-positive" />
-                        ON
-                      </span>
-                    ) : (
-                      <span className="size-4 rounded-full border-2 border-line" />
-                    )}
-                  </div>
-                </div>
+          {/* Dropdown Provider Selector */}
+          <Select
+            label="1-Click Dispatch Provider"
+            value={provider}
+            onChange={(event) => {
+              const nextProvider = event.target.value;
+              setProvider(nextProvider);
+              const provName =
+                nextProvider === "pathao"
+                  ? "Pathao"
+                  : nextProvider === "steadfast"
+                    ? "Steadfast"
+                    : "Disabled";
+              void onSave(
+                { provider: nextProvider, enabled: nextProvider !== "" },
+                `Active courier switched to ${provName}`,
               );
-            })}
+            }}
+          >
+            <option value="pathao">Pathao Courier (Active)</option>
+            <option value="steadfast">Steadfast Courier</option>
+            <option value="">Disabled (Manual Order Dispatch)</option>
+          </Select>
+
+          {/* Compact Provider Status & Credentials Toggle */}
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-line bg-surface/50 p-3.5">
+            <div className="flex items-center gap-2.5">
+              <span
+                className={cn(
+                  "size-2.5 rounded-full",
+                  provider ? "bg-positive" : "bg-muted",
+                )}
+              />
+              <div className="flex flex-col">
+                <span className="text-body font-semibold text-ink">
+                  {provider === "pathao"
+                    ? "Pathao Merchant API"
+                    : provider === "steadfast"
+                      ? "Steadfast Courier API"
+                      : "Manual Dispatch"}
+                </span>
+                <span className="text-micro text-muted">
+                  {settings.courier.hasCredentials
+                    ? `Credentials saved (${settings.courier.apiKeyHint}${isPathao && settings.courier.username ? ` · ${settings.courier.username}` : ""})`
+                    : "No credentials saved yet"}
+                </span>
+              </div>
+            </div>
+
+            {provider !== "" && (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => setIsConfigOpen((prev) => !prev)}
+                className="gap-1.5"
+              >
+                <span>{isConfigOpen ? "Hide Settings" : "Configure Credentials"}</span>
+                <svg
+                  className={cn("size-3.5 transition-transform duration-200", isConfigOpen && "rotate-180")}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </Button>
+            )}
           </div>
 
-          {settings.courier.hasCredentials && (
-            <p className="flex items-center gap-2 rounded-sm bg-positive-soft px-3 py-2 text-caption text-positive">
-              <Icon name="check" size={15} />
-              Credentials saved ({settings.courier.apiKeyHint}
-              {isPathao && settings.courier.username ? ` · ${settings.courier.username}` : ""}).
-            </p>
-          )}
-
-          {provider !== "" && (
-            <>
+          {/* Dropdown / Collapsible Credentials Section */}
+          {provider !== "" && isConfigOpen && (
+            <div className="flex flex-col gap-4 rounded-md border border-line bg-surface/30 p-4 animate-in fade-in-50 duration-150">
               <div className="grid gap-4 sm:grid-cols-2">
                 <Input
-                  label={isPathao ? "Client ID" : "Api Key"}
+                  label={isPathao ? "Client ID" : "API Key"}
                   type={isPathao ? "text" : "password"}
                   autoComplete="off"
                   value={apiKey}
@@ -732,6 +731,7 @@ function CourierCard({
                   autoComplete="off"
                   value={apiSecret}
                   onChange={(event) => setApiSecret(event.target.value)}
+                  hint={isPathao ? "From merchant.pathao.com Developer tab" : "From steadfast.com.bd"}
                 />
               </div>
 
@@ -765,59 +765,59 @@ function CourierCard({
                   />
                 </>
               )}
-            </>
+
+              <div className="flex flex-wrap gap-2 pt-1">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  loading={busy}
+                  onClick={() =>
+                    void onSave(
+                      {
+                        provider,
+                        ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
+                        ...(apiSecret.trim() ? { apiSecret: apiSecret.trim() } : {}),
+                        ...(isPathao
+                          ? {
+                              storeId,
+                              ...(username.trim() ? { username: username.trim() } : {}),
+                              ...(password.trim() ? { password: password.trim() } : {}),
+                            }
+                          : {}),
+                      },
+                      "Courier saved",
+                    ).then(() => {
+                      setApiKey("");
+                      setApiSecret("");
+                      setPassword("");
+                    })
+                  }
+                >
+                  Save credentials
+                </Button>
+
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  loading={busy}
+                  disabled={!settings.courier.hasCredentials}
+                  onClick={() => void onTest()}
+                >
+                  Test connection
+                </Button>
+              </div>
+
+              <ErrorBanner message={saveError} />
+
+              {result?.ok && <SuccessBanner message={result.detail} />}
+              {result && !result.ok && <ErrorBanner message={result.detail} />}
+            </div>
           )}
 
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              loading={busy}
-              onClick={() =>
-                void onSave(
-                  {
-                    provider,
-                    ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
-                    ...(apiSecret.trim() ? { apiSecret: apiSecret.trim() } : {}),
-                    ...(isPathao
-                      ? {
-                          storeId,
-                          ...(username.trim() ? { username: username.trim() } : {}),
-                          ...(password.trim() ? { password: password.trim() } : {}),
-                        }
-                      : {}),
-                  },
-                  "Courier saved",
-                ).then(() => {
-                  setApiKey("");
-                  setApiSecret("");
-                  setPassword("");
-                })
-              }
-            >
-              Save courier
-            </Button>
-
-            <Button
-              variant="primary"
-              size="sm"
-              loading={busy}
-              disabled={!settings.courier.hasCredentials}
-              onClick={() => void onTest()}
-            >
-              Test connection
-            </Button>
-          </div>
-
-          <ErrorBanner message={saveError} />
-
-          {result?.ok && <SuccessBanner message={result.detail} />}
-          {result && !result.ok && <ErrorBanner message={result.detail} />}
-
-          <label className="flex items-start gap-2.5 text-caption text-ink">
+          <label className="flex items-start gap-2.5 text-caption text-ink pt-1">
             <input
               type="checkbox"
-              className="mt-0.5"
+              className="mt-0.5 h-4 w-4 rounded border-line text-ink"
               checked={settings.courier.enabled}
               onChange={(event) =>
                 void onSave(
@@ -829,8 +829,8 @@ function CourierCard({
             <span>
               Allow parcels to be sent to this courier
               <span className="mt-0.5 block text-micro text-muted">
-                Delivery status is then checked every 10 minutes, which is what marks orders
-                delivered in your profit figures.
+                Delivery status is then checked every 10 minutes, which marks orders delivered in
+                your profit figures.
               </span>
             </span>
           </label>
@@ -849,10 +849,6 @@ function CourierCard({
         hint={settings.courier.webhookTokenHint}
         callbackUrl={status.webhookUrl}
       />
-
-      <div className="mt-6">
-        <CourierAccountList />
-      </div>
     </div>
   );
 }

@@ -47,12 +47,12 @@ interface Group {
 const GROUPS: Group[] = [
   {
     title: "Order updates",
-    hint: "Sent from an order — the button beside the customer's number.",
-    keys: [{ key: "order", label: "The message around the update" }],
+    hint: "The master message template with greeting, items, total, address, and tracking link.",
+    keys: [{ key: "order", label: "Main order message format" }],
   },
   {
     title: "What each stage says",
-    hint: "One line, dropped into the message above where {{status}} sits.",
+    hint: "The status sentence placed into {{status}} in the main message above. (No need to repeat items, address or total).",
     keys: [
       { key: "status.pending", label: "Order received, not confirmed yet" },
       { key: "status.confirmed", label: "Confirmed on the phone" },

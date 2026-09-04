@@ -30,6 +30,7 @@ export type TemplateKey =
  */
 export const DEFAULT_TEMPLATES: Record<TemplateKey, string> = {
   order: [
+    "আসসালামু আলাইকুম",
     "{{store}} — Order {{orderNumber}}",
     "",
     "{{status}}",
@@ -88,14 +89,14 @@ export const TEMPLATE_PLACEHOLDERS: Record<TemplateKey, string[]> = {
   order: ["store", "orderNumber", "status", "items", "total", "address", "phone", "track"],
   recovery: ["store", "name", "items", "total", "link"],
   couponOffer: ["store", "name", "code", "expiry", "items", "total", "link"],
-  "status.pending": ["orderNumber"],
-  "status.confirmed": ["orderNumber"],
-  "status.processing": ["orderNumber"],
-  "status.packed": ["orderNumber"],
-  "status.shipped": ["orderNumber"],
-  "status.delivered": ["orderNumber"],
-  "status.cancelled": ["orderNumber"],
-  "status.returned": ["orderNumber"],
+  "status.pending": ["store", "orderNumber", "name", "items", "total", "address", "phone", "track"],
+  "status.confirmed": ["store", "orderNumber", "name", "items", "total", "address", "phone", "track"],
+  "status.processing": ["store", "orderNumber", "name", "items", "total", "address", "phone", "track"],
+  "status.packed": ["store", "orderNumber", "name", "items", "total", "address", "phone", "track"],
+  "status.shipped": ["store", "orderNumber", "name", "items", "total", "address", "phone", "track"],
+  "status.delivered": ["store", "orderNumber", "name", "items", "total", "address", "phone", "track"],
+  "status.cancelled": ["store", "orderNumber", "name", "items", "total", "address", "phone", "track"],
+  "status.returned": ["store", "orderNumber", "name", "items", "total", "address", "phone", "track"],
 };
 
 /**

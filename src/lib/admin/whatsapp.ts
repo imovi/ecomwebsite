@@ -87,15 +87,24 @@ export function orderMessage(
     .map((item) => `• ${item.productName}${item.variantLabel ? ` (${item.variantLabel})` : ""} × ${item.quantity}`)
     .join("\n");
 
-  return render(templateFor(options.templates, "order"), {
+  const context: Record<string, string> = {
     store: options.storeName,
     orderNumber: order.orderNumber,
-    status: statusLine(order, options.templates),
+    customerName: order.customerName || "",
+    name: order.customerName || "",
     items,
     total: formatTaka(order.grandTotal),
     address: `${order.address}, ${order.areaText}`,
     phone: order.phone,
     track: trackingLine(order),
+  };
+
+  const statusTemplate = templateFor(options.templates, `status.${order.status}` as TemplateKey);
+  const status = render(statusTemplate, context);
+
+  return render(templateFor(options.templates, "order"), {
+    ...context,
+    status,
   });
 }
 

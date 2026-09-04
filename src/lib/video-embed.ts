@@ -70,7 +70,7 @@ export function parseVideoUrl(url: string | null | undefined): ParsedVideoInfo |
     const code = igMatch[1];
     return {
       type: "instagram",
-      embedUrl: `https://www.instagram.com/reel/${code}/embed`,
+      embedUrl: `https://www.instagram.com/reel/${code}/embed/`,
       isVertical: true,
       originalUrl: trimmed,
       videoId: code,
@@ -115,4 +115,57 @@ export function parseVideoUrl(url: string | null | undefined): ParsedVideoInfo |
   }
 
   return null;
+}
+
+/**
+ * Resolves a video URL into a direct, clean video stream (.mp4) whenever possible
+ * to eliminate likes, comments, and branding chrome.
+ * Falls back safely to standard embed if extraction fails.
+ */
+export async function resolveDirectVideoUrl(
+  url: string | null | undefined,
+): Promise<ParsedVideoInfo | null> {
+  const parsed = parseVideoUrl(url);
+  if (!parsed) return null;
+
+  // Already a direct video file
+  if (parsed.type === "direct") return parsed;
+
+  // Instagram Reel / Post: Extract clean direct MP4 stream
+  if (parsed.type === "instagram" && parsed.videoId) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 4000);
+
+      const res = await fetch(`https://www.instagram.com/reel/${parsed.videoId}/embed/`, {
+        signal: controller.signal,
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        },
+      });
+
+      clearTimeout(timeout);
+
+      if (res.ok) {
+        const html = await res.text();
+        const match = html.match(/\\"video_url\\":\\"([^"\\]*(?:\\.[^"\\]*)*)\\"/);
+        if (match) {
+          const directUrl = JSON.parse(`"${match[1]}"`).replace(/\\\//g, "/");
+          if (directUrl && directUrl.startsWith("http")) {
+            return {
+              ...parsed,
+              type: "direct",
+              embedUrl: directUrl,
+              isVertical: true,
+            };
+          }
+        }
+      }
+    } catch {
+      // Graceful fallback to Instagram embed
+    }
+  }
+
+  return parsed;
 }

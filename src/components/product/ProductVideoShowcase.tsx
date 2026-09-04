@@ -1,19 +1,49 @@
 ﻿"use client";
 
-import { useMemo } from "react";
-import { parseVideoUrl } from "@/lib/video-embed";
-import { Icon } from "@/components/ui/Icon";
+import { useEffect, useState } from "react";
+import { parseVideoUrl, type ParsedVideoInfo } from "@/lib/video-embed";
 
 interface ProductVideoShowcaseProps {
-  videoUrl: string | null | undefined;
+  videoUrl?: string | null | undefined;
+  video?: ParsedVideoInfo | null | undefined;
   productTitle: string;
 }
 
 export function ProductVideoShowcase({
   videoUrl,
+  video: initialVideo,
   productTitle,
 }: ProductVideoShowcaseProps) {
-  const video = useMemo(() => parseVideoUrl(videoUrl), [videoUrl]);
+  const [video, setVideo] = useState<ParsedVideoInfo | null>(
+    initialVideo ?? (videoUrl ? parseVideoUrl(videoUrl) : null),
+  );
+
+  // If initial video was not resolved to direct stream yet, attempt background resolution
+  useEffect(() => {
+    if (initialVideo) {
+      setVideo(initialVideo);
+      return;
+    }
+    if (!videoUrl) {
+      setVideo(null);
+      return;
+    }
+
+    const basic = parseVideoUrl(videoUrl);
+    setVideo(basic);
+
+    // If it is an Instagram Reel, resolve to direct clean MP4 stream
+    if (basic && basic.type === "instagram") {
+      fetch(`/api/video/resolve?url=${encodeURIComponent(videoUrl)}`)
+        .then((r) => r.json())
+        .then((res) => {
+          if (res.success && res.data) {
+            setVideo(res.data);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [videoUrl, initialVideo]);
 
   if (!video) return null;
 
@@ -73,20 +103,34 @@ export function ProductVideoShowcase({
         )}
       </div>
 
-      {/* Video Container */}
+      {/* Video Container - Pure Clean Player without likes or page headers */}
       <div className="flex justify-center">
-        {video.type === "direct" ? (
-          <div className="relative w-full max-w-2xl overflow-hidden rounded-xl bg-black shadow-lg">
+        {video.type === "direct" && video.isVertical ? (
+          /* Clean Direct Vertical Reel (Phone 9:16 frame) */
+          <div className="relative w-full max-w-[360px] overflow-hidden rounded-2xl bg-black shadow-2xl border-4 border-ink/10 aspect-[9/16]">
             <video
               src={video.embedUrl}
               controls
               playsInline
+              loop
               preload="metadata"
-              className="h-full max-h-[560px] w-full object-contain"
+              className="absolute inset-0 size-full object-cover"
+            />
+          </div>
+        ) : video.type === "direct" ? (
+          /* Clean Direct Landscape Video (16:9 widescreen) */
+          <div className="relative w-full max-w-3xl overflow-hidden rounded-xl bg-black shadow-lg aspect-video">
+            <video
+              src={video.embedUrl}
+              controls
+              playsInline
+              loop
+              preload="metadata"
+              className="absolute inset-0 size-full object-contain"
             />
           </div>
         ) : video.isVertical ? (
-          /* Phone / Reel vertical frame */
+          /* Vertical Iframe Embed (Shorts, TikTok, or fallback) */
           <div className="relative w-full max-w-[360px] overflow-hidden rounded-2xl bg-black shadow-2xl border-4 border-ink/10 aspect-[9/16]">
             <iframe
               src={video.embedUrl}
@@ -98,7 +142,7 @@ export function ProductVideoShowcase({
             />
           </div>
         ) : (
-          /* Landscape 16:9 standard video frame */
+          /* Landscape Iframe Embed (YouTube 16:9, etc.) */
           <div className="relative w-full max-w-3xl overflow-hidden rounded-xl bg-black shadow-lg aspect-video">
             <iframe
               src={video.embedUrl}

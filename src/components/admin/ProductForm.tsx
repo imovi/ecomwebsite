@@ -22,7 +22,7 @@ import {
 import { Input, Select, Textarea } from "@/components/ui/Field";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
-import { parseVideoUrl } from "@/lib/video-embed";
+import { parseVideoUrl, type ParsedVideoInfo } from "@/lib/video-embed";
 
 /**
  * Product create / edit.
@@ -53,6 +53,108 @@ const nextSpecRowId = () => `spec-${(specRowSeq += 1)}`;
    re-subscribes whenever the callback identity changes. */
 const subscribeToNothing = () => () => {};
 const readOrigin = () => window.location.origin;
+
+function ProductVideoAdminPreview({
+  url,
+  onRemove,
+}: {
+  url: string;
+  onRemove: () => void;
+}) {
+  const [video, setVideo] = useState<ParsedVideoInfo | null>(() => parseVideoUrl(url));
+
+  useEffect(() => {
+    const basic = parseVideoUrl(url);
+    setVideo(basic);
+    if (basic && basic.type === "instagram") {
+      fetch(`/api/video/resolve?url=${encodeURIComponent(url)}`)
+        .then((r) => r.json())
+        .then((res) => {
+          if (res.success && res.data) {
+            setVideo(res.data);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [url]);
+
+  if (!video) {
+    return (
+      <div className="rounded-md border border-line bg-surface/50 p-3 text-caption text-muted">
+        Please enter a valid video link (e.g. YouTube, Facebook Reel, TikTok, Instagram, or .mp4 URL).
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-1 flex flex-col gap-3 rounded-lg border border-line bg-surface/30 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-caption">
+          <span className="font-semibold text-ink">{video.platformName}</span>
+          <span className="rounded bg-primary/10 px-2 py-0.5 text-micro font-medium text-primary">
+            {video.isVertical ? "📱 Vertical Reel (9:16)" : "🖥️ Landscape Video (16:9)"}
+          </span>
+          {video.type === "direct" && (
+            <span className="rounded bg-positive/10 px-2 py-0.5 text-micro font-semibold text-positive">
+              ✓ Clean Video
+            </span>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={onRemove}
+          className="text-micro font-medium text-sale hover:underline"
+        >
+          Remove Video
+        </button>
+      </div>
+
+      <div className="flex justify-center">
+        {video.type === "direct" && video.isVertical ? (
+          <div className="relative w-full max-w-[220px] overflow-hidden rounded-xl bg-black border-2 border-line aspect-[9/16]">
+            <video
+              src={video.embedUrl}
+              controls
+              playsInline
+              loop
+              className="absolute inset-0 size-full object-cover"
+            />
+          </div>
+        ) : video.type === "direct" ? (
+          <div className="relative w-full max-w-md overflow-hidden rounded-lg bg-black">
+            <video
+              src={video.embedUrl}
+              controls
+              playsInline
+              loop
+              className="max-h-64 w-full object-contain"
+            />
+          </div>
+        ) : video.isVertical ? (
+          <div className="relative w-full max-w-[240px] overflow-hidden rounded-xl bg-black border-2 border-line aspect-[9/16]">
+            <iframe
+              src={video.embedUrl}
+              title="Product Video Preview"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+              className="absolute inset-0 size-full border-0"
+            />
+          </div>
+        ) : (
+          <div className="relative w-full max-w-md overflow-hidden rounded-lg bg-black aspect-video">
+            <iframe
+              src={video.embedUrl}
+              title="Product Video Preview"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+              className="absolute inset-0 size-full border-0"
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 interface FormState {
   name: string;
@@ -730,69 +832,12 @@ export function ProductForm({ productId }: { productId?: string }) {
                 error={fieldErrors.videoUrl}
               />
 
-              {form.videoUrl.trim() && (() => {
-                const parsed = parseVideoUrl(form.videoUrl);
-                if (!parsed) {
-                  return (
-                    <div className="rounded-md border border-line bg-surface/50 p-3 text-caption text-muted">
-                      Please enter a valid video link (e.g. YouTube, Facebook Reel, TikTok, Instagram, or .mp4 URL).
-                    </div>
-                  );
-                }
-
-                return (
-                  <div className="mt-1 flex flex-col gap-3 rounded-lg border border-line bg-surface/30 p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 text-caption">
-                        <span className="font-semibold text-ink">{parsed.platformName}</span>
-                        <span className="rounded bg-primary/10 px-2 py-0.5 text-micro font-medium text-primary">
-                          {parsed.isVertical ? "📱 Vertical Reel (9:16)" : "🖥️ Landscape Video (16:9)"}
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => set("videoUrl", "")}
-                        className="text-micro font-medium text-sale hover:underline"
-                      >
-                        Remove Video
-                      </button>
-                    </div>
-
-                    <div className="flex justify-center">
-                      {parsed.type === "direct" ? (
-                        <div className="relative w-full max-w-md overflow-hidden rounded-lg bg-black">
-                          <video
-                            src={parsed.embedUrl}
-                            controls
-                            playsInline
-                            className="max-h-64 w-full object-contain"
-                          />
-                        </div>
-                      ) : parsed.isVertical ? (
-                        <div className="relative w-full max-w-[240px] overflow-hidden rounded-xl bg-black border-2 border-line aspect-[9/16]">
-                          <iframe
-                            src={parsed.embedUrl}
-                            title="Product Video Preview"
-                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                            allowFullScreen
-                            className="absolute inset-0 size-full border-0"
-                          />
-                        </div>
-                      ) : (
-                        <div className="relative w-full max-w-md overflow-hidden rounded-lg bg-black aspect-video">
-                          <iframe
-                            src={parsed.embedUrl}
-                            title="Product Video Preview"
-                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                            allowFullScreen
-                            className="absolute inset-0 size-full border-0"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })()}
+              {form.videoUrl.trim() && (
+                <ProductVideoAdminPreview
+                  url={form.videoUrl.trim()}
+                  onRemove={() => set("videoUrl", "")}
+                />
+              )}
             </div>
           </Card>
 

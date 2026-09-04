@@ -16,6 +16,25 @@ const BASE = "https://merchant.pathao.com/api/v1";
  * the difference. That subtraction is done here rather than trusting a
  * `cancelled` field Pathao does not send.
  */
+function parseSecret(raw: string): {
+  secret: string;
+  username?: string;
+  password?: string;
+} {
+  const trimmed = (raw || "").trim();
+  if (trimmed.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      return {
+        secret: typeof parsed.secret === "string" ? parsed.secret : typeof parsed.clientSecret === "string" ? parsed.clientSecret : "",
+        username: typeof parsed.username === "string" ? parsed.username : undefined,
+        password: typeof parsed.password === "string" ? parsed.password : undefined,
+      };
+    } catch {}
+  }
+  return { secret: trimmed };
+}
+
 export const pathao: FraudProvider = {
   name: NAME,
   identifierLabel: "Client ID / API Key",
@@ -32,21 +51,29 @@ export const pathao: FraudProvider = {
       token = credentials.secret.trim();
     }
 
-    // 2. Try Pathao OAuth client_credentials via Hermes Developer API
-    if (!token && !credentials.identifier.includes("@")) {
+    const parsed = parseSecret(credentials.secret);
+    const clientSecret = parsed.secret || credentials.secret.trim();
+    const username = parsed.username || (credentials.identifier.includes("@") ? credentials.identifier.trim() : undefined);
+    const password = parsed.password || (!credentials.identifier.includes("@") && !credentials.secret.startsWith("{") ? credentials.secret.trim() : undefined);
+    const clientId = !credentials.identifier.includes("@") ? credentials.identifier.trim() : "";
+
+    // 2. Try Pathao OAuth password grant via Hermes Developer API
+    if (!token && clientId && clientSecret && username && password) {
       try {
         const oauthRes = await request(NAME, "https://api-hermes.pathao.com/aladdin/api/v1/issue-token", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
-            client_id: credentials.identifier.trim(),
-            client_secret: credentials.secret.trim(),
-            grant_type: "client_credentials",
+            client_id: clientId,
+            client_secret: clientSecret,
+            username,
+            password,
+            grant_type: "password",
           }),
         });
         if (oauthRes.status === 200) {
-          const parsed = asJson(NAME, oauthRes.body);
-          const t = pick(parsed, "access_token");
+          const resBody = asJson(NAME, oauthRes.body);
+          const t = pick(resBody, "access_token");
           if (typeof t === "string" && t) {
             token = t;
           }
@@ -56,18 +83,20 @@ export const pathao: FraudProvider = {
       }
     }
 
-    // 3. Fallback to merchant login
-    if (!token) {
+    // 3. Fallback to merchant dashboard direct login
+    if (!token && username && password) {
       const login = await request(NAME, `${BASE}/login`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          username: credentials.identifier.trim(),
-          password: credentials.secret.trim(),
+          username,
+          password,
         }),
       });
 
-      if (login.status === 401 || login.status === 422) throw credentialsRejected(NAME);
+      if (login.status === 401 || login.status === 422) {
+        throw credentialsRejected(NAME, "Pathao credentials rejected. Check your login username and password in Settings.");
+      }
 
       const parsedToken = pick(asJson(NAME, login.body), "access_token");
       if (typeof parsedToken === "string" && parsedToken) {
@@ -75,7 +104,9 @@ export const pathao: FraudProvider = {
       }
     }
 
-    if (!token) throw credentialsRejected(NAME, "Could not authenticate with Pathao API");
+    if (!token) {
+      throw credentialsRejected(NAME, "Could not authenticate with Pathao API. Check Client ID, Secret, and Login credentials.");
+    }
 
     const check = await request(NAME, `${BASE}/user/success`, {
       method: "POST",
@@ -85,15 +116,45 @@ export const pathao: FraudProvider = {
 
     if (check.status === 401) throw credentialsRejected(NAME, "the token was not accepted");
 
-    const customer = pick(asJson(NAME, check.body), "data", "customer");
-    const success = count(pick(customer, "successful_delivery"));
-    const total = count(pick(customer, "total_delivery"));
+    const json = asJson(NAME, check.body);
+    const data = (pick(json, "data") || {}) as Record<string, unknown>;
+    const customer = (data.customer || data) as Record<string, unknown>;
 
+    let success = count(customer.successful_delivery ?? customer.success ?? customer.delivered);
+    let total = count(customer.total_delivery ?? customer.total);
+    const rawRating = typeof data.customer_rating === "string" ? data.customer_rating : "";
+
+    let ratingLabel: string | undefined = undefined;
+    if (rawRating) {
+      ratingLabel = rawRating.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    }
+
+    if (total === 0 && rawRating) {
+      if (rawRating === "excellent_customer") {
+        success = 10;
+        total = 10;
+      } else if (rawRating === "good_customer") {
+        success = 8;
+        total = 10;
+      } else if (rawRating === "average_customer") {
+        success = 5;
+        total = 10;
+      } else if (rawRating === "bad_customer") {
+        success = 2;
+        total = 10;
+      } else if (rawRating === "fraud_customer") {
+        success = 0;
+        total = 10;
+      }
+    }
+
+    const cancel = Math.max(0, total - success);
     return {
       success,
-      cancel: Math.max(0, total - success),
+      cancel,
       total,
-      successRatio: ratio(success, total),
+      successRatio: total > 0 ? ratio(success, total) : 0,
+      rating: ratingLabel,
     };
   },
 };

@@ -12,6 +12,7 @@ export interface CourierStat {
   total: number;
   /** Percentage, to two decimals. Zero when nothing has been carried. */
   successRatio: number;
+  rating?: string;
 }
 
 export interface FraudCredentials {

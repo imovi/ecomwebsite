@@ -302,6 +302,7 @@ export interface ApiFraudCourierResult {
   cancel: number;
   total: number;
   successRatio: number;
+  rating?: string;
 }
 
 /**

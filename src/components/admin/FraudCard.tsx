@@ -180,9 +180,16 @@ function PerCourier({ report }: { report: ApiFraudReport }) {
         {report.couriers.map((courier) => (
           <li key={courier.courier} className="rounded-sm border border-line bg-surface/50 p-2.5">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-caption font-semibold text-ink">{courier.label}</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-caption font-semibold text-ink">{courier.label}</span>
+                {courier.rating && (
+                  <span className="rounded bg-line px-1.5 py-0.5 text-[10px] font-medium text-ink-soft">
+                    {courier.rating}
+                  </span>
+                )}
+              </div>
               <span className="tnum text-caption font-bold text-ink">
-                {courier.total === 0 ? "0%" : `${courier.successRatio}%`}
+                {courier.total === 0 ? (courier.rating ? courier.rating : "0%") : `${courier.successRatio}%`}
               </span>
             </div>
             <div className="mt-1.5 flex items-center justify-between text-micro text-muted">

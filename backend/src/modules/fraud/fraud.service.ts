@@ -113,23 +113,35 @@ export async function report(
     (account) => account.enabled && account.identifier && account.secret,
   );
 
-  // Auto-include Steadfast from store settings if credentials exist and not in accounts
+  // Auto-include configured courier from store settings if credentials exist and not in accounts
   const settings = await getSettings().catch(() => null);
   if (
     settings &&
     settings.courierApiKey.trim() !== "" &&
-    settings.courierApiSecret.trim() !== "" &&
-    !accounts.some((a) => a.provider === "steadfast")
+    settings.courierApiSecret.trim() !== ""
   ) {
-    accounts.push({
-      provider: "steadfast",
-      identifier: settings.courierApiKey.trim(),
-      secret: settings.courierApiSecret.trim(),
-      enabled: true,
-      updatedAt: new Date(),
-      lastOkAt: null,
-      lastError: "",
-    });
+    const configuredProvider = (settings.courierProvider || "steadfast") as ProviderKey;
+    if (configuredProvider === "pathao" && !accounts.some((a) => a.provider === "pathao")) {
+      accounts.push({
+        provider: "pathao",
+        identifier: settings.courierApiKey.trim(),
+        secret: settings.courierApiSecret.trim(),
+        enabled: true,
+        updatedAt: new Date(),
+        lastOkAt: null,
+        lastError: "",
+      });
+    } else if (configuredProvider === "steadfast" && !accounts.some((a) => a.provider === "steadfast")) {
+      accounts.push({
+        provider: "steadfast",
+        identifier: settings.courierApiKey.trim(),
+        secret: settings.courierApiSecret.trim(),
+        enabled: true,
+        updatedAt: new Date(),
+        lastOkAt: null,
+        lastError: "",
+      });
+    }
   }
 
   // Also query local store order history for this customer phone

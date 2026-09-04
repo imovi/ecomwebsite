@@ -270,4 +270,10 @@ export interface StoreSettings {
   seoTitle?: string | undefined;
   /** Meta description override. Undefined uses the built-in sentence. */
   seoDescription?: string | undefined;
+  /** Top announcement bar text. Undefined uses built-in default. */
+  announcementText?: string | undefined;
+  /** Whether the top announcement bar is visible. Undefined means visible. */
+  announcementEnabled?: boolean | undefined;
+  /** Optional link destination for the top announcement bar. */
+  announcementLink?: string | undefined;
 }

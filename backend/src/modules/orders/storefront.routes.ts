@@ -177,6 +177,11 @@ const publicSettings: RequestHandler = async (_req, res) => {
         seoTitle: settings.seoTitle,
         seoDescription: settings.seoDescription,
       },
+      announcement: {
+        text: settings.announcementText,
+        enabled: settings.announcementEnabled,
+        link: settings.announcementLink,
+      },
       /**
        * Browser-side tracking configuration.
        *

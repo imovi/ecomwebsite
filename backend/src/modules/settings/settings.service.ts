@@ -187,6 +187,11 @@ export interface SettingsDto {
       enabled: boolean;
     };
   };
+  announcement: {
+    text: string;
+    enabled: boolean;
+    link: string;
+  };
   updatedAt: string;
 }
 
@@ -314,6 +319,11 @@ export function toSettingsDto(row: StoreSettingsRow): SettingsDto {
         enabled: row.googleSheetsEnabled,
       },
     },
+    announcement: {
+      text: row.announcementText,
+      enabled: row.announcementEnabled,
+      link: row.announcementLink,
+    },
     updatedAt: row.updatedAt.toISOString(),
   };
 }
@@ -435,6 +445,11 @@ export interface UpdateSettingsInput {
       enabled?: boolean;
     };
   };
+  announcement?: {
+    text?: string;
+    enabled?: boolean;
+    link?: string;
+  };
 }
 
 export async function updateSettings(input: UpdateSettingsInput): Promise<SettingsDto> {
@@ -491,6 +506,16 @@ export async function updateSettings(input: UpdateSettingsInput): Promise<Settin
   if (input.store?.seoTitle !== undefined) patch.seoTitle = input.store.seoTitle;
   if (input.store?.seoDescription !== undefined) {
     patch.seoDescription = input.store.seoDescription;
+  }
+
+  if (input.announcement?.text !== undefined) {
+    patch.announcementText = input.announcement.text.trim();
+  }
+  if (input.announcement?.enabled !== undefined) {
+    patch.announcementEnabled = input.announcement.enabled;
+  }
+  if (input.announcement?.link !== undefined) {
+    patch.announcementLink = input.announcement.link.trim();
   }
 
   if (input.tracking?.pixelId !== undefined) patch.metaPixelId = input.tracking.pixelId;

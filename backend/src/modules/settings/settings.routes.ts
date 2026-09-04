@@ -179,6 +179,15 @@ const updateSettingsSchema = z
       .strict()
       .optional(),
 
+    announcement: z
+      .object({
+        text: safeString({ max: 200 }).optional(),
+        enabled: z.boolean().optional(),
+        link: safeString({ max: 500 }).optional(),
+      })
+      .strict()
+      .optional(),
+
     tracking: z
       .object({
         /* Meta pixel ids are numeric strings, 15-16 digits today. Validated by

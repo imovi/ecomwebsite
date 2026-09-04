@@ -50,6 +50,7 @@ const NAV: NavItem[] = [
   { href: "/admin/categories", label: "Categories", icon: "blocks", minRole: "manager" },
   { href: "/admin/branding", label: "Branding", icon: "camera", minRole: "admin" },
   { href: "/admin/marketing", label: "Marketing", icon: "bolt", minRole: "admin" },
+  { href: "/admin/marketing/announcement", label: "Announcement Bar", icon: "speaker", minRole: "admin" },
   { href: "/admin/integrations", label: "Integrations", icon: "plug", minRole: "admin" },
   { href: "/admin/ips", label: "Blocked IPs", icon: "shield", minRole: "admin" },
   { href: "/admin/team", label: "Team", icon: "users", minRole: "super_admin" },
@@ -139,15 +140,20 @@ export function AdminShell({ title, action, children }: AdminShellProps) {
     if (href === "/admin/abandoned") {
       return pathname.startsWith("/admin/abandoned") || pathname.startsWith("/admin/incomplete");
     }
+    if (href === "/admin/marketing") {
+      return pathname === "/admin/marketing";
+    }
     return pathname.startsWith(href);
   };
 
   const inMore = visibleNav.some((item) => !item.primary && isActive(item.href));
 
   // Access check for the current page
-  const matchingItem = NAV.find((item) =>
-    item.href === "/admin" ? pathname === "/admin" : pathname.startsWith(item.href)
-  );
+  const matchingItem = NAV.slice()
+    .sort((a, b) => b.href.length - a.href.length)
+    .find((item) =>
+      item.href === "/admin" ? pathname === "/admin" : pathname.startsWith(item.href)
+    );
   const isDenied = Boolean(matchingItem && !isPermitted(matchingItem, role));
 
   const primaryItems = visibleNav

@@ -731,5 +731,10 @@ export interface ApiStoreSettings {
       enabled: boolean;
     };
   };
+  announcement: {
+    text: string;
+    enabled: boolean;
+    link: string;
+  };
   updatedAt: string;
 }

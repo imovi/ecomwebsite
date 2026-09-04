@@ -30,14 +30,26 @@ export async function Header() {
 
   return (
     <header className="sticky top-0 z-30 bg-white/85 backdrop-blur-md">
-      <div className="bg-ink text-white">
-        <Container>
-          <p className="flex items-center justify-center gap-1.5 py-1.5 text-micro font-medium tracking-wide">
-            <Icon name="cash" size={13} />
-            {copy.home.announcement}
-          </p>
-        </Container>
-      </div>
+      {settings.announcementEnabled !== false && Boolean(settings.announcementText || copy.home.announcement) && (
+        <div className="bg-ink text-white">
+          <Container>
+            {settings.announcementLink ? (
+              <Link
+                href={settings.announcementLink}
+                className="flex items-center justify-center gap-1.5 py-1.5 text-micro font-medium tracking-wide transition-opacity hover:opacity-90 hover:underline"
+              >
+                <Icon name="cash" size={13} />
+                <span>{settings.announcementText || copy.home.announcement}</span>
+              </Link>
+            ) : (
+              <p className="flex items-center justify-center gap-1.5 py-1.5 text-micro font-medium tracking-wide">
+                <Icon name="cash" size={13} />
+                <span>{settings.announcementText || copy.home.announcement}</span>
+              </p>
+            )}
+          </Container>
+        </div>
+      )}
 
       <Container>
         <div className="grid h-14 grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-line">

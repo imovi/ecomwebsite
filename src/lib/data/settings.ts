@@ -43,6 +43,11 @@ interface ApiPublicSettings {
       seoTitle?: string | null;
       seoDescription?: string | null;
     };
+    announcement?: {
+      text: string;
+      enabled: boolean;
+      link: string;
+    };
   };
 }
 
@@ -57,6 +62,9 @@ const FALLBACK: StoreSettings = {
   logoUrl: "https://hinarbd.com/uploads/branding/2026/08/e6982cc42e76ae3926a67c8e707900e4.webp",
   logoWidth: 2000,
   logoHeight: 667,
+  announcementText: "Cash on delivery all over Bangladesh",
+  announcementEnabled: true,
+  announcementLink: "",
 };
 
 export async function getSettings(): Promise<StoreSettings> {
@@ -76,6 +84,11 @@ export async function getSettings(): Promise<StoreSettings> {
           logoUrl: FALLBACK.logoUrl,
           logoWidth: FALLBACK.logoWidth,
           logoHeight: FALLBACK.logoHeight,
+        },
+        announcement: {
+          text: FALLBACK.announcementText ?? "Cash on delivery all over Bangladesh",
+          enabled: FALLBACK.announcementEnabled ?? true,
+          link: FALLBACK.announcementLink ?? "",
         },
       },
     },
@@ -97,6 +110,9 @@ export async function getSettings(): Promise<StoreSettings> {
     logoWidth: data.settings.store.logoWidth || FALLBACK.logoWidth,
     logoHeight: data.settings.store.logoHeight || FALLBACK.logoHeight,
     storeName: data.settings.store.name || FALLBACK.storeName,
+    announcementText: data.settings.announcement?.text ?? FALLBACK.announcementText,
+    announcementEnabled: data.settings.announcement?.enabled ?? FALLBACK.announcementEnabled,
+    announcementLink: data.settings.announcement?.link ?? FALLBACK.announcementLink,
     ...(data.settings.store.faviconUrl
       ? { faviconUrl: data.settings.store.faviconUrl }
       : {}),

@@ -133,8 +133,7 @@ export const storeSettings = pgTable(
      */
     storeWhatsapp: text("store_whatsapp").notNull().default(""),
 
-    /**
-     * Browser-tab title and the `<title>` search engines index.
+    /** Browser-tab title and the `<title>` search engines index.
      *
      * Empty falls back to `<store name> — <tagline>`, which is what every page
      * showed before this existed. Set it when the shop wants the words search
@@ -144,6 +143,14 @@ export const storeSettings = pgTable(
 
     /** The sentence under the title in search results. Empty uses the built-in. */
     seoDescription: text("seo_description").notNull().default(""),
+
+    /* --- Top announcement bar ------------------------------------------ */
+    /** Text shown in the header announcement bar. Empty falls back to default. */
+    announcementText: text("announcement_text")
+      .notNull()
+      .default("Cash on delivery all over Bangladesh"),
+    announcementEnabled: boolean("announcement_enabled").notNull().default(true),
+    announcementLink: text("announcement_link").notNull().default(""),
 
     /**
      * Storage key for the shop's logo. Null means "use the wordmark".

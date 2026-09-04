@@ -183,7 +183,7 @@ function salutationName(name: string | null): string {
 }
 
 function basketLines(lead: RecoveryLead): string {
-  return lead.contents
+  return (lead.contents || [])
     .map(
       (line) =>
         `• ${line.name}${line.variantLabel ? ` (${line.variantLabel})` : ""} × ${line.quantity}`,

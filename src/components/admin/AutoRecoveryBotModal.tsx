@@ -58,8 +58,6 @@ export function AutoRecoveryBotModal({
 
   const currentLead = queue[currentIndex] ?? null;
 
-  if (!isOpen) return null;
-
   // Build current message preview
   const messagePreview = useMemo(() => {
     if (!currentLead) return "";
@@ -74,6 +72,8 @@ export function AutoRecoveryBotModal({
       templates,
     });
   }, [currentLead, mode, templates]);
+
+  if (!isOpen) return null;
 
   async function handleSendAndNext() {
     if (!currentLead) return;
@@ -270,7 +270,7 @@ export function AutoRecoveryBotModal({
                 </div>
 
                 <div className="mt-3 border-t border-line/60 pt-2 text-micro text-ink-soft">
-                  Cart items: {currentLead.contents.map((c) => `${c.name} × ${c.quantity}`).join(", ")}
+                  Cart items: {currentLead.contents?.map((c) => `${c.name} × ${c.quantity}`).join(", ") || "No items recorded"}
                 </div>
               </div>
 

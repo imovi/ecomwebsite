@@ -635,39 +635,75 @@ function CourierCard({
 
       <Card>
         <CardHeader
-          title="1-Click Dispatch Courier"
-          hint="Select which courier automatically receives parcels when pressing 'Send to courier' on the order page."
+          title="Active 1-Click courier provider"
+          hint="Choose which provider handles 1-click parcel dispatch right now. Switch anytime."
         />
 
         <div className="flex flex-col gap-4 p-4">
-          <Steps
-            steps={
-              isPathao
-                ? [
-                    "In Pathao Merchant, open Developer API and create credentials.",
-                    "Paste the Client ID and Client Secret below, plus your Store ID.",
-                    "Press Test connection — it checks the store id too.",
-                    "Turn it on, then 1-click send parcels from each order page.",
-                  ]
-                : [
-                    "In the Steadfast merchant panel, open API and copy the Api Key and Secret Key.",
-                    "Paste both below and save.",
-                    "Press Test connection — it reads your balance back.",
-                    "Turn it on, then 1-click send parcels from each order page.",
-                  ]
-            }
-          />
+          <div className="flex flex-col gap-2.5">
+            {[
+              {
+                key: "steadfast",
+                name: "Steadfast",
+                description: "Steadfast Courier API (Auto parcel creation & consignment tracking).",
+              },
+              {
+                key: "pathao",
+                name: "Pathao",
+                description: "Pathao Merchant API (Client ID, Client Secret & Store ID).",
+              },
+              {
+                key: "",
+                name: "Disabled (Manual)",
+                description: "Manual order dispatch — no automated API parcel creation.",
+              },
+            ].map((p) => {
+              const isActive = provider === p.key;
+              return (
+                <div
+                  key={p.key}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => {
+                    setProvider(p.key);
+                    void onSave(
+                      { provider: p.key, enabled: p.key !== "" },
+                      `Active courier switched to ${p.name}`,
+                    );
+                  }}
+                  className={cn(
+                    "flex cursor-pointer items-center justify-between rounded-md border p-3.5 transition-all select-none",
+                    isActive
+                      ? "border-positive/70 bg-positive/[0.04] shadow-xs"
+                      : "border-line bg-surface/30 hover:border-ink/30 hover:bg-surface/60",
+                  )}
+                >
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-body font-semibold text-ink">{p.name}</span>
+                      {isActive && (
+                        <span className="inline-flex items-center rounded-full bg-positive/15 px-2 py-0.5 text-micro font-semibold text-positive">
+                          Active
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-caption text-muted">{p.description}</p>
+                  </div>
 
-          <Select
-            label="Default 1-Click Courier"
-            value={provider}
-            onChange={(event) => setProvider(event.target.value)}
-            hint="Choose which courier is used for 1-click parcel creation on orders."
-          >
-            <option value="">Not using a courier API</option>
-            <option value="steadfast">Steadfast Courier</option>
-            <option value="pathao">Pathao Courier</option>
-          </Select>
+                  <div className="flex items-center pl-3">
+                    {isActive ? (
+                      <span className="flex items-center gap-1.5 text-caption font-bold text-positive">
+                        <span className="size-2 rounded-full bg-positive" />
+                        ON
+                      </span>
+                    ) : (
+                      <span className="size-4 rounded-full border-2 border-line" />
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
 
           {settings.courier.hasCredentials && (
             <p className="flex items-center gap-2 rounded-sm bg-positive-soft px-3 py-2 text-caption text-positive">

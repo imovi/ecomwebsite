@@ -8,6 +8,7 @@ import type { ApiStoreSettings } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
 import { AdminShell } from "./AdminShell";
 import { WhatsAppTemplates } from "./WhatsAppTemplates";
+import { CourierAccountList } from "./FraudIntegration";
 import { AsyncState, Card, CardHeader, ErrorBanner, PageBody, SuccessBanner } from "./ui";
 import { Button } from "@/components/ui/Button";
 import { Input, Select, Textarea } from "@/components/ui/Field";
@@ -265,6 +266,8 @@ export function SettingsForm() {
                   onSave={saveCourier}
                   onTest={testCourier}
                 />
+
+                <CourierAccountList />
 
                 <Card>
                   <CardHeader
@@ -632,8 +635,8 @@ function CourierCard({
 
       <Card>
         <CardHeader
-          title="Courier"
-          hint="Send parcels straight from an order, and let the courier tell you when it was delivered."
+          title="1-Click Dispatch Courier"
+          hint="Select which courier automatically receives parcels when pressing 'Send to courier' on the order page."
         />
 
         <div className="flex flex-col gap-4 p-4">
@@ -644,26 +647,26 @@ function CourierCard({
                     "In Pathao Merchant, open Developer API and create credentials.",
                     "Paste the Client ID and Client Secret below, plus your Store ID.",
                     "Press Test connection — it checks the store id too.",
-                    "Turn it on, then send parcels from each order page.",
+                    "Turn it on, then 1-click send parcels from each order page.",
                   ]
                 : [
                     "In the Steadfast merchant panel, open API and copy the Api Key and Secret Key.",
                     "Paste both below and save.",
                     "Press Test connection — it reads your balance back.",
-                    "Turn it on, then send parcels from each order page.",
+                    "Turn it on, then 1-click send parcels from each order page.",
                   ]
             }
           />
 
           <Select
-            label="Courier"
+            label="Default 1-Click Courier"
             value={provider}
             onChange={(event) => setProvider(event.target.value)}
-            hint="One at a time. Changing it does not affect parcels already sent."
+            hint="Choose which courier is used for 1-click parcel creation on orders."
           >
             <option value="">Not using a courier API</option>
-            <option value="steadfast">Steadfast</option>
-            <option value="pathao">Pathao</option>
+            <option value="steadfast">Steadfast Courier</option>
+            <option value="pathao">Pathao Courier</option>
           </Select>
 
           {settings.courier.hasCredentials && (

@@ -26,7 +26,7 @@ import { Input } from "@/components/ui/Field";
  * only as "saved", and leaving it empty on save keeps the existing one —
  * otherwise every unrelated edit would need it retyped from a note somewhere.
  */
-export function FraudIntegration() {
+export function CourierAccountList() {
   const [accounts, setAccounts] = useState<ApiFraudAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -38,7 +38,7 @@ export function FraudIntegration() {
       setError(null);
     } catch (caught) {
       setError(
-        caught instanceof AdminApiError ? caught.message : "Could not load the courier sign-ins.",
+        caught instanceof AdminApiError ? caught.message : "Could not load courier credentials.",
       );
     } finally {
       setLoading(false);
@@ -50,39 +50,47 @@ export function FraudIntegration() {
   const active = accounts.filter((account) => account.enabled && account.identifier).length;
 
   return (
-    <AdminShell title="Fraud check">
-      <PageBody columns={false}>
-        <Card>
-          <CardHeader
-            title="Checking a customer's delivery record"
-            hint="Signs in to each courier's merchant panel and asks what this phone number has taken delivery of before."
-          />
-          <div className="flex flex-col gap-2 p-4 text-caption text-ink-soft">
-            <p>
-              {active === 0
-                ? "No courier is switched on yet, so orders show no delivery record."
-                : `${active} courier${active === 1 ? "" : "s"} switched on. New orders are looked up automatically.`}
-            </p>
-            <p className="text-muted">
-              These are real merchant passwords, not API keys — an account that can create parcels
-              and see settlement. Switch on only the couriers you actually have an account with, and
-              use Test after saving: nobody else can verify these logins for you.
-            </p>
-          </div>
-        </Card>
+    <div className="flex flex-col gap-4">
+      <Card>
+        <CardHeader
+          title="Courier APIs & Delivery History Records"
+          hint="Connect your courier accounts to collect customer delivery stats (fraud check) across all couriers."
+        />
+        <div className="flex flex-col gap-2 p-4 text-caption text-ink-soft">
+          <p>
+            {active === 0
+              ? "No courier is switched on yet for delivery record collection."
+              : `${active} courier${active === 1 ? "" : "s"} active. Customer delivery records are checked across all active couriers.`}
+          </p>
+          <p className="text-muted">
+            Enter your API credentials for each courier you use. Each active courier helps build the delivery success % when checking customer orders.
+          </p>
+        </div>
+      </Card>
 
-        <AsyncState
-          loading={loading}
-          error={error}
-          onRetry={() => {
-            setLoading(true);
-            void load();
-          }}
-        >
+      <AsyncState
+        loading={loading}
+        error={error}
+        onRetry={() => {
+          setLoading(true);
+          void load();
+        }}
+      >
+        <div className="grid gap-4">
           {accounts.map((account) => (
             <CourierCard key={account.provider} account={account} onSaved={setAccounts} />
           ))}
-        </AsyncState>
+        </div>
+      </AsyncState>
+    </div>
+  );
+}
+
+export function FraudIntegration() {
+  return (
+    <AdminShell title="Courier integrations">
+      <PageBody columns={false}>
+        <CourierAccountList />
       </PageBody>
     </AdminShell>
   );

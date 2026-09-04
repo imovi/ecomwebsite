@@ -24,35 +24,35 @@ const DEFAULT_ANNOUNCEMENT = {
 const PRESETS = [
   {
     id: "default",
-    label: "Default (ক্যাশ অন ডেলিভারি)",
+    label: "Default (Cash on Delivery)",
     tag: "Permanent Default",
     text: "Cash on delivery all over Bangladesh",
     link: "",
-    desc: "মূল ডিফল্ট ফরম্যাট। যে কোনো ক্যাম্পেইন শেষে এই বাটনে ক্লিক করলেই আবার আগের ডিফল্ট ফরম্যাটে ফিরে আসবে।",
+    desc: "Original default announcement. Restores the standard nationwide cash-on-delivery message.",
   },
   {
     id: "coupon",
-    label: "Promotional Coupon (কুপন অফার)",
+    label: "Promotional Coupon Offer",
     tag: "Promotion",
     text: "Special Discount! Use code FCC for ৳800 OFF",
     link: "/checkout",
-    desc: "প্রমোশনাল কুপন কোড দিয়ে ডিসকাউন্ট অফার হাইলাইট করার জন্য।",
+    desc: "Highlights an active promotional coupon code to drive checkout conversion.",
   },
   {
     id: "free_delivery",
-    label: "Free Delivery (ফ্রি ডেলিভারি অফার)",
+    label: "Free Delivery Offer",
     tag: "Shipping Offer",
     text: "Free delivery on all orders over ৳1,500!",
     link: "/",
-    desc: "নির্দিষ্ট পরিমাণের বেশি অর্ডারে ফ্রি ডেলিভারি প্রমোট করার জন্য।",
+    desc: "Promotes free delivery threshold on qualifying basket sizes.",
   },
   {
     id: "sale",
-    label: "Flash Sale Alert (ফ্ল্যাশ সেল)",
+    label: "Flash Sale Alert",
     tag: "Campaign",
     text: "Flash Sale is Live! Grab your favorite gadgets today",
     link: "/",
-    desc: "সীমিত সময়ের কোনো সেল বা বিশেষ ছাড়ের ঘোষণা দেওয়ার জন্য।",
+    desc: "Announces limited-time promotions, holiday campaigns, or clearance discounts.",
   },
 ];
 
@@ -168,7 +168,7 @@ export function AnnouncementForm() {
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="font-semibold text-sm text-ink">
-                          Default Format (স্থায়ী ডিফল্ট ফরম্যাট)
+                          Permanent Default Format
                         </span>
                         {isDefaultActive ? (
                           <span className="px-2 py-0.5 rounded-full text-micro font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
@@ -184,7 +184,7 @@ export function AnnouncementForm() {
                         <span className="font-mono text-ink font-medium">
                           &quot;Cash on delivery all over Bangladesh&quot;
                         </span>{" "}
-                        — অন্য যে কোনো অফার বা কুপন ব্যবহার করলেও এই বাটন চাপলে সাথে সাথে আগের ডিফল্ট ফরম্যাট ফিরে আসবে।
+                        — Even after running temporary promotional campaigns, you can switch back to this default format at any time.
                       </p>
                     </div>
                   </div>
@@ -198,7 +198,7 @@ export function AnnouncementForm() {
                       className="shrink-0 self-start sm:self-center bg-white hover:bg-surface border-line"
                     >
                       <Icon name="refresh" size={14} className="mr-1" />
-                      Restore Default (ডিফল্ট আনুন)
+                      Restore Default
                     </Button>
                   )}
                 </div>
@@ -252,8 +252,8 @@ export function AnnouncementForm() {
               <div className="2xl:col-span-2">
                 <Card>
                   <CardHeader
-                    title="Saved Formats & Templates (সংরক্ষিত ফরম্যাট)"
-                    hint="যে কোনো ফরম্যাটে ক্লিক করলে ইনপুট বক্সে লেখা বসে যাবে। পছন্দমতো এডিট করে সেভ করতে পারেন।"
+                    title="Saved Formats & Presets"
+                    hint="Click any preset below to load it into the editor, customize if needed, and save."
                   />
                   <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {PRESETS.map((preset) => {
@@ -309,8 +309,8 @@ export function AnnouncementForm() {
                 <form onSubmit={handleSave}>
                   <Card>
                     <CardHeader
-                      title="Custom Edit & Control (কাস্টম এডিট)"
-                      hint="Turn on/off, customize the text, or add a link for your promotion/coupon."
+                      title="Announcement Configuration"
+                      hint="Turn on or off, customize wording, or add a link for your promotion/coupon."
                     />
 
                     <div className="p-5 flex flex-col gap-6">
@@ -378,7 +378,7 @@ export function AnnouncementForm() {
                           disabled={saving || isDefaultActive}
                         >
                           <Icon name="refresh" size={14} className="mr-1" />
-                          Default ফরম্যাটে ফিরিয়ে নিন
+                          Reset to Default
                         </Button>
 
                         <Button

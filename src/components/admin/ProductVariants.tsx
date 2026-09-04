@@ -547,7 +547,7 @@ function VariantRow({
             const nextP = Number(price);
             const nextOld = oldPrice.trim() === "" ? null : Number(oldPrice);
             if (nextOld !== null && nextOld <= nextP) {
-              toast("আগের দাম (Old price) অবশ্যই বর্তমান দামের চেয়ে বেশি হতে হবে।", { tone: "error" });
+              toast("Old price must be greater than current price.", { tone: "error" });
               return;
             }
             void onRun(
@@ -693,7 +693,7 @@ function VariantCreate({
             const p = Number(price);
             const op = oldPrice.trim() === "" ? null : Number(oldPrice);
             if (op !== null && op <= p) {
-              toast("আগের দাম (Old price) অবশ্যই বর্তমান দামের চেয়ে বেশি হতে হবে।", { tone: "error" });
+              toast("Old price must be greater than current price.", { tone: "error" });
               return;
             }
             void onCreate({

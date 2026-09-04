@@ -139,7 +139,7 @@ export default function VisitorsPage() {
             onClick={() => selectPreset("today")}
             className={cn(filterType === "today" && "border-ink bg-ink text-white font-bold")}
           >
-            Today / আজকে
+            Today
           </Button>
           <Button
             size="sm"
@@ -147,7 +147,7 @@ export default function VisitorsPage() {
             onClick={() => selectPreset("yesterday")}
             className={cn(filterType === "yesterday" && "border-ink bg-ink text-white font-bold")}
           >
-            Yesterday / গতকাল
+            Yesterday
           </Button>
           <Button
             size="sm"
@@ -238,7 +238,7 @@ export default function VisitorsPage() {
           >
             <div className="flex items-center justify-between">
               <span className="text-micro font-bold text-muted uppercase tracking-wider">
-                📅 Today (আজকে)
+                Today
               </span>
               {filterType === "today" && (
                 <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-bold text-accent">
@@ -266,7 +266,7 @@ export default function VisitorsPage() {
           >
             <div className="flex items-center justify-between">
               <span className="text-micro font-bold text-muted uppercase tracking-wider">
-                ⏮️ Yesterday (গতকাল)
+                Yesterday
               </span>
               {filterType === "yesterday" && (
                 <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-bold text-accent">
@@ -294,7 +294,7 @@ export default function VisitorsPage() {
           >
             <div className="flex items-center justify-between">
               <span className="text-micro font-bold text-muted uppercase tracking-wider">
-                📈 Last 7 Days (৭ দিন)
+                Last 7 Days
               </span>
               {filterType === "last7" && (
                 <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-bold text-accent">

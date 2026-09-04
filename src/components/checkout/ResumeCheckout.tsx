@@ -53,7 +53,7 @@ export function ResumeCheckout({
 
   return (
     <p className="py-16 text-center text-body text-muted" role="status">
-      আপনার অর্ডারটি খোলা হচ্ছে…
+      Opening your checkout session…
     </p>
   );
 }

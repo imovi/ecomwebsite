@@ -237,7 +237,7 @@ export function AdminShell({ title, action, children }: AdminShellProps) {
               </div>
               <h2 className="text-title font-semibold text-ink">Access Restricted</h2>
               <p className="mt-1.5 text-caption text-ink-soft">
-                আপনার অ্যাকাউন্ট ({ROLE_LABELS[role]}) থেকে এই সেকশনটিতে প্রবেশের অনুমতি নেই।
+                Your account ({ROLE_LABELS[role]}) does not have permission to access this section.
               </p>
               <p className="mt-1 text-micro text-muted">
                 This section requires {matchingItem?.minRole === "super_admin" ? "Owner" : "Manager"} privileges.

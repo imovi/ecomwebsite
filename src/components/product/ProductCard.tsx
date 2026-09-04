@@ -7,6 +7,7 @@ import { copy } from "@/lib/copy";
 import { Badge } from "@/components/ui/Badge";
 import { Price } from "@/components/ui/Price";
 import { QuickAddButton } from "./QuickAddButton";
+import { parseVideoUrl } from "@/lib/video-embed";
 
 /**
  * Product card.
@@ -53,12 +54,19 @@ export function ProductCard({
         ? "object-cover object-bottom"
         : "object-cover object-center";
 
+  const withoutHash = primaryMedia.split("#")[0] ?? "";
+  const cleanPrimary = withoutHash.split("?")[0] ?? "";
+  const embed = parseVideoUrl(withoutHash);
+  const isPrimaryVideo =
+    /\.(mp4|webm|mov|ogg|m3u8)$/i.test(cleanPrimary) || cleanPrimary.includes("video/");
+  const isSocial = embed !== null && embed.type !== "direct" && embed.type !== "unknown";
+
   return (
     <div className="group relative flex flex-col">
       <div className="relative aspect-square overflow-hidden rounded-md bg-surface">
-        {/\.(mp4|webm|mov|ogg)($|\?)/i.test(primaryMedia) ? (
+        {isPrimaryVideo ? (
           <video
-            src={`${primaryMedia.split("#")[0]}#t=0.5`}
+            src={`${cleanPrimary}#t=0.5`}
             preload="metadata"
             muted
             loop
@@ -76,9 +84,43 @@ export function ProductCard({
               !available && "opacity-55",
             )}
           />
+        ) : isSocial && embed?.type === "youtube" && embed.videoId ? (
+          <div className="relative size-full">
+            <Image
+              src={`https://img.youtube.com/vi/${embed.videoId}/hqdefault.jpg`}
+              alt={product.title}
+              fill
+              sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 260px"
+              loading={priority ? "eager" : "lazy"}
+              className={cn(
+                "transition-transform duration-300 ease-out",
+                fitClass,
+                "group-hover:scale-[1.03] motion-reduce:transition-none motion-reduce:group-hover:scale-100",
+                !available && "opacity-55",
+              )}
+            />
+            <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+              <span className="flex size-9 items-center justify-center rounded-full bg-red-600 text-white shadow-md">
+                <svg className="size-4 fill-current ml-0.5" viewBox="0 0 24 24">
+                  <path d="M8 5v14l11-7z" />
+                </svg>
+              </span>
+            </div>
+          </div>
+        ) : isSocial ? (
+          <div className="relative size-full flex flex-col items-center justify-center bg-neutral-900 text-white p-3 text-center">
+            <span className="flex size-10 items-center justify-center rounded-full bg-white/20 text-white shadow-sm mb-1">
+              <svg className="size-5 fill-current ml-0.5" viewBox="0 0 24 24">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            </span>
+            <span className="text-micro font-semibold text-white/90">
+              {embed?.platformName}
+            </span>
+          </div>
         ) : (
           <Image
-            src={primaryMedia}
+            src={cleanPrimary}
             alt={product.title}
             fill
             sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 260px"

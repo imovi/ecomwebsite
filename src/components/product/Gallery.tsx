@@ -5,22 +5,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { cn } from "@/lib/utils";
 import { copy } from "@/lib/copy";
 import { useAutoAdvance } from "@/lib/hooks/use-auto-advance";
-
-/**
- * Swipeable product gallery.
- *
- * Built on native CSS scroll-snap rather than a carousel library: it gets
- * real momentum scrolling on iOS, works before hydration, costs zero KB of
- * JavaScript for the scrolling itself, and degrades to a plain scroller if JS
- * fails. The only JS here is index tracking, the variant-change jump, and the
- * auto-advance timer.
- *
- * The photos turn by themselves so the back, the ports and what is in the box
- * are seen by a shopper who never thinks to swipe — on a phone the extra
- * frames are otherwise invisible. It stops the moment they take over, and a
- * variant change is not taking over: that jump is the page answering a choice
- * they made elsewhere, so the rail keeps running afterwards.
- */
+import { parseVideoUrl } from "@/lib/video-embed";
 
 interface GalleryProps {
   images: string[];
@@ -43,9 +28,21 @@ interface GalleryProps {
   renderOverlay?: (index: number) => ReactNode;
 }
 
-function isVideoMedia(url: string): boolean {
+export function isVideoMedia(url: string): boolean {
   if (!url) return false;
-  return /\.(mp4|webm|mov|ogg)($|\?)/i.test(url) || url.includes("video/");
+  const withoutHash = url.split("#")[0] ?? "";
+  const cleanPath = withoutHash.split("?")[0] ?? "";
+  return (
+    /\.(mp4|webm|mov|ogg|m3u8|mpd)$/i.test(cleanPath) ||
+    cleanPath.includes("video/") ||
+    withoutHash.includes("facebook.com/reel") ||
+    withoutHash.includes("facebook.com/watch") ||
+    withoutHash.includes("instagram.com/reel") ||
+    withoutHash.includes("instagram.com/p/") ||
+    withoutHash.includes("tiktok.com") ||
+    withoutHash.includes("youtube.com") ||
+    withoutHash.includes("youtu.be")
+  );
 }
 
 export function Gallery({
@@ -119,27 +116,50 @@ export function Gallery({
               )}
             >
               {isVideoMedia(src) ? (
-                <div className="relative size-full bg-neutral-900">
-                  <video
-                    src={`${src.split("#")[0]}#t=0.5`}
-                    preload="metadata"
-                    muted
-                    playsInline
-                    onLoadedMetadata={(e) => {
-                      if (e.currentTarget.currentTime < 0.1) {
-                        e.currentTarget.currentTime = 0.5;
-                      }
-                    }}
-                    className="size-full object-cover pointer-events-none"
-                  />
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/25">
-                    <span className="flex size-6 items-center justify-center rounded-full bg-white/90 text-ink shadow-xs">
-                      <svg className="size-3 fill-current ml-0.5" viewBox="0 0 24 24">
-                        <path d="M8 5v14l11-7z" />
-                      </svg>
-                    </span>
-                  </div>
-                </div>
+                (() => {
+                  const clean = src.split("#")[0] ?? src;
+                  const embed = parseVideoUrl(clean);
+                  const isSocial = embed && embed.type !== "direct" && embed.type !== "unknown";
+
+                  return (
+                    <div className="relative size-full bg-neutral-900 flex items-center justify-center">
+                      {isSocial ? (
+                        <div className="flex flex-col items-center justify-center p-1 text-center">
+                          <span className="text-micro font-bold text-white uppercase tracking-tight">
+                            {embed.platformName.replace(" Video", "").replace(" Reel", "")}
+                          </span>
+                          <span className="mt-1 flex size-5 items-center justify-center rounded-full bg-white/90 text-ink shadow-xs">
+                            <svg className="size-2.5 fill-current ml-0.5" viewBox="0 0 24 24">
+                              <path d="M8 5v14l11-7z" />
+                            </svg>
+                          </span>
+                        </div>
+                      ) : (
+                        <>
+                          <video
+                            src={`${clean.split("?")[0]}#t=0.5`}
+                            preload="metadata"
+                            muted
+                            playsInline
+                            onLoadedMetadata={(e) => {
+                              if (e.currentTarget.currentTime < 0.1) {
+                                e.currentTarget.currentTime = 0.5;
+                              }
+                            }}
+                            className="size-full object-cover pointer-events-none"
+                          />
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/25">
+                            <span className="flex size-6 items-center justify-center rounded-full bg-white/90 text-ink shadow-xs">
+                              <svg className="size-3 fill-current ml-0.5" viewBox="0 0 24 24">
+                                <path d="M8 5v14l11-7z" />
+                              </svg>
+                            </span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  );
+                })()
               ) : (
                 <Image
                   src={src}
@@ -189,12 +209,26 @@ export function Gallery({
                     ? "object-cover object-bottom"
                     : "object-cover object-center";
 
+            const cleanMediaUrl = src.split("#")[0] ?? src;
+            const embed = isVideo ? parseVideoUrl(cleanMediaUrl) : null;
+            const isSocial = embed && embed.type !== "direct" && embed.type !== "unknown";
+
             return (
               <div key={src} className="snap-item relative h-full w-full overflow-hidden bg-neutral-950">
-                {isVideo ? (
+                {isSocial ? (
+                  <div className="relative size-full flex items-center justify-center bg-black">
+                    <iframe
+                      src={embed.embedUrl}
+                      title={embed.platformName}
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                      allowFullScreen
+                      className="size-full border-0"
+                    />
+                  </div>
+                ) : isVideo ? (
                   <>
                     <video
-                      src={`${src.split("#")[0]}#t=0.5`}
+                      src={`${cleanMediaUrl.split("?")[0]}#t=0.5`}
                       preload="metadata"
                       muted
                       loop
@@ -298,21 +332,50 @@ export function Gallery({
               )}
             >
               {isVideoMedia(src) ? (
-                <div className="relative size-full bg-neutral-900">
-                  <video
-                    src={src}
-                    className="size-full object-cover pointer-events-none"
-                    muted
-                    playsInline
-                  />
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/25">
-                    <span className="flex size-4 items-center justify-center rounded-full bg-white/90 text-ink">
-                      <svg className="size-2 fill-current ml-0.5" viewBox="0 0 24 24">
-                        <path d="M8 5v14l11-7z" />
-                      </svg>
-                    </span>
-                  </div>
-                </div>
+                (() => {
+                  const clean = src.split("#")[0] ?? src;
+                  const embed = parseVideoUrl(clean);
+                  const isSocial = embed && embed.type !== "direct" && embed.type !== "unknown";
+
+                  return (
+                    <div className="relative size-full bg-neutral-900 flex items-center justify-center">
+                      {isSocial ? (
+                        <div className="flex flex-col items-center justify-center p-0.5 text-center">
+                          <span className="text-[9px] font-bold text-white uppercase tracking-tight leading-none">
+                            {embed.platformName.replace(" Video", "").replace(" Reel", "").slice(0, 5)}
+                          </span>
+                          <span className="mt-0.5 flex size-4 items-center justify-center rounded-full bg-white/90 text-ink">
+                            <svg className="size-2 fill-current ml-0.25" viewBox="0 0 24 24">
+                              <path d="M8 5v14l11-7z" />
+                            </svg>
+                          </span>
+                        </div>
+                      ) : (
+                        <>
+                          <video
+                            src={`${clean.split("?")[0]}#t=0.5`}
+                            preload="metadata"
+                            muted
+                            playsInline
+                            onLoadedMetadata={(e) => {
+                              if (e.currentTarget.currentTime < 0.1) {
+                                e.currentTarget.currentTime = 0.5;
+                              }
+                            }}
+                            className="size-full object-cover pointer-events-none"
+                          />
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/25">
+                            <span className="flex size-4 items-center justify-center rounded-full bg-white/90 text-ink">
+                              <svg className="size-2 fill-current ml-0.5" viewBox="0 0 24 24">
+                                <path d="M8 5v14l11-7z" />
+                              </svg>
+                            </span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  );
+                })()
               ) : (
                 <Image src={src} alt="" fill sizes="56px" className="object-cover" />
               )}

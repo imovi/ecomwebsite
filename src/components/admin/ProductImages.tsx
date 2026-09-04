@@ -9,6 +9,7 @@ import type { ApiProductImage } from "@/lib/api/types";
 import { Card, CardHeader, ErrorBanner } from "./ui";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
+import { parseVideoUrl } from "@/lib/video-embed";
 
 /**
  * Product photos.
@@ -36,6 +37,9 @@ export function ProductImages({
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [previewVideoUrl, setPreviewVideoUrl] = useState<string | null>(null);
+  const [showLinkModal, setShowLinkModal] = useState(false);
+  const [videoLinkUrl, setVideoLinkUrl] = useState("");
+  const [addingLink, setAddingLink] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -64,6 +68,35 @@ export function ProductImages({
       setUploadProgress(null);
       /* Clear the input so re-selecting the same file fires `change` again. */
       if (inputRef.current) inputRef.current.value = "";
+    }
+  }
+
+  async function handleAddVideoLink(e?: React.FormEvent) {
+    if (e) e.preventDefault();
+    const trimmed = videoLinkUrl.trim();
+    if (!trimmed) return;
+
+    const parsed = parseVideoUrl(trimmed);
+    if (!parsed) {
+      setError("Please enter a valid video link (Facebook Reel, TikTok, Instagram, YouTube, or direct MP4 URL).");
+      return;
+    }
+
+    setAddingLink(true);
+    setError(null);
+    try {
+      await adminApi.post(`admin/products/${productId}/images/link`, {
+        url: trimmed,
+        alt: `${parsed.platformName} Video`,
+      });
+      toast("Video link added successfully");
+      setVideoLinkUrl("");
+      setShowLinkModal(false);
+      onChange();
+    } catch (caught) {
+      setError(caught instanceof AdminApiError ? caught.message : "Failed to add video link.");
+    } finally {
+      setAddingLink(false);
     }
   }
 
@@ -186,8 +219,13 @@ export function ProductImages({
         ) : (
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {images.map((image, index) => {
-              const cleanUrl = image.url.split("#")[0] ?? image.url;
-              const isVideo = /\.(mp4|webm|mov|ogg)($|\?)/i.test(cleanUrl);
+              const cleanUrl = (image.url.split("#")[0] ?? image.url).split("?")[0] ?? image.url;
+              const parsedEmbed = parseVideoUrl(image.url);
+              const isDirectVideo = /\.(mp4|webm|mov|ogg)($|\?)/i.test(cleanUrl);
+              const isSocialVideo =
+                parsedEmbed !== null &&
+                parsedEmbed.type !== "direct" &&
+                parsedEmbed.type !== "unknown";
               const parsed = parseFit(image.alt);
               const fitClass =
                 parsed.fit === "contain"
@@ -201,10 +239,10 @@ export function ProductImages({
               return (
                 <li key={image.id} className="flex flex-col gap-1.5">
                   <div className="relative aspect-square overflow-hidden rounded-sm border border-line bg-surface">
-                    {isVideo ? (
+                    {isDirectVideo ? (
                       <div className="group/vid relative size-full bg-neutral-900">
                         <video
-                          src={`${cleanUrl}#t=0.5`}
+                          src={`${image.url.split("#")[0]}#t=0.5`}
                           preload="metadata"
                           muted
                           loop
@@ -219,7 +257,7 @@ export function ProductImages({
                         {/* Play / Preview button overlay */}
                         <button
                           type="button"
-                          onClick={() => setPreviewVideoUrl(cleanUrl)}
+                          onClick={() => setPreviewVideoUrl(image.url)}
                           title="Click to preview video"
                           className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover/vid:bg-black/40 transition-colors"
                         >
@@ -234,6 +272,50 @@ export function ProductImages({
                             <path d="M8 5v14l11-7z" />
                           </svg>
                           Video
+                        </span>
+                      </div>
+                    ) : isSocialVideo ? (
+                      <div className="group/vid relative size-full flex flex-col items-center justify-center bg-neutral-950 text-white overflow-hidden">
+                        {parsedEmbed?.type === "youtube" && parsedEmbed.videoId ? (
+                          <Image
+                            src={`https://img.youtube.com/vi/${parsedEmbed.videoId}/hqdefault.jpg`}
+                            alt={image.alt ?? "YouTube Video"}
+                            fill
+                            sizes="(min-width: 640px) 25vw, 50vw"
+                            className="object-cover"
+                          />
+                        ) : (
+                          <div
+                            className={cn(
+                              "absolute inset-0 flex flex-col items-center justify-center p-2 text-center",
+                              parsedEmbed?.type === "facebook"
+                                ? "bg-gradient-to-br from-blue-700 to-blue-950"
+                                : parsedEmbed?.type === "instagram"
+                                  ? "bg-gradient-to-br from-purple-700 via-pink-600 to-amber-600"
+                                  : parsedEmbed?.type === "tiktok"
+                                    ? "bg-neutral-900"
+                                    : "bg-neutral-900",
+                            )}
+                          >
+                            <span className="text-micro font-bold uppercase tracking-wider text-white/90">
+                              {parsedEmbed?.platformName}
+                            </span>
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setPreviewVideoUrl(image.url)}
+                          title={`Click to preview ${parsedEmbed?.platformName}`}
+                          className="absolute inset-0 flex items-center justify-center bg-black/30 group-hover/vid:bg-black/50 transition-colors"
+                        >
+                          <span className="flex size-9 items-center justify-center rounded-full bg-red-600 text-white shadow-md group-hover/vid:scale-110 transition-transform">
+                            <svg className="size-4 fill-current ml-0.5" viewBox="0 0 24 24">
+                              <path d="M8 5v14l11-7z" />
+                            </svg>
+                          </span>
+                        </button>
+                        <span className="absolute bottom-1.5 right-1.5 flex items-center gap-1 rounded-xs bg-black/80 px-1.5 py-0.5 text-micro font-medium text-white backdrop-blur-xs pointer-events-none">
+                          {parsedEmbed?.platformName}
                         </span>
                       </div>
                     ) : (
@@ -360,63 +442,183 @@ export function ProductImages({
           className="hidden"
         />
 
-        <Button
-          type="button"
-          variant="secondary"
-          size="md"
-          loading={uploading}
-          onClick={() => inputRef.current?.click()}
-          className="self-start"
-        >
-          {!uploading && <Icon name="plus" size={16} />}
-          {uploading
-            ? uploadProgress !== null && uploadProgress >= 100
-              ? "Processing…"
-              : `Uploading (${uploadProgress ?? 0}%)…`
-            : "Add photos or videos"}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            size="md"
+            loading={uploading}
+            onClick={() => inputRef.current?.click()}
+          >
+            {!uploading && <Icon name="plus" size={16} />}
+            {uploading
+              ? uploadProgress !== null && uploadProgress >= 100
+                ? "Processing…"
+                : `Uploading (${uploadProgress ?? 0}%)…`
+              : "Add photos or videos"}
+          </Button>
+
+          <Button
+            type="button"
+            variant="secondary"
+            size="md"
+            onClick={() => setShowLinkModal(true)}
+          >
+            <svg className="size-4 text-ink-soft" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+            </svg>
+            Add Video Link
+          </Button>
+        </div>
       </div>
 
-      {previewVideoUrl && (
+      {/* Video Link Modal */}
+      {showLinkModal && (
         <div
           role="dialog"
           aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-xs"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-xs"
           onClick={(e) => {
-            if (e.target === e.currentTarget) setPreviewVideoUrl(null);
+            if (e.target === e.currentTarget) setShowLinkModal(false);
           }}
         >
-          <div className="relative flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-neutral-950 shadow-2xl border border-white/10">
-            <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 text-white">
-              <div className="flex items-center gap-2">
+          <div className="relative w-full max-w-lg rounded-xl border border-line bg-white p-5 shadow-2xl dark:border-white/10 dark:bg-neutral-900">
+            <div className="flex items-center justify-between border-b border-line pb-3 dark:border-white/10">
+              <h3 className="font-heading text-base font-semibold text-ink flex items-center gap-2 dark:text-white">
                 <span className="flex size-6 items-center justify-center rounded-full bg-primary/20 text-primary">
-                  <svg className="size-3 fill-current ml-0.5" viewBox="0 0 24 24">
+                  <svg className="size-3.5 fill-current ml-0.5" viewBox="0 0 24 24">
                     <path d="M8 5v14l11-7z" />
                   </svg>
                 </span>
-                <span className="text-caption font-semibold">Video Preview</span>
-              </div>
+                Add Video Link
+              </h3>
               <button
                 type="button"
-                onClick={() => setPreviewVideoUrl(null)}
-                className="flex size-7 items-center justify-center rounded-full bg-white/10 text-white/80 hover:bg-white/20 hover:text-white transition-colors"
-                aria-label="Close preview"
+                onClick={() => setShowLinkModal(false)}
+                className="flex size-7 items-center justify-center rounded-full text-muted hover:bg-line/40 hover:text-ink transition-colors"
+                aria-label="Close modal"
               >
                 ✕
               </button>
             </div>
-            <div className="relative flex aspect-video max-h-[70vh] w-full items-center justify-center bg-black">
-              <video
-                src={previewVideoUrl}
-                controls
-                autoPlay
-                playsInline
-                className="max-h-full max-w-full"
-              />
-            </div>
+
+            <form onSubmit={(e) => void handleAddVideoLink(e)} className="mt-4 flex flex-col gap-4">
+              <div>
+                <label className="block text-caption font-medium text-ink dark:text-neutral-200">
+                  Video Link (Facebook Reel, TikTok, Instagram Reel, YouTube Shorts, or MP4)
+                </label>
+                <input
+                  type="url"
+                  required
+                  placeholder="https://www.facebook.com/reel/... or TikTok / Instagram / YouTube"
+                  value={videoLinkUrl}
+                  onChange={(e) => setVideoLinkUrl(e.target.value)}
+                  className="mt-1.5 w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink placeholder:text-muted focus:border-ink focus:outline-none dark:border-white/10 dark:bg-neutral-800 dark:text-white"
+                />
+                <div className="mt-2 flex flex-wrap gap-1 text-micro text-muted">
+                  <span className="rounded-xs bg-line/60 px-1.5 py-0.5 font-medium">Facebook Reel</span>
+                  <span className="rounded-xs bg-line/60 px-1.5 py-0.5 font-medium">TikTok</span>
+                  <span className="rounded-xs bg-line/60 px-1.5 py-0.5 font-medium">Instagram</span>
+                  <span className="rounded-xs bg-line/60 px-1.5 py-0.5 font-medium">YouTube</span>
+                  <span className="rounded-xs bg-line/60 px-1.5 py-0.5 font-medium">Direct MP4</span>
+                </div>
+                <p className="mt-2 text-micro text-emerald-600 dark:text-emerald-400 font-medium">
+                  ⚡ Loads in under 1 second directly from global CDN networks without eating VPS disk or bandwidth.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="tertiary"
+                  size="sm"
+                  onClick={() => setShowLinkModal(false)}
+                  disabled={addingLink}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  size="sm"
+                  loading={addingLink}
+                >
+                  Add to Media
+                </Button>
+              </div>
+            </form>
           </div>
         </div>
       )}
+
+      {/* Video Preview Modal */}
+      {previewVideoUrl && (() => {
+        const previewEmbed = parseVideoUrl(previewVideoUrl);
+        const isSocial =
+          previewEmbed !== null &&
+          previewEmbed.type !== "direct" &&
+          previewEmbed.type !== "unknown";
+
+        return (
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-xs"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setPreviewVideoUrl(null);
+            }}
+          >
+            <div className="relative flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-neutral-950 shadow-2xl border border-white/10">
+              <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 text-white">
+                <div className="flex items-center gap-2">
+                  <span className="flex size-6 items-center justify-center rounded-full bg-primary/20 text-primary">
+                    <svg className="size-3 fill-current ml-0.5" viewBox="0 0 24 24">
+                      <path d="M8 5v14l11-7z" />
+                    </svg>
+                  </span>
+                  <span className="text-caption font-semibold">
+                    {isSocial ? `${previewEmbed.platformName} Preview` : "Video Preview"}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPreviewVideoUrl(null)}
+                  className="flex size-7 items-center justify-center rounded-full bg-white/10 text-white/80 hover:bg-white/20 hover:text-white transition-colors"
+                  aria-label="Close preview"
+                >
+                  ✕
+                </button>
+              </div>
+              <div
+                className={cn(
+                  "relative flex items-center justify-center bg-black",
+                  previewEmbed?.isVertical
+                    ? "h-[75vh] max-w-sm mx-auto aspect-[9/16]"
+                    : "aspect-video max-h-[70vh] w-full",
+                )}
+              >
+                {isSocial ? (
+                  <iframe
+                    src={previewEmbed.embedUrl}
+                    title="Video Preview"
+                    className="size-full border-0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                  />
+                ) : (
+                  <video
+                    src={previewVideoUrl}
+                    controls
+                    autoPlay
+                    playsInline
+                    className="max-h-full max-w-full"
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </Card>
   );
 }

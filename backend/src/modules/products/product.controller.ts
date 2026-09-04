@@ -16,6 +16,7 @@ import type {
   ReorderProductsInput,
   UpdateProductInput,
   UpdateVariantInput,
+  AddVideoLinkInput,
   UpdateProductImageInput,
   UploadImageStateInput,
 } from "./product.validation.js";
@@ -337,4 +338,10 @@ export const removeImageState: RequestHandler = async (req, res) => {
 
   const images = await imageService.removeState(params.id, params.imageId, params.stateKey);
   sendSuccess(res, { images });
+};
+
+export const addVideoLink: RequestHandler = async (req, res) => {
+  const { params, body } = validated<AddVideoLinkInput, unknown, { id: string }>(req);
+  const images = await imageService.addVideoLink(params.id, body.url, { alt: body.alt });
+  sendCreated(res, { images });
 };

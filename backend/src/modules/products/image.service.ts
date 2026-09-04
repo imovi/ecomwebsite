@@ -1,3 +1,9 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { writeFile, readFile, unlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { randomUUID, createHash } from "node:crypto";
 import { getDb } from "../../db/client.js";
 import { ConflictError, NotFoundError, ValidationError } from "../../core/errors.js";
 import { ErrorCode } from "../../core/http-status.js";
@@ -24,6 +30,42 @@ import {
 import type { ProductImageStateRow } from "../../db/schema/product-image-states.js";
 import { toImageDto, type ProductImageDto } from "./product.types.js";
 import type { ReorderImagesInput } from "./product.validation.js";
+
+const execFileAsync = promisify(execFile);
+
+/**
+ * Optimizes an uploaded MP4/MOV/WebM video:
+ * 1. Moves the `moov` atom to the front with `+faststart` so browsers stream in 0.1s.
+ * 2. Compresses with H.264/AAC at CRF 26 so a 40MB phone recording drops to ~2MB.
+ */
+async function optimizeVideoWithFaststart(buffer: Buffer): Promise<Buffer> {
+  const inPath = join(tmpdir(), `in-${randomUUID()}.mp4`);
+  const outPath = join(tmpdir(), `out-${randomUUID()}.mp4`);
+  try {
+    await writeFile(inPath, buffer);
+    await execFileAsync(
+      "ffmpeg",
+      [
+        "-y",
+        "-i", inPath,
+        "-movflags", "+faststart",
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", "26",
+        "-vf", "scale='min(1080,iw)':-2",
+        "-c:a", "aac",
+        "-b:a", "128k",
+        outPath,
+      ],
+      { timeout: 60000 },
+    );
+    const optimized = await readFile(outPath);
+    return optimized;
+  } finally {
+    await unlink(inPath).catch(() => {});
+    await unlink(outPath).catch(() => {});
+  }
+}
 
 /**
  * Product image use cases.
@@ -99,9 +141,20 @@ export async function upload(
 
       if (isVideo) {
         const mimeType = detected?.mimeType ?? file.mimetype ?? "video/mp4";
+        let finalBuffer = file.buffer;
+        try {
+          finalBuffer = await optimizeVideoWithFaststart(file.buffer);
+          log.info(
+            { originalBytes: file.buffer.length, optimizedBytes: finalBuffer.length },
+            "Video optimized with ffmpeg +faststart",
+          );
+        } catch (ffmpegErr) {
+          log.warn({ err: ffmpegErr }, "Video faststart skipped, using original buffer");
+        }
+
         const object = await storage.put({
           folder: "products",
-          buffer: file.buffer,
+          buffer: finalBuffer,
           mimeType,
           originalName: file.originalname,
         });
@@ -267,11 +320,13 @@ export async function remove(productId: string, imageId: string): Promise<Produc
 
   /* Storage last: a failed row delete must not leave a live image row
      pointing at bytes that no longer exist. */
-  await getStorage()
-    .delete(image.storageKey)
-    .catch((error: unknown) => {
-      log.error({ err: error, key: image.storageKey }, "Failed to delete image object");
-    });
+  if (!image.storageKey.startsWith("http://") && !image.storageKey.startsWith("https://")) {
+    await getStorage()
+      .delete(image.storageKey)
+      .catch((error: unknown) => {
+        log.error({ err: error, key: image.storageKey }, "Failed to delete image object");
+      });
+  }
 
   log.info({ productId, imageId }, "Product image deleted");
   return list(productId);
@@ -328,5 +383,43 @@ export async function updateImage(
   }
 
   await updateImageMeta(productId, imageId, data);
+  return list(productId);
+}
+
+export async function addVideoLink(
+  productId: string,
+  url: string,
+  options: { alt?: string } = {},
+): Promise<ProductImageDto[]> {
+  const product = await findProductById(productId);
+  if (!product) throw new NotFoundError("Product not found.");
+
+  const existing = await listImages(productId);
+  if (existing.length >= MAX_IMAGES_PER_PRODUCT) {
+    throw new ConflictError(
+      `A product may have at most ${MAX_IMAGES_PER_PRODUCT} media items.`,
+    );
+  }
+
+  const trimmedUrl = url.trim();
+  const startOrder = (await maxSortOrder(productId)) + 1;
+  const shouldFeatureFirst = existing.length === 0;
+
+  await insertImages([
+    {
+      productId,
+      storageKey: trimmedUrl,
+      alt: options.alt ?? `${product.name} [fit:contain]`,
+      width: 1080,
+      height: 1080,
+      size: 0,
+      mimeType: "video/external",
+      checksum: createHash("sha256").update(trimmedUrl).digest("hex"),
+      isFeatured: shouldFeatureFirst,
+      sortOrder: startOrder,
+    },
+  ]);
+
+  log.info({ productId, url: trimmedUrl }, "External video link added to product media");
   return list(productId);
 }

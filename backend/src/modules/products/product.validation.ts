@@ -490,6 +490,15 @@ export const updateProductImageSchema = z
 
 export type UpdateProductImageInput = z.infer<typeof updateProductImageSchema>;
 
+export const addVideoLinkSchema = z
+  .object({
+    url: z.string().trim().url("Invalid video URL").max(2000),
+    alt: z.string().trim().max(255).optional(),
+  })
+  .strict();
+
+export type AddVideoLinkInput = z.infer<typeof addVideoLinkSchema>;
+
 /**
  * A state key is a name, not free text.
  *

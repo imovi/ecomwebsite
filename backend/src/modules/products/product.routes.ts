@@ -19,6 +19,7 @@ import {
   productIdentifierParamSchema,
   productImageParamSchema,
   updateProductImageSchema,
+  addVideoLinkSchema,
   productImageStateParamSchema,
   uploadImageStateSchema,
   productStatusSchema,
@@ -211,6 +212,12 @@ productAdminRouter.post(
   uploadImages("images"),
   validate({ params: productIdParamSchema }),
   controller.uploadImages,
+);
+
+productAdminRouter.post(
+  "/:id/images/link",
+  validate({ params: productIdParamSchema, body: addVideoLinkSchema }),
+  controller.addVideoLink,
 );
 
 productAdminRouter.patch(

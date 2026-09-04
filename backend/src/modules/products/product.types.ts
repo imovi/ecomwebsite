@@ -172,7 +172,10 @@ export function toImageDto(
 ): ProductImageDto {
   return {
     id: row.id,
-    url: getStorage().url(row.storageKey),
+    url:
+      row.storageKey.startsWith("http://") || row.storageKey.startsWith("https://")
+        ? row.storageKey
+        : getStorage().url(row.storageKey),
     alt: row.alt,
     width: row.width,
     height: row.height,

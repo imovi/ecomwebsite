@@ -42,18 +42,7 @@ export function OrderSummary({
   freeDeliveryRemaining,
   isPricing,
   coupon,
-}: {
-  lines: ResolvedLine[];
-  subtotal: number;
-  discount?: number;
-  deliveryCharge: number;
-  total: number;
-  zoneChosen: boolean;
-  freeDeliveryRemaining: number;
-  /** True while a fresh quote is in flight, so figures can read as pending. */
-  isPricing?: boolean;
-  coupon?: CouponFieldProps;
-  summaryHeading?: string;
+  summaryHeading,
 }: {
   lines: ResolvedLine[];
   subtotal: number;

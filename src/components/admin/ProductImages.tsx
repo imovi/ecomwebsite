@@ -530,7 +530,7 @@ export function ProductImages({
               <div className="flex items-center justify-end gap-2 pt-2">
                 <Button
                   type="button"
-                  variant="tertiary"
+                  variant="ghost"
                   size="sm"
                   onClick={() => setShowLinkModal(false)}
                   disabled={addingLink}

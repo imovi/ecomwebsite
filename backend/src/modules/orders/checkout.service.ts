@@ -661,7 +661,7 @@ export async function placeOrder(
            is asked for another has been misled — by us, at the door, in front
            of a courier. The checkout re-quotes and they decide again. */
         throw new ConflictError(
-          `${applied.quote.message ?? "That coupon cannot be used."} The delivery charge is ${totals.deliveryCharge} taka.`,
+          applied.quote.message ?? "That coupon cannot be used.",
           ErrorCode.CONFLICT,
         );
       }

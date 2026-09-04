@@ -52,7 +52,7 @@ export const bdPhoneSchema = z
 export const couponCodeSchema = z
   .string()
   .trim()
-  .min(4, "Enter the coupon code.")
+  .min(1, "Enter the coupon code.")
   .max(24)
   .transform((value) => value.toUpperCase());
 

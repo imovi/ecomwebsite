@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useState } from "react";
 import Link from "next/link";
@@ -7,6 +7,7 @@ import { useLoad } from "@/lib/admin/use-load";
 import { revalidateStorefront } from "@/lib/admin/revalidate";
 import { toast } from "@/lib/stores/toast-store";
 import type { ApiStoreSettings } from "@/lib/api/types";
+import { cn } from "@/lib/utils";
 import { AdminShell } from "./AdminShell";
 import { AsyncState, Card, CardHeader, ErrorBanner, PageBody, SuccessBanner } from "./ui";
 import { MarketingTabs } from "./MarketingTabs";
@@ -14,26 +15,44 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Field";
 import { Icon } from "@/components/ui/Icon";
 
+const DEFAULT_ANNOUNCEMENT = {
+  text: "Cash on delivery all over Bangladesh",
+  link: "",
+  enabled: true,
+};
+
 const PRESETS = [
   {
-    label: "Default COD",
+    id: "default",
+    label: "Default (ক্যাশ অন ডেলিভারি)",
+    tag: "Permanent Default",
     text: "Cash on delivery all over Bangladesh",
     link: "",
+    desc: "মূল ডিফল্ট ফরম্যাট। যে কোনো ক্যাম্পেইন শেষে এই বাটনে ক্লিক করলেই আবার আগের ডিফল্ট ফরম্যাটে ফিরে আসবে।",
   },
   {
-    label: "Coupon Code Offer",
-    text: "Special Discount! Use code FCC for ?800 OFF",
+    id: "coupon",
+    label: "Promotional Coupon (কুপন অফার)",
+    tag: "Promotion",
+    text: "Special Discount! Use code FCC for ৳800 OFF",
     link: "/checkout",
+    desc: "প্রমোশনাল কুপন কোড দিয়ে ডিসকাউন্ট অফার হাইলাইট করার জন্য।",
   },
   {
-    label: "Free Delivery Offer",
-    text: "Free delivery on all orders over ?1,500!",
+    id: "free_delivery",
+    label: "Free Delivery (ফ্রি ডেলিভারি অফার)",
+    tag: "Shipping Offer",
+    text: "Free delivery on all orders over ৳1,500!",
     link: "/",
+    desc: "নির্দিষ্ট পরিমাণের বেশি অর্ডারে ফ্রি ডেলিভারি প্রমোট করার জন্য।",
   },
   {
-    label: "Flash Sale Alert",
+    id: "sale",
+    label: "Flash Sale Alert (ফ্ল্যাশ সেল)",
+    tag: "Campaign",
     text: "Flash Sale is Live! Grab your favorite gadgets today",
     link: "/",
+    desc: "সীমিত সময়ের কোনো সেল বা বিশেষ ছাড়ের ঘোষণা দেওয়ার জন্য।",
   },
 ];
 
@@ -52,7 +71,7 @@ export function AnnouncementForm() {
   const hydrate = (data: ApiStoreSettings) => {
     setSettings(data);
     setEnabled(data.announcement?.enabled ?? true);
-    setText(data.announcement?.text ?? "Cash on delivery all over Bangladesh");
+    setText(data.announcement?.text || DEFAULT_ANNOUNCEMENT.text);
     setLink(data.announcement?.link ?? "");
   };
 
@@ -74,6 +93,18 @@ export function AnnouncementForm() {
 
   useLoad(load);
 
+  const applyDefault = () => {
+    setText(DEFAULT_ANNOUNCEMENT.text);
+    setLink(DEFAULT_ANNOUNCEMENT.link);
+    setEnabled(true);
+    toast("Default format loaded. Click Save to apply.");
+  };
+
+  const isDefaultActive =
+    text.trim() === DEFAULT_ANNOUNCEMENT.text &&
+    link.trim() === DEFAULT_ANNOUNCEMENT.link &&
+    enabled === true;
+
   async function handleSave(event: React.FormEvent) {
     event.preventDefault();
     setSaving(true);
@@ -84,7 +115,7 @@ export function AnnouncementForm() {
       const data = await adminApi.patch<{ settings: ApiStoreSettings }>("admin/settings", {
         announcement: {
           enabled,
-          text: text.trim(),
+          text: text.trim() || DEFAULT_ANNOUNCEMENT.text,
           link: link.trim(),
         },
       });
@@ -127,6 +158,52 @@ export function AnnouncementForm() {
                 <SuccessBanner message={successMessage} />
               </div>
 
+              {/* --- Permanent Default Format Banner --- */}
+              <div className="2xl:col-span-2">
+                <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 rounded-lg bg-primary/10 text-primary shrink-0 mt-0.5 sm:mt-0">
+                      <Icon name="cash" size={18} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-sm text-ink">
+                          Default Format (স্থায়ী ডিফল্ট ফরম্যাট)
+                        </span>
+                        {isDefaultActive ? (
+                          <span className="px-2 py-0.5 rounded-full text-micro font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            Currently Active
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-micro font-semibold bg-amber-100 text-amber-800 border border-amber-200">
+                            Custom in Use
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted mt-0.5">
+                        <span className="font-mono text-ink font-medium">
+                          &quot;Cash on delivery all over Bangladesh&quot;
+                        </span>{" "}
+                        — অন্য যে কোনো অফার বা কুপন ব্যবহার করলেও এই বাটন চাপলে সাথে সাথে আগের ডিফল্ট ফরম্যাট ফিরে আসবে।
+                      </p>
+                    </div>
+                  </div>
+
+                  {!isDefaultActive && (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={applyDefault}
+                      className="shrink-0 self-start sm:self-center bg-white hover:bg-surface border-line"
+                    >
+                      <Icon name="refresh" size={14} className="mr-1" />
+                      Restore Default (ডিফল্ট আনুন)
+                    </Button>
+                  )}
+                </div>
+              </div>
+
               {/* --- Live Storefront Preview --- */}
               <div className="2xl:col-span-2">
                 <Card>
@@ -141,10 +218,10 @@ export function AnnouncementForm() {
                           <Icon name="cash" size={14} />
                           {link ? (
                             <span className="underline cursor-pointer">
-                              {text || "Cash on delivery all over Bangladesh"}
+                              {text || DEFAULT_ANNOUNCEMENT.text}
                             </span>
                           ) : (
-                            <span>{text || "Cash on delivery all over Bangladesh"}</span>
+                            <span>{text || DEFAULT_ANNOUNCEMENT.text}</span>
                           )}
                         </div>
                       ) : (
@@ -171,12 +248,68 @@ export function AnnouncementForm() {
                 </Card>
               </div>
 
+              {/* --- Saved Formats & Presets --- */}
+              <div className="2xl:col-span-2">
+                <Card>
+                  <CardHeader
+                    title="Saved Formats & Templates (সংরক্ষিত ফরম্যাট)"
+                    hint="যে কোনো ফরম্যাটে ক্লিক করলে ইনপুট বক্সে লেখা বসে যাবে। পছন্দমতো এডিট করে সেভ করতে পারেন।"
+                  />
+                  <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {PRESETS.map((preset) => {
+                      const isSelected = text.trim() === preset.text.trim();
+                      return (
+                        <div
+                          key={preset.id}
+                          onClick={() => {
+                            setText(preset.text);
+                            setLink(preset.link);
+                            setEnabled(true);
+                          }}
+                          className={cn(
+                            "cursor-pointer rounded-lg border p-3.5 transition-all flex flex-col justify-between gap-2",
+                            isSelected
+                              ? "border-primary bg-primary/[0.03] shadow-sm ring-1 ring-primary/30"
+                              : "border-line bg-white hover:bg-surface/50 hover:border-line-dark"
+                          )}
+                        >
+                          <div>
+                            <div className="flex items-center justify-between gap-2 mb-1">
+                              <span className="font-semibold text-xs text-ink">
+                                {preset.label}
+                              </span>
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-surface text-muted border border-line">
+                                {preset.tag}
+                              </span>
+                            </div>
+                            <div className="text-xs font-mono text-ink bg-surface/70 px-2 py-1 rounded border border-line/60">
+                              {preset.text}
+                            </div>
+                            <p className="text-[11px] text-muted mt-1.5 leading-relaxed">
+                              {preset.desc}
+                            </p>
+                          </div>
+                          <div className="flex items-center justify-between pt-1 border-t border-line/40 text-[11px]">
+                            <span className="text-muted">
+                              {preset.link ? `Link: ${preset.link}` : "No link"}
+                            </span>
+                            <span className={cn("font-medium", isSelected ? "text-primary font-bold" : "text-muted")}>
+                              {isSelected ? "Selected ✓" : "Click to use →"}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </Card>
+              </div>
+
               {/* --- Settings Form --- */}
               <div className="2xl:col-span-2">
                 <form onSubmit={handleSave}>
                   <Card>
                     <CardHeader
-                      title="Announcement Configuration"
+                      title="Custom Edit & Control (কাস্টম এডিট)"
                       hint="Turn on/off, customize the text, or add a link for your promotion/coupon."
                     />
 
@@ -204,28 +337,6 @@ export function AnnouncementForm() {
                         </label>
                       </div>
 
-                      {/* Quick Presets */}
-                      <div>
-                        <label className="block text-xs font-semibold text-muted uppercase tracking-wider mb-2">
-                          Quick Presets / Suggestions
-                        </label>
-                        <div className="flex flex-wrap gap-2">
-                          {PRESETS.map((preset) => (
-                            <button
-                              key={preset.label}
-                              type="button"
-                              onClick={() => {
-                                setText(preset.text);
-                                setLink(preset.link);
-                              }}
-                              className="px-3 py-1.5 text-xs rounded-full border border-line bg-white hover:bg-surface text-ink transition-colors"
-                            >
-                              {preset.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
                       {/* Announcement Text */}
                       <div className="flex flex-col gap-1.5">
                         <Input
@@ -237,8 +348,15 @@ export function AnnouncementForm() {
                           required
                           hint="The text shown at the top of every storefront page. Can be a promotional coupon, notice, or shipping promise."
                         />
-                        <div className="text-right text-xs text-muted">
-                          {text.length} / 200 characters
+                        <div className="flex justify-between items-center text-xs text-muted">
+                          <button
+                            type="button"
+                            onClick={applyDefault}
+                            className="text-primary hover:underline font-medium"
+                          >
+                            Reset to &quot;Cash on delivery all over Bangladesh&quot;
+                          </button>
+                          <span>{text.length} / 200 characters</span>
                         </div>
                       </div>
 
@@ -251,8 +369,18 @@ export function AnnouncementForm() {
                         hint="Leave blank if you don't want the announcement to be clickable. Enter a relative path (e.g. /checkout) or URL."
                       />
 
-                      {/* Save Button */}
-                      <div className="flex items-center justify-end gap-3 pt-4 border-t border-line">
+                      {/* Save & Reset Buttons */}
+                      <div className="flex items-center justify-between gap-3 pt-4 border-t border-line">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={applyDefault}
+                          disabled={saving || isDefaultActive}
+                        >
+                          <Icon name="refresh" size={14} className="mr-1" />
+                          Default ফরম্যাটে ফিরিয়ে নিন
+                        </Button>
+
                         <Button
                           type="submit"
                           variant="primary"

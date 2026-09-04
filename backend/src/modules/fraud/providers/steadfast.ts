@@ -34,39 +34,47 @@ export const steadfast: FraudProvider = {
           signal: AbortSignal.timeout(10_000),
         });
 
+        const body = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+        const msg = typeof body?.message === "string" && body.message.trim() !== ""
+          ? body.message.trim()
+          : null;
+
         if (res.status === 401 || res.status === 403) {
-          throw credentialsRejected(NAME);
-        }
-
-        if (res.ok) {
-          const body = (await res.json().catch(() => null)) as Record<string, unknown> | null;
-          if (body) {
-            const data = (body.data ?? body) as Record<string, unknown>;
-            const success = count(
-              data.total_delivered ??
-                data.delivered ??
-                data.total_parcels_delivered ??
-                data.success,
-            );
-            const cancel = count(
-              data.total_cancelled ??
-                data.cancelled ??
-                data.total_parcels_cancelled ??
-                data.cancel,
-            );
-            const total = count(data.total_parcels ?? data.total) || success + cancel;
-
-            return {
-              success,
-              cancel,
-              total: Math.max(total, success + cancel),
-              successRatio:
-                success + cancel > 0 ? ratio(success, Math.max(total, success + cancel)) : 0,
-            };
+          if (msg && msg.toLowerCase().includes("inactive")) {
+            throw upstreamFailed(NAME, `account inactive: "${msg}"`);
           }
+          throw credentialsRejected(NAME, msg || `HTTP ${res.status}`);
         }
+
+        if (res.ok && body) {
+          const data = (body.data ?? body) as Record<string, unknown>;
+          const success = count(
+            data.total_delivered ??
+              data.delivered ??
+              data.total_parcels_delivered ??
+              data.success,
+          );
+          const cancel = count(
+            data.total_cancelled ??
+              data.cancelled ??
+              data.total_parcels_cancelled ??
+              data.cancel,
+          );
+          const total = count(data.total_parcels ?? data.total) || success + cancel;
+
+          return {
+            success,
+            cancel,
+            total: Math.max(total, success + cancel),
+            successRatio:
+              success + cancel > 0 ? ratio(success, Math.max(total, success + cancel)) : 0,
+          };
+        }
+
+        throw upstreamFailed(NAME, msg || `returned HTTP ${res.status}`);
       } catch (err) {
         if (err instanceof Error && err.name === "FraudCheckError") throw err;
+        throw upstreamFailed(NAME, err instanceof Error ? err.message : "could not reach API");
       }
     }
 

@@ -67,10 +67,12 @@ const ICONS = [
   "cable",
   "bolt",
 
-  /* Toys */
+  /* Toys & vehicles */
   "teddy",
   "blocks",
   "car",
+  "bike",
+  "bicycle",
   "robot",
   "ball",
   "rocket",

@@ -368,6 +368,24 @@ const paths: Record<string, React.ReactNode> = {
       <circle cx="16" cy="17.6" r="2" />
     </>
   ),
+  bike: (
+    <>
+      <circle cx="5.5" cy="16.5" r="3.5" />
+      <circle cx="18.5" cy="16.5" r="3.5" />
+      <path d="M5.5 16.5h3.5l3-6.5h4.5l2.5 3.5h2" />
+      <path d="M13.5 7h3" />
+      <path d="M8 12.5h4" />
+      <path d="M9 16.5l2.5-6.5" />
+    </>
+  ),
+  bicycle: (
+    <>
+      <circle cx="5.5" cy="17.5" r="3.5" />
+      <circle cx="18.5" cy="17.5" r="3.5" />
+      <circle cx="15" cy="5" r="1" />
+      <path d="M12 17.5V14l-3-3 4-3 2 3h2" />
+    </>
+  ),
   robot: (
     <>
       <rect x="4.5" y="7.5" width="15" height="12" rx="3" />

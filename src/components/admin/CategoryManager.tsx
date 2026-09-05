@@ -36,6 +36,33 @@ import { Icon } from "@/components/ui/Icon";
  * groups are only an ordering; the grid wraps them into one continuous field.
  */
 const ICONS = [
+  /* Islamic lifestyle */
+  "mosque",
+  "crescent",
+  "quran",
+  "kaaba",
+  "tasbih",
+
+  /* Fashion & Apparel */
+  "shirt",
+  "dress",
+  "pants",
+  "shoes",
+  "bag",
+  "sunglasses",
+  "jewelry",
+  "hat",
+
+  /* Beauty & Personal Care */
+  "perfume",
+  "lipstick",
+  "scissors",
+
+  /* Health & Fitness */
+  "heart",
+  "pill",
+  "dumbbell",
+
   /* Gadgets and computing */
   "mobile",
   "tablet",
@@ -67,15 +94,39 @@ const ICONS = [
   "cable",
   "bolt",
 
+  /* Home, Kitchen & Living */
+  "home",
+  "utensils",
+  "cup",
+  "bed",
+
+  /* Groceries, Food & Organic */
+  "apple",
+  "basket",
+
+  /* Baby & Kids */
+  "baby",
+  "feeder",
+
+  /* Books & Stationery */
+  "book",
+  "pen",
+
   /* Toys & vehicles */
-  "teddy",
-  "blocks",
-  "car",
   "bike",
   "bicycle",
+  "car",
+  "teddy",
+  "blocks",
   "robot",
   "ball",
   "rocket",
+
+  /* Deals, Offers & Hardware */
+  "tag",
+  "gift",
+  "flame",
+  "wrench",
 
   /* Generic — for a department none of the above fits */
   "package",

@@ -49,8 +49,9 @@ export function SeoDashboard() {
   const [success, setSuccess] = useState<string | null>(null);
   const [previewDevice, setPreviewDevice] = useState<"mobile" | "desktop">("mobile");
 
-  // Collapsible Guide state
+  // Collapsible Guide state & Language option
   const [showGuide, setShowGuide] = useState(false);
+  const [guideLang, setGuideLang] = useState<"en" | "bn">("en");
 
   // In-page Product SEO editing state
   const [editingProduct, setEditingProduct] = useState<ProductSeoEditState | null>(null);
@@ -253,7 +254,7 @@ export function SeoDashboard() {
         <Card>
           <div
             onClick={() => setShowGuide((prev) => !prev)}
-            className="flex cursor-pointer items-center justify-between p-4 transition-colors hover:bg-surface/50 select-none"
+            className="flex cursor-pointer flex-wrap items-center justify-between gap-3 p-4 transition-colors hover:bg-surface/50 select-none"
           >
             <div className="flex items-center gap-3">
               <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary font-bold">
@@ -262,28 +263,202 @@ export function SeoDashboard() {
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="text-body font-semibold text-ink">
-                    Google Search Console সেটআপ ও ভেরিফিকেশন কমপ্লিট গাইড
+                    {guideLang === "en"
+                      ? "Google Search Console Setup & Verification Master Guide"
+                      : "Google Search Console সেটআপ ও ভেরিফিকেশন কমপ্লিট গাইড"}
                   </h3>
                   <span className="rounded bg-sky-50 px-2 py-0.5 text-micro font-medium text-sky-700">
-                    Step-by-Step Guide
+                    Step-by-Step
                   </span>
                 </div>
                 <p className="text-micro text-muted">
-                  নতুন ওয়েবসাইট সেটআপ ও লগইন করার পর থেকে সার্চ কনসোলে যুক্ত করার সহজ নির্দেশিকা
+                  {guideLang === "en"
+                    ? "Complete onboarding walkthrough from initial sign-in to verified live indexing for new store setups."
+                    : "নতুন ওয়েবসাইট সেটআপ ও লগইন করার পর থেকে সার্চ কনসোলে যুক্ত করার সহজ নির্দেশিকা"}
                 </p>
               </div>
             </div>
 
-            <button
-              type="button"
-              className="inline-flex items-center gap-1 rounded-md border border-line bg-white px-3 py-1.5 text-caption font-medium text-ink shadow-2xs hover:bg-surface"
-            >
-              <span>{showGuide ? "লুকিয়ে রাখুন" : "গাইডটি দেখুন"}</span>
-              <Icon name={showGuide ? "chevronUp" : "chevronDown"} size={14} />
-            </button>
+            <div className="flex items-center gap-2">
+              {/* Language Switcher */}
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className="flex items-center rounded-md border border-line bg-surface p-0.5 text-micro"
+              >
+                <button
+                  type="button"
+                  onClick={() => setGuideLang("en")}
+                  className={cn(
+                    "rounded px-2.5 py-1 font-medium transition-colors",
+                    guideLang === "en"
+                      ? "bg-white text-ink shadow-2xs font-semibold"
+                      : "text-muted hover:text-ink"
+                  )}
+                >
+                  English
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGuideLang("bn")}
+                  className={cn(
+                    "rounded px-2.5 py-1 font-medium transition-colors",
+                    guideLang === "bn"
+                      ? "bg-white text-ink shadow-2xs font-semibold"
+                      : "text-muted hover:text-ink"
+                  )}
+                >
+                  বাংলা
+                </button>
+              </div>
+
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 rounded-md border border-line bg-white px-3 py-1.5 text-caption font-medium text-ink shadow-2xs hover:bg-surface"
+              >
+                <span>
+                  {showGuide
+                    ? guideLang === "en"
+                      ? "Collapse Guide"
+                      : "লুকিয়ে রাখুন"
+                    : guideLang === "en"
+                    ? "View Guide"
+                    : "গাইডটি দেখুন"}
+                </span>
+                <Icon name={showGuide ? "chevronUp" : "chevronDown"} size={14} />
+              </button>
+            </div>
           </div>
 
-          {showGuide && (
+          {showGuide && guideLang === "en" && (
+            <div className="border-t border-line bg-surface/30 p-4 sm:p-5 flex flex-col gap-4 text-caption text-ink">
+              <div className="rounded-md bg-sky-50 p-3 text-sky-950 border border-sky-200/60 text-micro">
+                💡 <strong>Operator Note:</strong> When deploying this codebase for a new domain or e-commerce brand, follow this 5-step master guide to verify domain ownership, submit your dynamic XML sitemap, and secure priority Google indexing in under 3 minutes.
+              </div>
+
+              {/* Step 1 */}
+              <div className="rounded-lg border border-line bg-white p-3.5 shadow-2xs">
+                <div className="flex items-center gap-2 font-semibold text-ink">
+                  <span className="flex size-6 items-center justify-center rounded-full bg-primary text-white text-micro font-bold">
+                    1
+                  </span>
+                  <span>Add Property in Google Search Console</span>
+                </div>
+                <div className="mt-2 pl-8 flex flex-col gap-1.5 text-muted">
+                  <p>
+                    1. Open{" "}
+                    <a
+                      href="https://search.google.com/search-console"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-medium text-primary underline"
+                    >
+                      search.google.com/search-console ↗
+                    </a>{" "}
+                    and sign in with your Google or Google Workspace administrator account.
+                  </p>
+                  <p>
+                    2. In the top-left property dropdown, click <strong>+ Add property</strong>.
+                  </p>
+                  <p>
+                    3. Select the <strong>URL prefix</strong> panel (right side) and input your store&apos;s full HTTPS origin address:{" "}
+                    <code className="rounded bg-surface px-1.5 py-0.5 font-mono text-ink font-semibold">
+                      {origin}
+                    </code>
+                    , then click <strong>Continue</strong>.
+                  </p>
+                </div>
+              </div>
+
+              {/* Step 2 */}
+              <div className="rounded-lg border border-line bg-white p-3.5 shadow-2xs">
+                <div className="flex items-center gap-2 font-semibold text-ink">
+                  <span className="flex size-6 items-center justify-center rounded-full bg-primary text-white text-micro font-bold">
+                    2
+                  </span>
+                  <span>Instant 1-Click Verification (HTML Tag Method)</span>
+                </div>
+                <div className="mt-2 pl-8 flex flex-col gap-1.5 text-muted">
+                  <p>
+                    1. Under <strong>Other verification methods</strong>, click and expand the <strong>HTML tag</strong> option.
+                  </p>
+                  <p>
+                    2. You will be provided with a meta tag snippet:
+                    <code className="block mt-1 rounded bg-surface p-2 font-mono text-micro text-ink break-all border border-line">
+                      &lt;meta name=&quot;google-site-verification&quot; content=&quot;YOUR_VERIFICATION_CODE&quot; /&gt;
+                    </code>
+                  </p>
+                  <p>
+                    3. Copy only the token code inside <code className="font-mono text-ink font-semibold">content=&quot;...&quot;</code> (e.g. <code className="font-mono text-ink">da2a584dd6352b62</code>).
+                  </p>
+                  <p>
+                    4. Scroll down to this dashboard&apos;s <strong>&ldquo;Search Console & Webmaster Verification&rdquo;</strong> section below, paste your token into the <strong>&ldquo;Google Site Verification Token&rdquo;</strong> field, and click <strong>&ldquo;Save SEO Settings&rdquo;</strong>.
+                  </p>
+                  <p>
+                    5. Return to your Google Search Console tab and click the <strong>Verify</strong> button. Search Console will instantly confirm with a green <span className="font-semibold text-positive">✓ Ownership verified</span> prompt.
+                  </p>
+                </div>
+              </div>
+
+              {/* Step 3 */}
+              <div className="rounded-lg border border-line bg-white p-3.5 shadow-2xs">
+                <div className="flex items-center gap-2 font-semibold text-ink">
+                  <span className="flex size-6 items-center justify-center rounded-full bg-primary text-white text-micro font-bold">
+                    3
+                  </span>
+                  <span>Submit Dynamic XML Sitemap</span>
+                </div>
+                <div className="mt-2 pl-8 flex flex-col gap-1.5 text-muted">
+                  <p>
+                    1. In the left sidebar of Google Search Console, click on <strong>Indexing &gt; Sitemaps</strong>.
+                  </p>
+                  <p>
+                    2. In the <strong>Add a new sitemap</strong> input field, enter:{" "}
+                    <code className="rounded bg-surface px-1.5 py-0.5 font-mono text-ink font-bold">
+                      sitemap.xml
+                    </code>
+                  </p>
+                  <p>
+                    3. Click <strong>Submit</strong>. Search Console will immediately validate the index with status <span className="text-positive font-semibold">Success</span>. Googlebot will now automatically crawl and index all current and future products, categories, and legal policies.
+                  </p>
+                </div>
+              </div>
+
+              {/* Step 4 */}
+              <div className="rounded-lg border border-line bg-white p-3.5 shadow-2xs">
+                <div className="flex items-center gap-2 font-semibold text-ink">
+                  <span className="flex size-6 items-center justify-center rounded-full bg-primary text-white text-micro font-bold">
+                    4
+                  </span>
+                  <span>Request Priority Live Crawl (URL Inspection)</span>
+                </div>
+                <div className="mt-2 pl-8 flex flex-col gap-1.5 text-muted">
+                  <p>
+                    1. When launching a high-priority campaign or newly created product, paste the direct URL into the top Search Console inspection bar (e.g. <code className="font-mono text-ink">{origin}/product/your-product-slug</code>).
+                  </p>
+                  <p>
+                    2. Click <strong>&ldquo;Request Indexing&rdquo;</strong>. Google assigns the URL to its expedited crawling queue, typically achieving indexing within 24 to 48 hours.
+                  </p>
+                </div>
+              </div>
+
+              {/* Step 5 */}
+              <div className="rounded-lg border border-line bg-white p-3.5 shadow-2xs">
+                <div className="flex items-center gap-2 font-semibold text-ink">
+                  <span className="flex size-6 items-center justify-center rounded-full bg-primary text-white text-micro font-bold">
+                    5
+                  </span>
+                  <span>Track Organic Performance & Search Queries</span>
+                </div>
+                <div className="mt-2 pl-8 flex flex-col gap-1.5 text-muted">
+                  <p>
+                    Within a few days to weeks, visit the <strong>Performance</strong> tab to monitor exact shopper search queries, organic impressions, user click-through rates (CTR), and Google ranking positions for your catalogue.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {showGuide && guideLang === "bn" && (
             <div className="border-t border-line bg-surface/30 p-4 sm:p-5 flex flex-col gap-4 text-caption text-ink">
               <div className="rounded-md bg-amber-50 p-3 text-amber-900 border border-amber-200/60 text-micro">
                 💡 <strong>টিপস:</strong> এই কোডবেস দিয়ে ভবিষ্যতে নতুন যেকোনো ডোমেইনে ওয়েবসাইট সেটআপ করলে এই গাইড দেখে মাত্র ২ মিনিটে Google Search Console ভেরিফাই করে নিতে পারবেন।

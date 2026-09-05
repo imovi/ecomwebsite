@@ -453,7 +453,7 @@ export function SeoDashboard() {
                         </td>
                         <td className="py-3 px-4 text-right">
                           <Link
-                            href={/admin/products/}
+                            href={`/admin/products/${p.id}`}
                             className="inline-flex items-center gap-1 rounded border border-line bg-white px-2.5 py-1 text-micro font-medium text-ink hover:bg-surface"
                           >
                             Edit Product

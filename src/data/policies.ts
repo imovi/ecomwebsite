@@ -31,105 +31,129 @@ export interface Policy {
 export const policies: Policy[] = [
   {
     slug: "delivery",
-    title: "Delivery",
-    summary: "Where we deliver, how long it takes, and what it costs.",
+    title: "Delivery & Shipping Policy",
+    summary: "Fast, reliable nationwide cash on delivery across all 64 districts in Bangladesh with real-time tracking.",
     sections: [
       {
-        heading: "Coverage and timing",
-        bullets: [
-          "Inside Dhaka: 24–48 hours after your order is confirmed.",
-          "Outside Dhaka: 2–4 working days, depending on courier coverage.",
-          "Orders placed after 6pm are confirmed the next working day.",
-        ],
-      },
-      {
-        heading: "Delivery charges",
+        heading: "Nationwide Coverage & Delivery Timelines",
         paragraphs: [
-          "The charge is shown on the checkout page before you place your order, and again on your order confirmation. Choose your delivery area at checkout — we pre-select it from the area you type, but the choice you confirm is the one we bill.",
+          "{shop} provides seamless doorstep delivery across all 64 districts and Upazilas in Bangladesh. In collaboration with the country's most dependable logistics partners—such as Steadfast, Pathao, and Paperfly—we guarantee that your parcel reaches your hands quickly and securely.",
         ],
         bullets: [
-          "Inside Dhaka: ৳80",
-          "Outside Dhaka: ৳130",
-          "Free delivery on orders over ৳20,000",
+          "Inside Dhaka City: Delivered within 24 to 48 hours after phone/WhatsApp order verification.",
+          "Dhaka Suburbs (Gazipur, Savar, Keraniganj, Narayanganj): Delivered within 24 to 48 hours.",
+          "Outside Dhaka & Nationwide: Delivered within 2 to 4 business days directly to your home or nearest courier point.",
+          "Orders placed after 6:00 PM are verified and dispatched the next business morning.",
         ],
       },
       {
-        heading: "Areas billed as outside Dhaka",
+        heading: "Delivery Charges & Transparent Rates",
         paragraphs: [
-          "Savar, Ashulia, Keraniganj, Dhamrai, Dohar, Nawabganj, Tongi, Gazipur and Narayanganj are in or next to Dhaka district but are billed at the outside-Dhaka rate, because that is what the courier charges us.",
+          "We maintain complete transparency with no surprise surcharges at your doorstep. The shipping fee is computed and displayed clearly on the checkout page before placing your order:",
+        ],
+        bullets: [
+          "Inside Dhaka Metropolitan Area: ৳80 flat rate.",
+          "Outside Dhaka & All Districts: ৳130 flat rate.",
+          "Free Shipping Campaigns: Certain promotional campaigns and product bundles include 100% free delivery across Bangladesh.",
         ],
       },
       {
-        heading: "Confirmation call",
+        heading: "Order Verification & Safe Packaging",
         paragraphs: [
-          "We call every order before dispatch to confirm the address and that you are available. If we cannot reach you after three attempts, the order is cancelled and the stock released.",
+          "To ensure accurate delivery instructions and minimize failed delivery attempts, our customer care team will call or message you on WhatsApp to confirm your address and availability. Once confirmed, each order is carefully checked and wrapped in multi-layer bubble wrap before dispatch from our warehouse.",
+          "If our team cannot reach you after 3 separate attempts over 48 hours, the order is cancelled to release the inventory for other waiting customers.",
+        ],
+      },
+      {
+        heading: "Real-Time Tracking & SMS Updates",
+        paragraphs: [
+          "Once your package is handed over to the courier partner, an automated SMS containing your unique Tracking Code and live link is sent to your mobile phone. You can also track your parcel at any time via the Track Order link on our website.",
         ],
       },
     ],
   },
   {
     slug: "returns",
-    title: "Returns & refunds",
-    summary: "Seven-day replacement on manufacturing defects.",
+    title: "Returns & Refund Policy",
+    summary: "Inspect parcel before payment, 7-day hassle-free replacement, and 100% money-back guarantee.",
     sections: [
       {
-        heading: "Check before you pay",
+        heading: "Open-Box Inspection (Check Before You Pay)",
         paragraphs: [
-          "You may open the parcel and inspect the product in front of the delivery person before paying. If the item is wrong, damaged, or not what you ordered, refuse the delivery — you pay nothing.",
+          "We want you to shop with total confidence. For all Cash on Delivery shipments, you have the right and are actively encouraged to open the parcel and inspect the product in the presence of the courier delivery rider before completing your payment.",
+          "If the item inside is broken, physically damaged during transit, or different from what you ordered, you can refuse the package on the spot without paying a single Taka.",
         ],
       },
       {
-        heading: "Seven-day replacement",
+        heading: "7-Day Easy Replacement Guarantee",
         paragraphs: [
-          "If a manufacturing defect appears within seven days of delivery, we will replace the product with the same model.",
+          "If any manufacturing defect or performance failure is discovered within 7 days of receiving your order, {shop} provides an instant one-to-one product replacement with a brand new unit.",
         ],
         bullets: [
-          "The product must be in its original box with all accessories.",
-          "Keep your Order ID — we need it to process the replacement.",
-          "Physical damage, water damage and burnt components are not covered.",
+          "Contact our customer support hotline or WhatsApp within 7 calendar days of delivery.",
+          "Share your Order ID (e.g., HINAR-XXXXX) and a brief photo or video showing the fault.",
+          "Please preserve the original product packaging box, manuals, and bundled accessories.",
+          "Upon receiving and inspecting the returned item at our service desk, the replacement unit will be dispatched to you within 24 to 48 hours.",
         ],
       },
       {
-        heading: "What is not returnable",
-        bullets: [
-          "Products damaged by misuse, drops, or unauthorised repair.",
-          "Items with a broken warranty seal or removed serial sticker.",
-          "Change of mind after delivery has been accepted and paid for.",
-        ],
-      },
-      {
-        heading: "Refunds",
+        heading: "Return Eligibility & Exclusions",
         paragraphs: [
-          "Where a replacement is not possible, we refund the full amount you paid via bKash or bank transfer within 5 working days of receiving the returned product.",
+          "To ensure fair service for all customers, returns must comply with standard consumer electronic guidelines:",
+        ],
+        bullets: [
+          "Physical damage, drops, broken body, burnt ICs due to high voltage, or liquid damage caused after delivery acceptance are not covered.",
+          "Products with removed, scratched, or altered warranty security stickers are void of return.",
+          "Change of mind after accepting and using an undamaged, working product is not eligible for return.",
+        ],
+      },
+      {
+        heading: "Refund Process & Payment Methods",
+        paragraphs: [
+          "In the rare event that an exact replacement unit is permanently out of stock or discontinued, {shop} will promptly issue a 100% refund of the product purchase price.",
+          "Refunds are disbursed via bKash, Nagad, or direct Bangladeshi Bank Transfer within 3 to 5 business days after the returned product has been inspected and approved by our team.",
         ],
       },
     ],
   },
   {
     slug: "warranty",
-    title: "Warranty",
-    summary: "How warranty claims work on products bought from {shop}.",
+    title: "Warranty Policy",
+    summary: "Comprehensive brand and service warranty for authentic smart gadgets purchased from {shop}.",
     sections: [
       {
-        heading: "Warranty period",
+        heading: "Authentic Products with Genuine Warranty",
         paragraphs: [
-          "The warranty period for each product is listed on its product page and printed on your invoice. Most products carry either official brand warranty or {shop} service warranty.",
+          "All electronics and smart devices available on {shop} are 100% original and accompanied by warranty protection. The specific warranty duration—ranging from 7-day replacement warranty to 6-month or 1-year service/brand warranty—is clearly highlighted on each product page and stated on your invoice.",
+        ],
+        bullets: [
+          "Official Brand Warranty: Serviced directly by official brand distribution partners and authorized service points in Bangladesh.",
+          "Shop Service Warranty: Serviced promptly by the internal {shop} technical engineering team.",
         ],
       },
       {
-        heading: "Making a claim",
+        heading: "Step-by-Step Warranty Claim Process",
+        paragraphs: [
+          "Claiming warranty assistance at {shop} is fast and straightforward:",
+        ],
         bullets: [
-          "Call our hotline with your Order ID and a description of the fault.",
-          "Bring the product with its box and accessories, or send it by courier.",
-          "Service typically takes 7–15 working days depending on the brand.",
+          "1. Contact our customer care hotline or message our WhatsApp team with your Order ID and description of the problem.",
+          "2. Send or bring the defective item with its original box and accessories to our central hub via courier or in-person.",
+          "3. Our technicians diagnose and resolve the issue. Servicing or component replacement typically requires 5 to 10 working days.",
+          "4. Once repaired or replaced, your product is safely delivered back to your home address.",
         ],
       },
       {
-        heading: "Not covered",
+        heading: "Warranty Coverage & Exclusions",
+        paragraphs: [
+          "The warranty covers internal circuitry failures, manufacturing defects, and non-working components under standard consumer usage. The warranty is void under the following conditions:",
+        ],
         bullets: [
-          "Physical or liquid damage.",
-          "Software issues, and normal battery capacity decline over time.",
-          "Products serviced by an unauthorised repair shop.",
+          "Physical breakage, denting, or cracked displays caused by rough handling or drops.",
+          "Water, liquid, moisture ingress, or exposure to excessive heat or fire.",
+          "Circuit burns resulting from incompatible charging adapters or sudden electrical surges.",
+          "Products opened, tampered with, or serviced by unauthorized local third-party technicians.",
+          "Normal battery capacity decline and minor cosmetic wear resulting from continuous daily usage.",
         ],
       },
     ],
@@ -137,93 +161,160 @@ export const policies: Policy[] = [
   {
     slug: "about",
     title: "About {shop}",
-    summary: "A small gadget store built around one idea: no surprises.",
+    summary: "Leading online gadget and lifestyle tech brand in Bangladesh committed to original products and customer trust.",
     sections: [
       {
+        heading: "Who We Are",
         paragraphs: [
-          "{shop} is an online gadget store serving customers across Bangladesh. We sell smartphones, audio, wearables, laptops and accessories — original products only, with the warranty stated on every product page.",
-          "We keep the store deliberately simple. Clear prices, an honest delivery charge shown before you order, cash on delivery everywhere, and a phone number that a person answers.",
+          "{shop} is a premier e-commerce destination in Bangladesh specializing in curated smart gadgets, lifestyle tech, desk lighting, bike accessories, and modern everyday essentials.",
+          "Founded with a passion for quality and customer satisfaction, our mission is to eliminate online shopping worries in Bangladesh. We believe that buying gadgets online should be exciting, transparent, and completely free of unpleasant surprises. That is why we sell only 100% original products, disclose accurate specifications, and stand behind every single item with genuine warranty support.",
+        ],
+      },
+      {
+        heading: "Why Customers Choose {shop}",
+        paragraphs: [
+          "From student study desks to modern homes and daily motorcycle commuters, thousands of happy customers nationwide rely on {shop}:",
+        ],
+        bullets: [
+          "100% Original & Quality Checked: Every unit is individually inspected and tested before packaging.",
+          "Nationwide Cash on Delivery: Order from any district or village in Bangladesh and pay only when the parcel reaches your hands.",
+          "Open-Box Parcel Inspection: Check your package in front of the delivery courier rider before paying.",
+          "Zero Hidden Fees: Honest pricing with delivery charges clearly displayed upfront.",
+          "Friendly Human Support: Real customer support specialists available six days a week via phone call and WhatsApp.",
+        ],
+      },
+      {
+        heading: "Our Commitment to Bangladesh",
+        paragraphs: [
+          "We continuously work to bring the latest international lifestyle gadgets and productivity gear to Bangladesh at competitive local prices. Whether you are in Dhaka, Chattogram, Sylhet, Rajshahi, Khulna, Barishal, Rangpur, Mymensingh, or the furthest Upazila, {shop} delivers directly to your door with unmatched reliability.",
         ],
       },
     ],
   },
   {
     slug: "contact",
-    title: "Contact",
-    summary: "Talk to a person.",
+    title: "Contact Us",
+    summary: "We are always here to assist you. Speak directly with our customer care team.",
     sections: [
       {
-        heading: "Support hours",
-        paragraphs: ["Saturday to Thursday, 10:00am – 8:00pm. Friday closed."],
+        heading: "Customer Support Hours",
+        paragraphs: [
+          "Saturday to Thursday: 10:00 AM – 8:00 PM (Friday Closed).",
+          "Our phone line and WhatsApp chat support are actively monitored during business hours. Inquiries sent after hours or on Friday are addressed with priority on the following business morning.",
+        ],
       },
       {
-        heading: "Before you call",
+        heading: "Direct Communication Channels",
         paragraphs: [
-          "Have your Order ID ready — it looks like HINAR-10247 and is on your order confirmation page. You can also check your order status yourself on the Track order page.",
+          "Feel free to get in touch with us through any of the convenient methods below:",
+        ],
+        bullets: [
+          "Phone Hotline: Call our official hotline for quick order confirmation and phone support.",
+          "WhatsApp Support: Chat directly with our team for fast text help, product photos, videos, and tracking updates.",
+          "Online Order Tracking: View the real-time shipping status of your parcel 24/7 on our Track Order page.",
+        ],
+      },
+      {
+        heading: "Helpful Tip Before You Call",
+        paragraphs: [
+          "If you are calling or messaging regarding an existing order, please keep your Order ID (e.g., HINAR-10247) ready. This allows our representatives to retrieve your order details instantly and resolve your inquiry efficiently.",
         ],
       },
     ],
   },
   {
     slug: "terms",
-    title: "Terms & conditions",
-    summary: "The rules that apply when you order from {shop}.",
+    title: "Terms & Conditions",
+    summary: "Clear rules and service terms governing your orders and use of {shop}.",
     sections: [
       {
-        heading: "Orders",
+        heading: "1. Acceptance of Terms",
         paragraphs: [
-          "Placing an order is an offer to buy. The order is accepted once we confirm it by phone. We may decline an order if the product is out of stock, the price was listed in error, or the delivery address is outside our courier coverage.",
+          "By accessing, browsing, or placing an order on the {shop} website, you agree to be legally bound by these Terms and Conditions along with our Privacy, Delivery, and Return Policies. These terms apply to all visitors, buyers, and account holders.",
         ],
       },
       {
-        heading: "Pricing",
+        heading: "2. Orders & Verification",
         paragraphs: [
-          "All prices are in Bangladeshi Taka and include VAT where applicable. Prices and delivery charges can change without notice, but the amount shown on your order confirmation is the amount you pay.",
+          "Submitting an order on {shop} constitutes an offer to purchase. An order is formally confirmed only after our customer support team successfully verifies the order details and delivery address with you via phone call or WhatsApp.",
+          "{shop} reserves the right to decline or cancel any order at our discretion in events of product stockouts, technical pricing discrepancies, suspicion of fraudulent intent, or unserviceable delivery locations.",
         ],
       },
       {
-        heading: "Payment",
+        heading: "3. Pricing, Currency & Taxes",
         paragraphs: [
-          "We currently accept cash on delivery only. Payment is collected by the courier when the parcel is handed over.",
+          "All prices listed on {shop} are in Bangladeshi Taka (BDT / ৳) and include applicable taxes where required. While we make every effort to maintain absolute accuracy, unintentional pricing or typographical errors may occasionally happen. If a product is listed at an incorrect price, we will contact you before dispatch to offer the choice of confirming at the correct price or cancelling without fee.",
         ],
       },
       {
-        heading: "Repeated refusals",
+        heading: "4. Cash on Delivery & Fair Use Policy",
         paragraphs: [
-          "Cash-on-delivery orders that are repeatedly refused at the door cost us the full round-trip courier charge. We may ask for advance payment on future orders from a number with a history of refused deliveries.",
+          "We offer nationwide Cash on Delivery (COD) as a convenience to our valued shoppers. In return, we expect responsible shopping. Arbitrarily refusing a verified order at the door without valid defect causes significant round-trip courier shipping losses for our small business.",
+          "{shop} tracks delivery completion metrics. We reserve the right to require an advance shipping fee or restrict COD privileges for phone numbers or addresses with a repeated history of unjustified doorstep refusals.",
+        ],
+      },
+      {
+        heading: "5. Intellectual Property",
+        paragraphs: [
+          "All visual assets, product imagery, logos, brand names, written descriptions, site architecture, and code on {shop} are the intellectual property of {shop} or its respective brand licensors. Any unauthorized copying, distribution, or commercial reproduction is strictly prohibited.",
+        ],
+      },
+      {
+        heading: "6. Limitation of Liability",
+        paragraphs: [
+          "{shop} shall not be held liable for any indirect, incidental, or consequential damages resulting from courier transit delays, electrical power surges, improper consumer product handling, or unexpected circumstances beyond our reasonable operational control.",
         ],
       },
     ],
   },
   {
     slug: "privacy",
-    title: "Privacy",
-    summary: "What we collect, why, and who sees it.",
+    title: "Privacy Policy",
+    summary: "How {shop} protects and handles your personal information with strict confidentiality.",
     sections: [
       {
-        heading: "What we collect",
+        heading: "1. Minimal Data Collection",
         paragraphs: [
-          "To deliver an order we collect your name, phone number and delivery address. That is all we ask for — there are no accounts and no passwords on this store.",
+          "We respect your personal privacy and collect only the absolute minimum information required to deliver your orders safely and efficiently. When placing an order, we collect:",
         ],
-      },
-      {
-        heading: "How it is used",
         bullets: [
-          "To call and confirm your order.",
-          "To hand your address to the courier delivering your parcel.",
-          "To look up your order when you contact support.",
+          "Your Full Name: To identify and label your parcel correctly.",
+          "Mobile Phone Number: To confirm your order and enable the courier delivery rider to reach you upon arrival.",
+          "Complete Delivery Address: To route the courier partner straight to your doorstep.",
+        ],
+        paragraphs: [
+          "We do not require account registration, passwords, or personal identity documentation to shop on our storefront.",
         ],
       },
       {
-        heading: "Who we share it with",
+        heading: "2. How Your Information is Used",
         paragraphs: [
-          "Only the courier company delivering your order. We do not sell customer data, and we do not share phone numbers with advertisers.",
+          "Your personal data is used exclusively for order fulfillment and customer service communication:",
+        ],
+        bullets: [
+          "To call or text you for order verification before dispatch.",
+          "To generate courier shipping labels and arrange doorstep delivery with our logistics partners.",
+          "To assist you with after-sales support, warranty claims, and return requests.",
+          "To send automated transactional SMS notifications regarding your parcel's live shipping status.",
         ],
       },
       {
-        heading: "Your choices",
+        heading: "3. Strict Zero-Spam & Confidentiality Policy",
         paragraphs: [
-          "Call our hotline to ask what we hold about your number, or to have your details removed from our records once your orders are complete.",
+          "We value your trust above all else. {shop} NEVER sells, rents, trades, or shares your personal details or mobile phone numbers with third-party telemarketers, spam lists, or external advertisers.",
+          "Your delivery details are shared solely with our designated courier delivery partner handling your physical parcel, and strictly for the purpose of completing the delivery.",
+        ],
+      },
+      {
+        heading: "4. SSL Security & Data Protection",
+        paragraphs: [
+          "Our website is protected with industry-standard SSL/TLS (HTTPS) encryption. All communications between your web browser and our servers are encrypted, safeguarding your information against unauthorized access.",
+        ],
+      },
+      {
+        heading: "5. Customer Privacy Rights",
+        paragraphs: [
+          "You have the right to request information about the contact details we hold regarding your phone number, or request the permanent deletion of your customer record from our system once your active orders and warranty periods have concluded. Simply contact our support team via phone or WhatsApp to submit a data removal request.",
         ],
       },
     ],

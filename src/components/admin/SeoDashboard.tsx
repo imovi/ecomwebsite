@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
@@ -337,7 +337,7 @@ export function SeoDashboard() {
                 </div>
                 <div className="mt-3 flex items-center gap-2">
                   <a
-                    href={${origin}/sitemap.xml}
+                    href={`${origin}/sitemap.xml`}
                     target="_blank"
                     rel="noreferrer"
                     className="inline-flex items-center gap-1 rounded bg-white px-2.5 py-1 text-caption font-medium text-ink border border-line shadow-2xs hover:bg-surface"
@@ -347,7 +347,7 @@ export function SeoDashboard() {
                   <button
                     type="button"
                     onClick={() => {
-                      navigator.clipboard.writeText(${origin}/sitemap.xml);
+                      navigator.clipboard.writeText(`${origin}/sitemap.xml`);
                       toast("Sitemap URL copied to clipboard");
                     }}
                     className="rounded bg-white px-2.5 py-1 text-caption font-medium text-muted border border-line hover:text-ink"
@@ -372,7 +372,7 @@ export function SeoDashboard() {
                 </div>
                 <div className="mt-3 flex items-center gap-2">
                   <a
-                    href={${origin}/robots.txt}
+                    href={`${origin}/robots.txt`}
                     target="_blank"
                     rel="noreferrer"
                     className="inline-flex items-center gap-1 rounded bg-white px-2.5 py-1 text-caption font-medium text-ink border border-line shadow-2xs hover:bg-surface"

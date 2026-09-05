@@ -223,65 +223,31 @@ export function SeoDashboard() {
               hint="Controls the primary meta tags Google, Bing, and social platforms read from your store."
             />
             <div className="flex flex-col gap-4 p-4">
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-caption font-medium text-ink">Homepage SEO Title</label>
-                  <span
-                    className={cn(
-                      "text-micro font-medium px-2 py-0.5 rounded",
-                      titleLength === 0
-                        ? "bg-surface text-muted"
-                        : titleLength >= 45 && titleLength <= 65
-                        ? "bg-emerald-50 text-emerald-700"
-                        : "bg-amber-50 text-amber-700"
-                    )}
-                  >
-                    {titleLength} / 65 characters {titleLength >= 45 && titleLength <= 65 ? "✓ Optimal" : ""}
-                  </span>
-                </div>
-                <Input
-                  value={form.seoTitle}
-                  onChange={(e) => set("seoTitle", e.target.value)}
-                  placeholder="e.g. HINAR — Online Gadget Shop & Smart Lifestyle Store in Bangladesh"
-                  hint="The main clickable headline shown in Google search results. Recommended 50–65 characters."
-                />
-              </div>
+              <Input
+                label="Homepage SEO Title"
+                value={form.seoTitle}
+                onChange={(e) => set("seoTitle", e.target.value)}
+                placeholder="e.g. HINAR — Online Gadget Shop & Smart Lifestyle Store in Bangladesh"
+                hint={`Current: ${titleLength}/65 characters ${titleLength >= 45 && titleLength <= 65 ? "✓ Optimal length" : "(Aim for 50–65 chars)"}. Recommended clickable headline shown in Google search results.`}
+              />
 
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-caption font-medium text-ink">Homepage Meta Description</label>
-                  <span
-                    className={cn(
-                      "text-micro font-medium px-2 py-0.5 rounded",
-                      descLength === 0
-                        ? "bg-surface text-muted"
-                        : descLength >= 120 && descLength <= 165
-                        ? "bg-emerald-50 text-emerald-700"
-                        : "bg-amber-50 text-amber-700"
-                    )}
-                  >
-                    {descLength} / 160 characters {descLength >= 120 && descLength <= 165 ? "✓ Optimal" : ""}
-                  </span>
-                </div>
-                <Textarea
-                  value={form.seoDescription}
-                  onChange={(e) => set("seoDescription", e.target.value)}
-                  rows={3}
-                  placeholder="e.g. Shop smart gadgets, rechargeable desk lamps, unique lifestyle accessories & everyday electronics at best price in Bangladesh. Fast nationwide cash on delivery."
-                  hint="A compelling summary shown below your title in Google. Recommended 130–160 characters."
-                />
-              </div>
+              <Textarea
+                label="Homepage Meta Description"
+                value={form.seoDescription}
+                onChange={(e) => set("seoDescription", e.target.value)}
+                rows={3}
+                placeholder="e.g. Shop smart gadgets, rechargeable desk lamps, unique lifestyle accessories & everyday electronics at best price in Bangladesh. Fast nationwide cash on delivery."
+                hint={`Current: ${descLength}/160 characters ${descLength >= 120 && descLength <= 165 ? "✓ Optimal length" : "(Aim for 130–160 chars)"}. Compelling summary shown below title in Google.`}
+              />
 
-              <div>
-                <label className="text-caption font-medium text-ink">Global Meta Keywords</label>
-                <Textarea
-                  value={form.seoKeywords}
-                  onChange={(e) => set("seoKeywords", e.target.value)}
-                  rows={2}
-                  placeholder="e.g. charger light, study lamp, rechargeable light, magnetic desk lamp, loadshedding light bd"
-                  hint="Comma-separated keywords. Useful for meta tags and internal search catalog scoring."
-                />
-              </div>
+              <Textarea
+                label="Global Meta Keywords"
+                value={form.seoKeywords}
+                onChange={(e) => set("seoKeywords", e.target.value)}
+                rows={2}
+                placeholder="e.g. charger light, study lamp, rechargeable light, magnetic desk lamp, loadshedding light bd"
+                hint="Comma-separated keywords. Useful for meta tags and internal search catalog scoring."
+              />
             </div>
           </Card>
 

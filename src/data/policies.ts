@@ -275,15 +275,13 @@ export const policies: Policy[] = [
       {
         heading: "1. Minimal Data Collection",
         paragraphs: [
-          "We respect your personal privacy and collect only the absolute minimum information required to deliver your orders safely and efficiently. When placing an order, we collect:",
+          "We respect your personal privacy and collect only the absolute minimum information required to deliver your orders safely and efficiently. When placing an order, we collect your name, phone number, and delivery address.",
+          "We do not require account registration, passwords, or personal identity documentation to shop on our storefront.",
         ],
         bullets: [
           "Your Full Name: To identify and label your parcel correctly.",
           "Mobile Phone Number: To confirm your order and enable the courier delivery rider to reach you upon arrival.",
           "Complete Delivery Address: To route the courier partner straight to your doorstep.",
-        ],
-        paragraphs: [
-          "We do not require account registration, passwords, or personal identity documentation to shop on our storefront.",
         ],
       },
       {

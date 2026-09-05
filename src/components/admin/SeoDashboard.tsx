@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { adminApi, AdminApiError } from "@/lib/admin/client";
 import { useLoad } from "@/lib/admin/use-load";
 import { toast } from "@/lib/stores/toast-store";
@@ -29,15 +30,33 @@ const EMPTY_FORM: SeoFormState = {
   bingSiteVerification: "",
 };
 
-interface ProductSeoEditState {
+interface FaqItem {
+  id: string;
+  question: string;
+  answer: string;
+}
+
+interface SpecItem {
+  id: string;
+  label: string;
+  value: string;
+}
+
+interface ProductSeoStudioState {
   id: string;
   name: string;
   slug: string;
   price: number;
   shortDescription: string;
   tags: string;
+  whatsIncludedText: string;
+  specifications: SpecItem[];
+  faqs: FaqItem[];
   loadingDetails: boolean;
+  activeTab: "meta" | "faqs" | "specs";
 }
+
+const uid = () => Math.random().toString(36).substring(2, 9);
 
 export function SeoDashboard() {
   const [form, setForm] = useState<SeoFormState>(EMPTY_FORM);
@@ -49,12 +68,16 @@ export function SeoDashboard() {
   const [success, setSuccess] = useState<string | null>(null);
   const [previewDevice, setPreviewDevice] = useState<"mobile" | "desktop">("mobile");
 
-  // Courier-style Collapsible Box states
+  // Courier-style Collapsible Box for Search Console Guide
   const [isGuideExpanded, setIsGuideExpanded] = useState(false);
   const [guideLang, setGuideLang] = useState<"en" | "bn">("en");
 
-  // In-page Product SEO editing state
-  const [editingProduct, setEditingProduct] = useState<ProductSeoEditState | null>(null);
+  // Product Search & Filter
+  const [productSearch, setProductSearch] = useState("");
+
+  // Product SEO Studio state (Courier-style box for each product)
+  const [expandedProductId, setExpandedProductId] = useState<string | null>(null);
+  const [studio, setStudio] = useState<ProductSeoStudioState | null>(null);
   const [savingProduct, setSavingProduct] = useState(false);
 
   const loadData = useCallback(async () => {
@@ -64,7 +87,7 @@ export function SeoDashboard() {
 
       const [settingsRes, productsRes] = await Promise.all([
         adminApi.get<{ settings: ApiStoreSettings }>("admin/settings"),
-        adminApi.get<{ products: ApiProductListItem[] }>("admin/products?perPage=50"),
+        adminApi.get<{ products: ApiProductListItem[] }>("admin/products?perPage=100"),
       ]);
 
       const store = settingsRes.settings.store;
@@ -89,7 +112,7 @@ export function SeoDashboard() {
   const set = <K extends keyof SeoFormState>(key: K, value: SeoFormState[K]) =>
     setForm((current) => ({ ...current, [key]: value }));
 
-  async function handleSave(e: React.FormEvent) {
+  async function handleSaveGlobal(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     setError(null);
@@ -106,7 +129,6 @@ export function SeoDashboard() {
         },
       });
 
-      // Trigger instant cache revalidation
       try {
         await fetch("/api/revalidate?secret=revalidate-now");
       } catch {}
@@ -136,45 +158,64 @@ export function SeoDashboard() {
     }
   }
 
-  // Quick in-page product SEO editing
-  async function handleOpenProductSeo(p: ApiProductListItem) {
-    if (editingProduct?.id === p.id) {
-      setEditingProduct(null);
+  // Open / Close Courier-style Product SEO Studio
+  async function toggleProductStudio(p: ApiProductListItem) {
+    if (expandedProductId === p.id) {
+      setExpandedProductId(null);
+      setStudio(null);
       return;
     }
 
-    setEditingProduct({
+    setExpandedProductId(p.id);
+    setStudio({
       id: p.id,
       name: p.name,
       slug: p.slug,
       price: p.price,
       shortDescription: "",
       tags: p.tags ? p.tags.join(", ") : "",
+      whatsIncludedText: "",
+      specifications: [],
+      faqs: [],
       loadingDetails: true,
+      activeTab: "meta",
     });
 
     try {
       const res = await adminApi.get<{ product: ApiProduct }>(`admin/products/${p.id}`);
       const full = res.product;
-      setEditingProduct({
+      setStudio({
         id: p.id,
         name: full.name,
         slug: full.slug,
         price: full.price,
         shortDescription: full.shortDescription || "",
         tags: full.tags ? full.tags.join(", ") : "",
+        whatsIncludedText: full.whatsIncluded ? full.whatsIncluded.join("\n") : "",
+        specifications: (full.specifications || []).map((s) => ({
+          id: uid(),
+          label: s.label,
+          value: s.value,
+        })),
+        faqs: (full.faqs || []).map((f) => ({
+          id: uid(),
+          question: f.question,
+          answer: f.answer,
+        })),
         loadingDetails: false,
+        activeTab: "meta",
       });
     } catch {
-      setEditingProduct((curr) => (curr ? { ...curr, loadingDetails: false } : null));
+      setStudio((curr) => (curr ? { ...curr, loadingDetails: false } : null));
     }
   }
 
-  async function handleSaveProductSeo() {
-    if (!editingProduct) return;
+  // Save Product SEO changes
+  async function handleSaveProductStudio() {
+    if (!studio) return;
     setSavingProduct(true);
     try {
-      const rawTags = editingProduct.tags
+      const rawTags = studio.tags
         .split(/[,]+/)
         .map((t) =>
           t
@@ -185,21 +226,39 @@ export function SeoDashboard() {
         )
         .filter(Boolean);
 
+      const whatsIncluded = studio.whatsIncludedText
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+      const specifications = studio.specifications
+        .filter((s) => s.label.trim() && s.value.trim())
+        .map((s) => ({ label: s.label.trim(), value: s.value.trim() }));
+
+      const faqs = studio.faqs
+        .filter((f) => f.question.trim() && f.answer.trim())
+        .map((f) => ({ question: f.question.trim(), answer: f.answer.trim() }));
+
       const updated = await adminApi.patch<{ product: ApiProduct }>(
-        `admin/products/${editingProduct.id}`,
+        `admin/products/${studio.id}`,
         {
-          name: editingProduct.name.trim(),
-          shortDescription: editingProduct.shortDescription.trim() || null,
+          name: studio.name.trim(),
+          slug: studio.slug.trim().toLowerCase(),
+          shortDescription: studio.shortDescription.trim() || null,
           tags: [...new Set(rawTags)],
+          whatsIncluded,
+          specifications,
+          faqs,
         },
       );
 
       setProducts((prev) =>
         prev.map((item) =>
-          item.id === editingProduct.id
+          item.id === studio.id
             ? {
                 ...item,
                 name: updated.product.name,
+                slug: updated.product.slug,
                 tags: updated.product.tags,
               }
             : item,
@@ -210,8 +269,9 @@ export function SeoDashboard() {
         await fetch("/api/revalidate?secret=revalidate-now");
       } catch {}
 
-      toast("Product SEO updated and cache revalidated!");
-      setEditingProduct(null);
+      toast("Product SEO updated and cache purged!");
+      setExpandedProductId(null);
+      setStudio(null);
     } catch (caught) {
       toast(caught instanceof AdminApiError ? caught.message : "Failed to save product SEO.");
     } finally {
@@ -230,6 +290,13 @@ export function SeoDashboard() {
   const titleLength = form.seoTitle.trim().length;
   const descLength = form.seoDescription.trim().length;
   const isGoogleVerified = Boolean(form.googleSiteVerification.trim());
+
+  // Filter products by search query
+  const filteredProducts = products.filter((p) => {
+    if (!productSearch.trim()) return true;
+    const q = productSearch.toLowerCase();
+    return p.name.toLowerCase().includes(q) || p.slug.toLowerCase().includes(q);
+  });
 
   return (
     <AdminShell
@@ -681,7 +748,7 @@ export function SeoDashboard() {
         </Card>
 
         {/* 3. Global SEO Form */}
-        <form onSubmit={handleSave} className="flex flex-col gap-4">
+        <form onSubmit={handleSaveGlobal} className="flex flex-col gap-4">
           <Card>
             <CardHeader
               title="Global Storefront Metadata"
@@ -824,259 +891,559 @@ export function SeoDashboard() {
           </div>
         </Card>
 
-        {/* 6. Product Catalogue SEO Health Audit & In-Page SEO Editor */}
-        <Card>
-          <CardHeader
-            title="Product Catalogue SEO Health Audit & Direct Editor"
-            hint="Customize SEO title, meta description, and keywords directly for each product without leaving this page."
-          />
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-caption">
-              <thead>
-                <tr className="border-b border-line bg-surface/50 text-micro font-semibold text-muted uppercase tracking-wider">
-                  <th className="py-3 px-4">Product</th>
-                  <th className="py-3 px-4">Title Quality</th>
-                  <th className="py-3 px-4">Status & Tags</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-line">
-                {products.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="py-6 text-center text-muted">
-                      No products found.
-                    </td>
-                  </tr>
-                ) : (
-                  products.map((p) => {
-                    const isEditing = editingProduct?.id === p.id;
-                    const titleLen = p.name.length;
-                    const isOptimal = titleLen >= 30 && titleLen <= 90;
+        {/* 6. Product Catalogue SEO Command Center (Courier-Style Box System) */}
+        <div className="flex flex-col gap-4">
+          <Card>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 border-b border-line">
+              <div>
+                <h3 className="text-body font-semibold text-ink flex items-center gap-2">
+                  <span>Product Catalogue SEO Command Center</span>
+                  <span className="rounded-full bg-surface px-2.5 py-0.5 text-micro font-medium text-muted border border-line">
+                    {filteredProducts.length} Product{filteredProducts.length === 1 ? "" : "s"}
+                  </span>
+                </h3>
+                <p className="text-micro text-muted mt-0.5">
+                  Expand any product to configure its Google Title, URL Slug, Meta Description, Search Tags, FAQs &amp; Structured Specifications.
+                </p>
+              </div>
 
-                    return (
-                      <tbody key={p.id} className="contents">
-                        <tr
-                          className={cn(
-                            "hover:bg-surface/30 transition-colors",
-                            isEditing && "bg-primary/5"
-                          )}
-                        >
-                          <td className="py-3 px-4">
-                            <div className="flex flex-col">
-                              <span className="font-semibold text-ink line-clamp-1">{p.name}</span>
-                              <span className="text-micro text-muted font-mono">
-                                /product/{p.slug}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="py-3 px-4">
+              <div className="w-full sm:w-72">
+                <Input
+                  label=""
+                  value={productSearch}
+                  onChange={(e) => setProductSearch(e.target.value)}
+                  placeholder="Search products by title or slug…"
+                  className="h-9 text-caption"
+                />
+              </div>
+            </div>
+          </Card>
+
+          {/* Product List in Courier Box System */}
+          <div className="grid gap-3">
+            {filteredProducts.length === 0 ? (
+              <Card>
+                <div className="py-12 text-center text-muted text-caption">
+                  No products matched your search.
+                </div>
+              </Card>
+            ) : (
+              filteredProducts.map((p) => {
+                const isExpanded = expandedProductId === p.id;
+                const titleLen = p.name.length;
+                const isTitleOptimal = titleLen >= 35 && titleLen <= 85;
+                const hasTags = (p.tags || []).length > 0;
+
+                return (
+                  <Card key={p.id} className="overflow-hidden transition-all border border-line">
+                    {/* Clickable Courier-Style Header */}
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => toggleProductStudio(p)}
+                      className={cn(
+                        "flex flex-wrap items-center justify-between gap-3 px-4 py-3.5 cursor-pointer select-none transition-colors",
+                        isExpanded ? "bg-surface/60 border-b border-line" : "hover:bg-surface/40"
+                      )}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        {p.featuredImage ? (
+                          <div className="relative size-10 shrink-0 overflow-hidden rounded-md border border-line bg-surface">
+                            <Image
+                              src={p.featuredImage.url}
+                              alt={p.name}
+                              fill
+                              sizes="40px"
+                              className="object-cover"
+                            />
+                          </div>
+                        ) : (
+                          <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-surface border border-line text-caption font-bold text-ink shadow-2xs">
+                            {p.name.charAt(0)}
+                          </div>
+                        )}
+
+                        <div className="flex flex-col min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-caption sm:text-body font-semibold text-ink line-clamp-1">
+                              {p.name}
+                            </span>
+                            <span className="font-semibold text-positive text-caption">
+                              ৳{p.price}
+                            </span>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                            <span className="text-micro text-muted font-mono truncate max-w-xs">
+                              /product/{p.slug}
+                            </span>
+                            <span className="text-muted text-micro">·</span>
                             <span
                               className={cn(
-                                "inline-flex items-center gap-1 rounded px-2 py-0.5 text-micro font-medium",
-                                isOptimal
-                                  ? "bg-emerald-50 text-emerald-700"
-                                  : "bg-amber-50 text-amber-700"
+                                "inline-flex items-center rounded-full px-2 py-0.5 text-micro font-medium",
+                                isTitleOptimal
+                                  ? "bg-positive-soft text-positive"
+                                  : "bg-warn-soft text-warn"
                               )}
                             >
-                              {titleLen} chars {isOptimal ? "✓ Great" : "Needs Review"}
+                              {titleLen} chars {isTitleOptimal ? "✓ Optimal Title" : "Title Review"}
                             </span>
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="flex flex-wrap gap-1.5">
-                              <span className="rounded bg-positive/10 px-2 py-0.5 text-micro font-medium text-positive">
-                                ✓ Indexed
-                              </span>
-                              <span className="rounded bg-surface px-2 py-0.5 text-micro font-medium text-muted">
-                                {p.tags?.length || 0} Tags
-                              </span>
-                            </div>
-                          </td>
-                          <td className="py-3 px-4 text-right">
-                            <div className="inline-flex items-center gap-1.5">
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant={isEditing ? "primary" : "secondary"}
-                                onClick={() => handleOpenProductSeo(p)}
-                              >
-                                <span>{isEditing ? "Editing SEO" : "⚡ Quick SEO"}</span>
-                                <Icon name={isEditing ? "chevronUp" : "chevronDown"} size={13} />
-                              </Button>
+                            <span className="inline-flex items-center rounded-full bg-surface px-2 py-0.5 text-micro font-medium text-muted">
+                              {hasTags ? `${p.tags.length} Tags` : "No tags"}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
 
-                              <Link
-                                href={`/admin/products/${p.id}`}
-                                className="inline-flex items-center gap-1 rounded border border-line bg-white px-2.5 py-1 text-micro font-medium text-muted hover:text-ink hover:bg-surface"
-                                title="Open full product editor"
-                              >
-                                Edit ↗
-                              </Link>
-                            </div>
-                          </td>
-                        </tr>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className="hidden md:inline-flex items-center gap-1 rounded bg-primary/10 px-2 py-1 text-micro font-semibold text-primary">
+                          {isExpanded ? "Editing SEO Studio" : "Configure SEO ⚡"}
+                        </span>
 
-                        {/* In-Page Product SEO Editor Row */}
-                        {isEditing && (
-                          <tr className="bg-surface/50 border-b border-line">
-                            <td colSpan={4} className="p-4 sm:p-5">
-                              {editingProduct.loadingDetails ? (
-                                <div className="py-8 text-center text-muted flex items-center justify-center gap-2">
-                                  <span className="size-2 rounded-full bg-primary animate-ping" />
-                                  Loading product SEO details…
+                        <span className="flex size-7 items-center justify-center rounded-xs border border-line bg-surface/50 text-muted hover:text-ink transition-colors">
+                          <svg
+                            className={cn("size-4 transition-transform duration-200", isExpanded && "rotate-180")}
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Expandable Courier-Style Studio Body */}
+                    {isExpanded && studio && (
+                      <div className="flex flex-col gap-4 p-4 sm:p-5 bg-surface/10 animate-in fade-in-50 duration-150">
+                        {studio.loadingDetails ? (
+                          <div className="py-12 text-center text-muted flex items-center justify-center gap-2">
+                            <span className="size-2 rounded-full bg-primary animate-ping" />
+                            Loading full product SEO specifications &amp; schemas…
+                          </div>
+                        ) : (
+                          <>
+                            {/* Studio Navigation Tabs */}
+                            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-3">
+                              <div className="flex items-center gap-1.5 rounded-lg border border-line bg-surface p-1 text-caption">
+                                <button
+                                  type="button"
+                                  onClick={() => setStudio({ ...studio, activeTab: "meta" })}
+                                  className={cn(
+                                    "rounded px-3 py-1 font-medium transition-colors",
+                                    studio.activeTab === "meta"
+                                      ? "bg-white text-ink shadow-2xs font-semibold"
+                                      : "text-muted hover:text-ink"
+                                  )}
+                                >
+                                  🎯 Core Meta &amp; Live SERP
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setStudio({ ...studio, activeTab: "faqs" })}
+                                  className={cn(
+                                    "rounded px-3 py-1 font-medium transition-colors flex items-center gap-1.5",
+                                    studio.activeTab === "faqs"
+                                      ? "bg-white text-ink shadow-2xs font-semibold"
+                                      : "text-muted hover:text-ink"
+                                  )}
+                                >
+                                  <span>❓ FAQ Schema</span>
+                                  <span className="rounded-full bg-primary/10 px-1.5 py-0.2 text-micro font-bold text-primary">
+                                    {studio.faqs.length}
+                                  </span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setStudio({ ...studio, activeTab: "specs" })}
+                                  className={cn(
+                                    "rounded px-3 py-1 font-medium transition-colors flex items-center gap-1.5",
+                                    studio.activeTab === "specs"
+                                      ? "bg-white text-ink shadow-2xs font-semibold"
+                                      : "text-muted hover:text-ink"
+                                  )}
+                                >
+                                  <span>📋 Specs &amp; In-Box Items</span>
+                                  <span className="rounded-full bg-surface px-1.5 py-0.2 text-micro font-bold text-muted">
+                                    {studio.specifications.length}
+                                  </span>
+                                </button>
+                              </div>
+
+                              <a
+                                href={`${origin}/product/${studio.slug}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1 text-caption font-medium text-primary hover:underline"
+                              >
+                                View Live Product ↗
+                              </a>
+                            </div>
+
+                            {/* TAB 1: Core Meta & Live SERP Simulator */}
+                            {studio.activeTab === "meta" && (
+                              <div className="grid gap-5 lg:grid-cols-2">
+                                <div className="flex flex-col gap-3.5">
+                                  <Input
+                                    label="Product SEO Title / Headline"
+                                    value={studio.name}
+                                    onChange={(e) => setStudio({ ...studio, name: e.target.value })}
+                                    placeholder="Clickable headline shown in Google search"
+                                    hint={`Length: ${studio.name.length} chars ${
+                                      studio.name.length >= 45 && studio.name.length <= 80
+                                        ? "✓ Optimal length for Google"
+                                        : "(Recommended 45–80 characters)"
+                                    }`}
+                                  />
+
+                                  <Input
+                                    label="Product URL Slug"
+                                    value={studio.slug}
+                                    onChange={(e) =>
+                                      setStudio({
+                                        ...studio,
+                                        slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]+/g, "-"),
+                                      })
+                                    }
+                                    placeholder="e.g. rechargeable-desk-lamp-bd"
+                                    hint={`Full link: ${origin}/product/${studio.slug}`}
+                                  />
+
+                                  <Textarea
+                                    label="Product Meta Description (Google Snippet)"
+                                    value={studio.shortDescription}
+                                    onChange={(e) =>
+                                      setStudio({ ...studio, shortDescription: e.target.value })
+                                    }
+                                    rows={3}
+                                    placeholder="Summary shown below title in Google (highlights key benefits, battery, price, delivery, etc.)"
+                                    hint={`Length: ${studio.shortDescription.length} chars ${
+                                      studio.shortDescription.length >= 120 &&
+                                      studio.shortDescription.length <= 165
+                                        ? "✓ Optimal snippet length"
+                                        : "(Recommended 120–165 characters)"
+                                    }`}
+                                  />
+
+                                  <Input
+                                    label="SEO Search Tags & Keywords (comma-separated)"
+                                    value={studio.tags}
+                                    onChange={(e) => setStudio({ ...studio, tags: e.target.value })}
+                                    placeholder="e.g. charger light, study lamp, emergency light bd, rechargeable light"
+                                    hint="Comma-separated keywords. Index-backed for full-text search matching & Google relevancy."
+                                  />
                                 </div>
-                              ) : (
-                                <div className="flex flex-col gap-4 rounded-xl border border-primary/20 bg-white p-4 sm:p-5 shadow-xs">
-                                  <div className="flex items-center justify-between border-b border-line pb-3">
+
+                                {/* Right: Live Google Product SERP Mockup */}
+                                <div className="flex flex-col justify-between rounded-xl border border-[#dadce0] bg-[#f8f9fa] p-4 sm:p-5">
+                                  <div>
+                                    <span className="text-micro font-semibold text-muted uppercase tracking-wider">
+                                      Live Google Search Result Preview
+                                    </span>
+
+                                    <div className="mt-3 rounded-lg border border-[#dadce0] bg-white p-4 shadow-2xs">
+                                      <div className="flex items-center gap-2 text-micro">
+                                        <div className="flex size-5 items-center justify-center rounded-full bg-primary/10 text-primary font-bold text-[10px]">
+                                          H
+                                        </div>
+                                        <span className="font-medium text-[#202124]">
+                                          {origin.replace(/^https?:\/\//, "")}
+                                        </span>
+                                        <span className="text-muted">› product › {studio.slug}</span>
+                                      </div>
+
+                                      <h4 className="mt-1.5 text-[17px] font-normal leading-snug text-[#1a0dab] hover:underline cursor-pointer">
+                                        {studio.name || p.name} · HINAR
+                                      </h4>
+
+                                      <div className="mt-1 flex items-center gap-2 text-[12px]">
+                                        <span className="font-semibold text-[#006621]">
+                                          ৳{studio.price}
+                                        </span>
+                                        <span className="text-muted">·</span>
+                                        <span className="text-[#006621] font-medium">In stock</span>
+                                        <span className="text-muted">·</span>
+                                        <span className="text-muted">Cash on Delivery</span>
+                                      </div>
+
+                                      <p className="mt-1.5 text-[13px] leading-relaxed text-[#4d5156] line-clamp-3">
+                                        {studio.shortDescription ||
+                                          "Buy genuine products at best price in Bangladesh. Fast nationwide cash on delivery from HINAR."}
+                                      </p>
+
+                                      {studio.faqs.length > 0 && (
+                                        <div className="mt-3 pt-2.5 border-t border-[#f1f3f4] flex flex-col gap-1 text-[12px] text-ink">
+                                          <span className="text-[11px] font-semibold text-muted uppercase tracking-wider">
+                                            Google FAQ Rich Snippet Preview:
+                                          </span>
+                                          {studio.faqs.slice(0, 2).map((faq) => (
+                                            <div key={faq.id} className="text-[#1a0dab] hover:underline cursor-pointer">
+                                              ▾ {faq.question}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  <div className="mt-4 rounded bg-white p-3 border border-line text-micro text-muted">
+                                    💡 <strong>SEO Best Practice:</strong> Keep titles under 80 characters and include high-intent search terms like brand name, model, and &quot;Price in BD&quot;.
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* TAB 2: FAQ Schema Builder */}
+                            {studio.activeTab === "faqs" && (
+                              <div className="flex flex-col gap-4">
+                                <div className="rounded-md bg-sky-50 p-3 text-sky-950 border border-sky-200/60 text-micro">
+                                  ⭐ <strong>Google FAQ Schema Rich Results:</strong> Adding frequently asked questions here generates structured FAQPage JSON-LD data. Google frequently displays these questions directly inside search results with expandable answer drawers, drastically boosting your click-through rate!
+                                </div>
+
+                                <div className="flex flex-col gap-3">
+                                  {studio.faqs.length === 0 ? (
+                                    <div className="rounded-lg border border-dashed border-line p-6 text-center text-muted text-caption">
+                                      No FAQs added for this product yet. Click the button below to add your first question &amp; answer.
+                                    </div>
+                                  ) : (
+                                    studio.faqs.map((faq, index) => (
+                                      <div
+                                        key={faq.id}
+                                        className="flex flex-col gap-2 rounded-lg border border-line bg-white p-3.5 shadow-2xs"
+                                      >
+                                        <div className="flex items-center justify-between">
+                                          <span className="text-micro font-bold text-primary">
+                                            FAQ Question #{index + 1}
+                                          </span>
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              setStudio({
+                                                ...studio,
+                                                faqs: studio.faqs.filter((f) => f.id !== faq.id),
+                                              })
+                                            }
+                                            className="text-micro text-sale hover:underline"
+                                          >
+                                            Remove FAQ
+                                          </button>
+                                        </div>
+
+                                        <Input
+                                          label="Question"
+                                          value={faq.question}
+                                          onChange={(e) => {
+                                            const val = e.target.value;
+                                            setStudio({
+                                              ...studio,
+                                              faqs: studio.faqs.map((f) =>
+                                                f.id === faq.id ? { ...f, question: val } : f
+                                              ),
+                                            });
+                                          }}
+                                          placeholder="e.g. লোডশেডিংয়ে এক চার্জে কতক্ষণ ব্যাটারি ব্যাকআপ পাওয়া যায়?"
+                                        />
+
+                                        <Textarea
+                                          label="Answer"
+                                          value={faq.answer}
+                                          onChange={(e) => {
+                                            const val = e.target.value;
+                                            setStudio({
+                                              ...studio,
+                                              faqs: studio.faqs.map((f) =>
+                                                f.id === faq.id ? { ...f, answer: val } : f
+                                              ),
+                                            });
+                                          }}
+                                          rows={2}
+                                          placeholder="e.g. হাই ব্রাইটনেসে একটানা ৩.৫ ঘণ্টা এবং নরমাল মোডে ৭ ঘণ্টা পর্যন্ত ব্যাকআপ পাওয়া যায়।"
+                                        />
+                                      </div>
+                                    ))
+                                  )}
+
+                                  <Button
+                                    type="button"
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={() =>
+                                      setStudio({
+                                        ...studio,
+                                        faqs: [
+                                          ...studio.faqs,
+                                          { id: uid(), question: "", answer: "" },
+                                        ],
+                                      })
+                                    }
+                                    className="self-start"
+                                  >
+                                    <Icon name="plus" size={14} />
+                                    Add FAQ Question &amp; Answer
+                                  </Button>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* TAB 3: Specifications & In-Box Items */}
+                            {studio.activeTab === "specs" && (
+                              <div className="grid gap-5 lg:grid-cols-2">
+                                {/* What's Included in Box */}
+                                <div className="flex flex-col gap-3 rounded-lg border border-line bg-white p-4 shadow-2xs">
+                                  <div>
+                                    <h4 className="text-caption font-semibold text-ink">
+                                      What&apos;s Included in the Box
+                                    </h4>
+                                    <p className="text-micro text-muted">
+                                      1 item per line. Helps Google answer buyer unboxing &amp; accessory queries.
+                                    </p>
+                                  </div>
+
+                                  <Textarea
+                                    label="Box Items (1 per line)"
+                                    value={studio.whatsIncludedText}
+                                    onChange={(e) =>
+                                      setStudio({ ...studio, whatsIncludedText: e.target.value })
+                                    }
+                                    rows={5}
+                                    placeholder={`1x Rechargeable LED Desk Lamp\n1x Wireless Remote Controller\n1x Type-C Fast Charging Cable\n1x Magnetic Wall Mounting Base`}
+                                    hint="Each line becomes a distinct bullet point in search rich snippets."
+                                  />
+                                </div>
+
+                                {/* Structured Specifications */}
+                                <div className="flex flex-col gap-3 rounded-lg border border-line bg-white p-4 shadow-2xs">
+                                  <div className="flex items-center justify-between">
                                     <div>
-                                      <h4 className="text-body font-semibold text-ink flex items-center gap-2">
-                                        <span>Direct SEO Editor:</span>
-                                        <span className="text-primary font-bold">{p.name}</span>
+                                      <h4 className="text-caption font-semibold text-ink">
+                                        Key Technical Specifications
                                       </h4>
                                       <p className="text-micro text-muted">
-                                        Edit Google title, snippet description & target keywords without leaving this page.
+                                        Structured attributes (Battery, Size, Modes, Material).
                                       </p>
                                     </div>
-                                    <button
+                                    <Button
                                       type="button"
-                                      onClick={() => setEditingProduct(null)}
-                                      className="rounded p-1 text-muted hover:text-ink hover:bg-surface"
+                                      variant="secondary"
+                                      size="sm"
+                                      onClick={() =>
+                                        setStudio({
+                                          ...studio,
+                                          specifications: [
+                                            ...studio.specifications,
+                                            { id: uid(), label: "", value: "" },
+                                          ],
+                                        })
+                                      }
                                     >
-                                      <Icon name="close" size={16} />
-                                    </button>
+                                      <Icon name="plus" size={13} />
+                                      Add Spec
+                                    </Button>
                                   </div>
 
-                                  <div className="grid gap-5 lg:grid-cols-2">
-                                    {/* Left Column: Form Fields */}
-                                    <div className="flex flex-col gap-3.5">
-                                      <Input
-                                        label="Product SEO Title / Name"
-                                        value={editingProduct.name}
-                                        onChange={(e) =>
-                                          setEditingProduct({
-                                            ...editingProduct,
-                                            name: e.target.value,
-                                          })
-                                        }
-                                        placeholder="Product headline shown on Google"
-                                        hint={`Length: ${editingProduct.name.length} chars ${
-                                          editingProduct.name.length >= 45 && editingProduct.name.length <= 75
-                                            ? "✓ Optimal length"
-                                            : "(Aim for 45–75 chars)"
-                                        }`}
-                                      />
-
-                                      <Textarea
-                                        label="Product Meta Description (Google Snippet)"
-                                        value={editingProduct.shortDescription}
-                                        onChange={(e) =>
-                                          setEditingProduct({
-                                            ...editingProduct,
-                                            shortDescription: e.target.value,
-                                          })
-                                        }
-                                        rows={3}
-                                        placeholder="Enter clear summary for Google search snippet (e.g. key benefits, battery life, price, etc.)"
-                                        hint={`Length: ${editingProduct.shortDescription.length} chars ${
-                                          editingProduct.shortDescription.length >= 120 &&
-                                          editingProduct.shortDescription.length <= 165
-                                            ? "✓ Optimal"
-                                            : "(Aim for 120–165 chars)"
-                                        }`}
-                                      />
-
-                                      <Input
-                                        label="SEO Tags & Keywords (comma-separated)"
-                                        value={editingProduct.tags}
-                                        onChange={(e) =>
-                                          setEditingProduct({
-                                            ...editingProduct,
-                                            tags: e.target.value,
-                                          })
-                                        }
-                                        placeholder="e.g. charger light, rechargeable light, desk lamp bd"
-                                        hint="Comma-separated keywords. Used for Google search ranking & internal search discovery."
-                                      />
-                                    </div>
-
-                                    {/* Right Column: Live Product SERP Mockup */}
-                                    <div className="flex flex-col justify-between rounded-lg border border-[#dadce0] bg-[#f8f9fa] p-4">
-                                      <div>
-                                        <span className="text-micro font-semibold text-muted uppercase tracking-wider">
-                                          Google Search Live Preview for This Product
-                                        </span>
-
-                                        <div className="mt-3 rounded-lg border border-[#dadce0] bg-white p-3.5 shadow-2xs">
-                                          <div className="flex items-center gap-2 text-micro">
-                                            <span className="flex size-5 items-center justify-center rounded-full bg-primary/10 text-primary font-bold text-[10px]">
-                                              H
-                                            </span>
-                                            <span className="font-medium text-[#202124]">
-                                              {origin.replace(/^https?:\/\//, "")}
-                                            </span>
-                                            <span className="text-muted">› product › {p.slug}</span>
-                                          </div>
-
-                                          <h4 className="mt-1.5 text-[16px] font-normal leading-snug text-[#1a0dab] hover:underline cursor-pointer">
-                                            {editingProduct.name || p.name} · HINAR
-                                          </h4>
-
-                                          <div className="mt-1 flex items-center gap-2 text-[12px]">
-                                            <span className="font-semibold text-[#006621]">
-                                              ৳{p.price}
-                                            </span>
-                                            <span className="text-muted">·</span>
-                                            <span className="text-muted">In stock</span>
-                                            <span className="text-muted">·</span>
-                                            <span className="text-muted">Cash on Delivery</span>
-                                          </div>
-
-                                          <p className="mt-1 text-[13px] leading-relaxed text-[#4d5156] line-clamp-2">
-                                            {editingProduct.shortDescription ||
-                                              "Shop this authentic product at best price in Bangladesh. Fast nationwide cash on delivery."}
-                                          </p>
-                                        </div>
-                                      </div>
-
-                                      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-line">
-                                        <div className="flex items-center gap-2">
-                                          <Button
-                                            type="button"
-                                            variant="primary"
-                                            onClick={handleSaveProductSeo}
-                                            loading={savingProduct}
-                                          >
-                                            Save Product SEO
-                                          </Button>
-                                          <Button
-                                            type="button"
-                                            variant="secondary"
-                                            onClick={() => setEditingProduct(null)}
-                                          >
-                                            Cancel
-                                          </Button>
-                                        </div>
-
-                                        <Link
-                                          href={`/admin/products/${p.id}`}
-                                          className="text-micro font-medium text-primary hover:underline"
+                                  <div className="flex flex-col gap-2 max-h-80 overflow-y-auto pr-1">
+                                    {studio.specifications.length === 0 ? (
+                                      <p className="text-micro text-muted py-4 text-center">
+                                        No specifications added yet.
+                                      </p>
+                                    ) : (
+                                      studio.specifications.map((spec) => (
+                                        <div
+                                          key={spec.id}
+                                          className="flex items-center gap-2 rounded bg-surface/50 p-2 border border-line"
                                         >
-                                          Open Full Product Editor ↗
-                                        </Link>
-                                      </div>
-                                    </div>
+                                          <input
+                                            type="text"
+                                            value={spec.label}
+                                            onChange={(e) => {
+                                              const val = e.target.value;
+                                              setStudio({
+                                                ...studio,
+                                                specifications: studio.specifications.map((s) =>
+                                                  s.id === spec.id ? { ...s, label: val } : s
+                                                ),
+                                              });
+                                            }}
+                                            placeholder="Label (e.g. Battery)"
+                                            className="w-1/3 rounded border border-line bg-white px-2 py-1 text-micro text-ink"
+                                          />
+                                          <input
+                                            type="text"
+                                            value={spec.value}
+                                            onChange={(e) => {
+                                              const val = e.target.value;
+                                              setStudio({
+                                                ...studio,
+                                                specifications: studio.specifications.map((s) =>
+                                                  s.id === spec.id ? { ...s, value: val } : s
+                                                ),
+                                              });
+                                            }}
+                                            placeholder="Value (e.g. 1200mAh)"
+                                            className="w-2/3 rounded border border-line bg-white px-2 py-1 text-micro text-ink"
+                                          />
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              setStudio({
+                                                ...studio,
+                                                specifications: studio.specifications.filter(
+                                                  (s) => s.id !== spec.id
+                                                ),
+                                              })
+                                            }
+                                            className="text-muted hover:text-sale p-1"
+                                          >
+                                            <Icon name="close" size={14} />
+                                          </button>
+                                        </div>
+                                      ))
+                                    )}
                                   </div>
                                 </div>
-                              )}
-                            </td>
-                          </tr>
+                              </div>
+                            )}
+
+                            {/* Studio Bottom Action Controls */}
+                            <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-line">
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  type="button"
+                                  variant="primary"
+                                  onClick={handleSaveProductStudio}
+                                  loading={savingProduct}
+                                >
+                                  Save Product SEO &amp; Rich Schemas
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  onClick={() => {
+                                    setExpandedProductId(null);
+                                    setStudio(null);
+                                  }}
+                                >
+                                  Cancel
+                                </Button>
+                              </div>
+
+                              <Link
+                                href={`/admin/products/${studio.id}`}
+                                className="text-micro font-medium text-muted hover:text-ink underline"
+                              >
+                                Open Full Product Page (Images &amp; Variants) ↗
+                              </Link>
+                            </div>
+                          </>
                         )}
-                      </tbody>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
+                      </div>
+                    )}
+                  </Card>
+                );
+              })
+            )}
           </div>
-        </Card>
+        </div>
       </PageBody>
     </AdminShell>
   );

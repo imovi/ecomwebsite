@@ -273,6 +273,12 @@ export interface StoreSettings {
   seoTitle?: string | undefined;
   /** Meta description override. Undefined uses the built-in sentence. */
   seoDescription?: string | undefined;
+  /** Global meta keywords. */
+  seoKeywords?: string | undefined;
+  /** Google Search Console verification token. */
+  googleSiteVerification?: string | undefined;
+  /** Bing Webmaster Tools verification token. */
+  bingSiteVerification?: string | undefined;
   /** Top announcement bar text. Undefined uses built-in default. */
   announcementText?: string | undefined;
   /** Whether the top announcement bar is visible. Undefined means visible. */

@@ -47,18 +47,24 @@ export async function generateMetadata(): Promise<Metadata> {
       template: `%s · ${name}`,
     },
     description,
-    keywords: [
-      "gadget shop bd",
-      "online gadget shop in bangladesh",
-      "smart gadgets bd",
-      "hinar",
-      "hinar bd",
-      "hinarbd",
-      "rechargeable desk lamp bd",
-      "magnetic desk lamp bangladesh",
-      "lifestyle gadgets bd",
-      "cash on delivery gadgets bangladesh",
-    ],
+    keywords: settings.seoKeywords
+      ? settings.seoKeywords.split(",").map((s) => s.trim()).filter(Boolean)
+      : [
+          "gadget shop bd",
+          "online gadget shop in bangladesh",
+          "smart gadgets bd",
+          "hinar",
+          "hinar bd",
+          "hinarbd",
+          "rechargeable desk lamp bd",
+          "magnetic desk lamp bangladesh",
+          "lifestyle gadgets bd",
+          "cash on delivery gadgets bangladesh",
+        ],
+    verification: {
+      google: settings.googleSiteVerification || "da2a584dd6352b62",
+      ...(settings.bingSiteVerification ? { bing: settings.bingSiteVerification } : {}),
+    },
     applicationName: name,
     formatDetection: { telephone: true },
     alternates: {

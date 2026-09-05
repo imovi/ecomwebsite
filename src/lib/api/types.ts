@@ -679,6 +679,9 @@ export interface ApiStoreSettings {
     /** Empty means "use the built-in title/description". */
     seoTitle: string;
     seoDescription: string;
+    seoKeywords?: string;
+    googleSiteVerification?: string;
+    bingSiteVerification?: string;
     /** Resolved URL of the uploaded logo. Null means the header shows nothing. */
     logoUrl: string | null;
     logoWidth: number | null;

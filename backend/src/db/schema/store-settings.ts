@@ -144,6 +144,15 @@ export const storeSettings = pgTable(
     /** The sentence under the title in search results. Empty uses the built-in. */
     seoDescription: text("seo_description").notNull().default(""),
 
+    /** Global SEO meta keywords. Comma separated. */
+    seoKeywords: text("seo_keywords").notNull().default(""),
+
+    /** Google Search Console site verification token or html meta tag content. */
+    googleSiteVerification: text("google_site_verification").notNull().default(""),
+
+    /** Bing Webmaster Tools site verification token. */
+    bingSiteVerification: text("bing_site_verification").notNull().default(""),
+
     /* --- Top announcement bar ------------------------------------------ */
     /** Text shown in the header announcement bar. Empty falls back to default. */
     announcementText: text("announcement_text")

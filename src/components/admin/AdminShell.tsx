@@ -50,6 +50,7 @@ const NAV: NavItem[] = [
   { href: "/admin/categories", label: "Categories", icon: "blocks", minRole: "manager" },
   { href: "/admin/branding", label: "Branding", icon: "camera", minRole: "admin" },
   { href: "/admin/marketing", label: "Marketing", icon: "bolt", minRole: "admin" },
+  { href: "/admin/seo", label: "SEO & Search", icon: "search", minRole: "admin" },
   { href: "/admin/customization", label: "Customization", icon: "sparkles", minRole: "admin" },
   { href: "/admin/integrations", label: "Integrations", icon: "plug", minRole: "admin" },
   { href: "/admin/ips", label: "Blocked IPs", icon: "shield", minRole: "admin" },

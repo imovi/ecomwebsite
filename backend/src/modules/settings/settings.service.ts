@@ -87,6 +87,9 @@ export interface SettingsDto {
     /** Empty means "use the built-in title/description". */
     seoTitle: string;
     seoDescription: string;
+    seoKeywords: string;
+    googleSiteVerification: string;
+    bingSiteVerification: string;
     /**
      * Resolved URL of the uploaded logo, or null to use the wordmark.
      *
@@ -268,6 +271,9 @@ export function toSettingsDto(row: StoreSettingsRow): SettingsDto {
       footerNote: row.footerNote,
       seoTitle: row.seoTitle,
       seoDescription: row.seoDescription,
+      seoKeywords: row.seoKeywords ?? "",
+      googleSiteVerification: row.googleSiteVerification ?? "",
+      bingSiteVerification: row.bingSiteVerification ?? "",
       logoUrl: row.storeLogoKey ? getStorage().url(row.storeLogoKey) : null,
       logoWidth: row.storeLogoWidth,
       logoHeight: row.storeLogoHeight,
@@ -406,6 +412,9 @@ export interface UpdateSettingsInput {
     footerNote?: string;
     seoTitle?: string;
     seoDescription?: string;
+    seoKeywords?: string;
+    googleSiteVerification?: string;
+    bingSiteVerification?: string;
   };
   tracking?: {
     pixelId?: string;
@@ -515,6 +524,13 @@ export async function updateSettings(input: UpdateSettingsInput): Promise<Settin
   if (input.store?.seoTitle !== undefined) patch.seoTitle = input.store.seoTitle;
   if (input.store?.seoDescription !== undefined) {
     patch.seoDescription = input.store.seoDescription;
+  }
+  if (input.store?.seoKeywords !== undefined) patch.seoKeywords = input.store.seoKeywords;
+  if (input.store?.googleSiteVerification !== undefined) {
+    patch.googleSiteVerification = input.store.googleSiteVerification;
+  }
+  if (input.store?.bingSiteVerification !== undefined) {
+    patch.bingSiteVerification = input.store.bingSiteVerification;
   }
 
   if (input.announcement?.text !== undefined) {

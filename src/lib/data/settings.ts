@@ -42,6 +42,9 @@ interface ApiPublicSettings {
       footerNote?: string | null;
       seoTitle?: string | null;
       seoDescription?: string | null;
+      seoKeywords?: string | null;
+      googleSiteVerification?: string | null;
+      bingSiteVerification?: string | null;
     };
     announcement?: {
       text: string;
@@ -59,6 +62,9 @@ const FALLBACK: StoreSettings = {
   seoTitle: "HINAR — Online Gadget Shop & Smart Lifestyle Store in Bangladesh",
   seoDescription:
     "Shop smart gadgets, rechargeable desk lamps, unique lifestyle accessories & everyday electronics at best price in Bangladesh. Fast nationwide cash on delivery.",
+  seoKeywords: "charger light, study lamp, rechargeable light, magnetic desk lamp, loadshedding light bd, gadgets bd",
+  googleSiteVerification: "da2a584dd6352b62",
+  bingSiteVerification: "",
   deliveryInsideDhaka: 80,
   deliveryOutsideDhaka: 130,
   freeDeliveryThreshold: 0,
@@ -128,6 +134,15 @@ export async function getSettings(): Promise<StoreSettings> {
     ...(data.settings.store.seoTitle ? { seoTitle: data.settings.store.seoTitle } : {}),
     ...(data.settings.store.seoDescription
       ? { seoDescription: data.settings.store.seoDescription }
+      : {}),
+    ...(data.settings.store.seoKeywords
+      ? { seoKeywords: data.settings.store.seoKeywords }
+      : {}),
+    ...(data.settings.store.googleSiteVerification
+      ? { googleSiteVerification: data.settings.store.googleSiteVerification }
+      : {}),
+    ...(data.settings.store.bingSiteVerification
+      ? { bingSiteVerification: data.settings.store.bingSiteVerification }
       : {}),
     ...(data.settings.checkoutFormConfig
       ? { checkoutConfig: data.settings.checkoutFormConfig }

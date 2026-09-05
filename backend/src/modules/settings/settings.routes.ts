@@ -178,8 +178,11 @@ const updateSettingsSchema = z
 
         /* Empty means "use the built-in", so the shop can clear an override
            and get the default back rather than being stuck with a blank tab. */
-        seoTitle: safeString({ max: 70 }).optional(),
-        seoDescription: safeString({ max: 200 }).optional(),
+        seoTitle: safeString({ max: 100 }).optional(),
+        seoDescription: safeString({ max: 300 }).optional(),
+        seoKeywords: safeString({ max: 500 }).optional(),
+        googleSiteVerification: safeString({ max: 200 }).optional(),
+        bingSiteVerification: safeString({ max: 200 }).optional(),
       })
       .strict()
       .optional(),

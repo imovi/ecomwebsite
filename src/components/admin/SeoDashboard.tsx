@@ -85,21 +85,26 @@ export function SeoDashboard() {
       setLoading(true);
       setError(null);
 
-      const [settingsRes, productsRes] = await Promise.all([
+      const [settingsRes, productsData] = await Promise.allSettled([
         adminApi.get<{ settings: ApiStoreSettings }>("admin/settings"),
-        adminApi.get<{ products: ApiProductListItem[] }>("admin/products?perPage=100"),
+        adminApi.list<ApiProductListItem>("admin/products?perPage=100"),
       ]);
 
-      const store = settingsRes.settings.store;
-      setForm({
-        seoTitle: store.seoTitle || "",
-        seoDescription: store.seoDescription || "",
-        seoKeywords: store.seoKeywords || "",
-        googleSiteVerification: store.googleSiteVerification || "",
-        bingSiteVerification: store.bingSiteVerification || "",
-      });
+      if (settingsRes.status === "fulfilled") {
+        const store = settingsRes.value.settings.store;
+        setForm({
+          seoTitle: store.seoTitle || "",
+          seoDescription: store.seoDescription || "",
+          seoKeywords: store.seoKeywords || "",
+          googleSiteVerification: store.googleSiteVerification || "",
+          bingSiteVerification: store.bingSiteVerification || "",
+        });
+      }
 
-      setProducts(productsRes.products || []);
+      if (productsData.status === "fulfilled") {
+        const list = productsData.value?.items || (Array.isArray(productsData.value) ? productsData.value : []);
+        setProducts(list);
+      }
     } catch (caught) {
       setError(caught instanceof AdminApiError ? caught.message : "Failed to load SEO data.");
     } finally {
@@ -183,7 +188,7 @@ export function SeoDashboard() {
 
     try {
       const res = await adminApi.get<{ product: ApiProduct }>(`admin/products/${p.id}`);
-      const full = res.product;
+      const full = (res as { product?: ApiProduct })?.product ?? (res as unknown as ApiProduct);
       setStudio({
         id: p.id,
         name: full.name,
@@ -921,7 +926,14 @@ export function SeoDashboard() {
 
           {/* Product List in Courier Box System */}
           <div className="grid gap-3">
-            {filteredProducts.length === 0 ? (
+            {loading ? (
+              <Card>
+                <div className="py-12 text-center text-muted text-caption flex items-center justify-center gap-2">
+                  <span className="size-2 rounded-full bg-primary animate-ping" />
+                  Loading products for SEO…
+                </div>
+              </Card>
+            ) : filteredProducts.length === 0 ? (
               <Card>
                 <div className="py-12 text-center text-muted text-caption">
                   No products matched your search.
